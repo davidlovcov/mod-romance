@@ -40,6 +40,8 @@ namespace romance::ac
         static bool SayToParty(Player* bot, std::string const& text);
         // follow | stay | lead | unknown
         static std::string FollowState(Player* bot);
+        // Bot runs a healing strategy: Playerbots refuses attack orders for healers ("attack rti target: useless").
+        static bool IsHealer(Player* bot);
 
         // Lead mode: Playerbots stops following so mod-romance can walk the companion itself
         // (see CompanionControl); StopLead switches back to following.

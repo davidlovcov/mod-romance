@@ -139,6 +139,12 @@ namespace romance::ac
         return "unknown";
     }
 
+    bool PlayerbotsBridge::IsHealer(Player* bot)
+    {
+        PlayerbotAI* ai = bot ? GET_PLAYERBOT_AI(bot) : nullptr;
+        return ai && ai->ContainsStrategy(STRATEGY_TYPE_HEAL);
+    }
+
     bool PlayerbotsBridge::StartLead(Player* bot, Player* master)
     {
         PlayerbotAI* ai = bot ? GET_PLAYERBOT_AI(bot) : nullptr;
@@ -171,6 +177,7 @@ namespace romance::ac
     bool PlayerbotsBridge::Command(Player*, Player*, std::string const&) { return false; }
     bool PlayerbotsBridge::SayToParty(Player*, std::string const&) { return false; }
     std::string PlayerbotsBridge::FollowState(Player*) { return "unknown"; }
+    bool PlayerbotsBridge::IsHealer(Player*) { return false; }
     bool PlayerbotsBridge::StartLead(Player*, Player*) { return false; }
     bool PlayerbotsBridge::StopLead(Player*, Player*) { return false; }
 #endif

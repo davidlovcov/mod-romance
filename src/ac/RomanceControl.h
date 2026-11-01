@@ -88,6 +88,9 @@ namespace romance::ac
             ObjectGuid current;
             uint32 kills = 0;
             bool forLead = false;
+            std::map<ObjectGuid, time_t> lastOrder;   // attack orders are re-sent at most every few seconds
+            time_t currentSince = 0;                  // when the current target was marked
+            std::set<ObjectGuid> skipped;             // targets nobody could reach (behind walls, ...)
         };
         // Lead mode: she walks to the quest area (you follow), then hunts the quest mobs there.
         struct Lead

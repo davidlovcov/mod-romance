@@ -710,7 +710,7 @@ namespace romance::ac
                          : type ? (c && c->GetCreatureType() == type) : MatchScore(u->GetName(), cmd.arg) > 0;
             if (!match)
                 continue;
-            float d = bot->GetDistance(u);
+            float d = bot->GetDistance(u) + (bot->IsWithinLOSInMap(u) ? 0.0f : 1000.0f);
             if (!best || d < bestDist)
             {
                 best = u;
@@ -725,6 +725,9 @@ namespace romance::ac
         {
             // Mark it with a skull so the player sees which one, then attack the marked target.
             group->SetTargetIcon(kSkullIcon, owner->GetGUID(), best->GetGUID());
+            if (PlayerbotsBridge::IsHealer(bot))
+                return "You marked " + DescribeUnit(best, bot) + " with a skull. You are the group's healer, so you don't attack "
+                       "yourself; you keep them alive while they fight. Tell them.";
             PlayerbotsBridge::Command(bot, owner, "rti skull");
             PlayerbotsBridge::Command(bot, owner, "d attack rti target");
             return "You marked " + DescribeUnit(best, bot) + " with a skull and attacked it.";
@@ -831,6 +834,10 @@ namespace romance::ac
             return cmd.arg.empty() ? "Nothing. There are no enemies around here; tell them."
                                    : "Nothing. There are no \"" + cmd.arg + "\" around here; tell them.";
         }
+        if (PlayerbotsBridge::IsHealer(bot))
+            return "The group is clearing the area" + (cmd.arg.empty() ? std::string() : " of " + cmd.arg) +
+                   ": you mark one enemy after another with a skull. You are the healer, so you don't attack yourself; "
+                   "you keep everyone alive. Tell them.";
         return "You are clearing the area" + (cmd.arg.empty() ? std::string() : " of " + cmd.arg) +
                ": you mark one enemy after another with a skull and attack it, until none are left.";
     }
@@ -863,15 +870,37 @@ namespace romance::ac
             return false;
 
         Unit* current = h.current ? ObjectAccessor::GetUnit(*bots.front(), h.current) : nullptr;
+        // Healers keep healing (Playerbots refuses attack orders for them); everyone else attacks.
+        auto order = [&](Player* b, bool force)
+        {
+            if (PlayerbotsBridge::IsHealer(b))
+                return;
+            bool engaged = b->IsInCombat() && current && (b->GetTarget() == current->GetGUID() || b->GetVictim() == current);
+            time_t& last = h.lastOrder[b->GetGUID()];
+            if (!force && (engaged || now - last < 5))
+                return;
+            last = now;
+            if (force)
+                PlayerbotsBridge::Command(b, owner, "rti skull");
+            PlayerbotsBridge::Command(b, owner, "d attack rti target");
+        };
         if (current && current->IsAlive() && bots.front()->IsValidAttackTarget(current))
         {
-            // keep everyone on the marked enemy
+            bool engaged = current->IsInCombat();
             for (Player* b : bots)
-                if (!b->IsInCombat() || b->GetVictim() != current)
-                    PlayerbotsBridge::Command(b, owner, "d attack rti target");
-            return true;
+                engaged = engaged || (b->IsInCombat() && (b->GetTarget() == current->GetGUID() || b->GetVictim() == current));
+            if (engaged || now - h.currentSince < 15)
+            {
+                for (Player* b : bots)
+                    order(b, false);   // keep everyone on the marked enemy
+                return true;
+            }
+            // nobody got to it (behind a wall, no path): leave it and take the next one
+            h.skipped.insert(current->GetGUID());
+            current = nullptr;
+            h.current = ObjectGuid::Empty;
         }
-        if (h.current)
+        else if (h.current)
             ++h.kills;
 
         Player* anchor = bots.front();
@@ -888,6 +917,8 @@ namespace romance::ac
                 continue;
             if (c->hasLootRecipient() && !c->isTappedBy(owner))
                 continue;   // someone else's fight
+            if (h.skipped.count(c->GetGUID()))
+                continue;
             if (!h.entries.empty())
             {
                 if (!h.entries.count(c->GetEntry()))
@@ -905,7 +936,8 @@ namespace romance::ac
             }
             else if (c->GetCreatureType() == CREATURE_TYPE_CRITTER)
                 continue;
-            float d = anchor->GetDistance(c);
+            // enemies she can see first; ones behind walls only when nothing else is left
+            float d = anchor->GetDistance(c) + (anchor->IsWithinLOSInMap(c) ? 0.0f : 1000.0f);
             if (!next || d < bestDist)
             {
                 next = c;
@@ -917,13 +949,12 @@ namespace romance::ac
             h.current = ObjectGuid::Empty;
             return false;
         }
+        h.currentSince = now;
         h.current = next->GetGUID();
+        current = next;
         group->SetTargetIcon(kSkullIcon, owner->GetGUID(), next->GetGUID());
         for (Player* b : bots)
-        {
-            PlayerbotsBridge::Command(b, owner, "rti skull");
-            PlayerbotsBridge::Command(b, owner, "d attack rti target");
-        }
+            order(b, true);
         return true;
     }
 
