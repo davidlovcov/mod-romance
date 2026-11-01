@@ -14,6 +14,10 @@ The in-game interface is the companion addon: **[azerothcore-romance-addon](http
 |---|---|---|
 | ![Companion tab](docs/images/companion.jpg) | ![Chat tab](docs/images/chat.jpg) | ![Character tab](docs/images/character.jpg) |
 
+Her memory after a short questing session (editable in the addon):
+
+![Memory viewer](docs/images/memories.jpg)
+
 More screenshots in the [addon repository](https://github.com/davidlovcov/azerothcore-romance-addon#screenshots).
 
 ## Features
