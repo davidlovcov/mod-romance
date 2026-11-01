@@ -798,6 +798,33 @@ TEST(Service, CustomPresetsPerAccount)
     CHECK_EQ(h.svc->SaveCustomPreset(kAccount, "B", "", mine, "").error, std::string("preset_limit_reached"));
 }
 
+TEST(Service, GameKnowledgeAndCommandOutcomeReachThePrompt)
+{
+    Harness h;
+    h.Activate(h.Key());
+    std::string sys;
+    h.llm->SetResponder([&](LlmRequest const& req)
+    {
+        sys = req.messages[0].content;
+        LlmResult res;
+        res.status = LlmResult::Status::Ok;
+        res.content = ReplyJson("Here you go!");
+        return res;
+    });
+    WorldContext ctx = h.ctx;
+    ctx.knowledge = { "Gold: 12g 30s", "Bags: 14 of 64 slots free" };
+    ctx.commandOutcome = "You opened a trade with them and put 10 gold in it.";
+    ctx.commandHandled = true;
+    // "attack" would normally trigger the movement command; the handled command wins
+    auto r = h.svc->OnPlayerMessage(h.Key(), "give me 10 gold and attack", ChatChannel::Whisper, ctx, h.now);
+    CHECK(r.result == RomanceService::MessageResult::Accepted);
+    CHECK(!r.command.has_value());
+    CHECK(h.WaitSpeak(h.Key()));
+    CHECK_CONTAINS(sys, "Gold: 12g 30s");
+    CHECK_CONTAINS(sys, "What you just did");
+    CHECK_CONTAINS(sys, "put 10 gold in it");
+}
+
 TEST(Service, SettingsValidation)
 {
     Harness h;

@@ -321,6 +321,28 @@ namespace romance
 
     // ================================================================= configuration
 
+    bool RomanceService::WantsCompanionCommand(CompanionKey const& key, std::string const& text, std::string* displayName)
+    {
+        Session* s = Find(key);
+        if (!s || _shutdown || !s->rec.settings.aiEnabled)
+            return false;
+        std::string cname = s->rec.personality.name.empty() ? s->rec.companionName : s->rec.personality.name;
+        if (displayName)
+            *displayName = cname;
+        bool natural = _cfg.naturalLanguageCommands && s->rec.settings.naturalCommands;
+        if (!natural)
+            return false;
+        return _classifier.Classify(text, cname, natural).route == MessageRoute::Roleplay;
+    }
+
+    std::optional<Stage> RomanceService::StageOf(CompanionKey const& key) const
+    {
+        auto it = _sessions.find(key);
+        if (it == _sessions.end())
+            return std::nullopt;
+        return it->second->rec.relationship.stage;
+    }
+
     RomanceService::SaveResult RomanceService::SavePersonality(CompanionKey const& key, uint32_t ownerAccount, std::string const& companionName,
                                                                PersonalityProfile profile, TimePoint now)
     {
@@ -824,6 +846,10 @@ namespace romance
                 decision = d;
         }
 
+        // The game layer already carried out a companion command (give, cast, attack a named enemy, ...):
+        // the outcome is in the context and no second command may run.
+        if (ctx.commandHandled)
+            cm.action.reset();
         if (cm.action)
         {
             if (IsMovementCommand(*cm.action))
@@ -989,6 +1015,11 @@ namespace romance
             case GameEventType::EquipmentChanged:
                 if (!ev.detail.empty())
                     AddRecentEvent(*s, "you equipped " + ev.detail, now);
+                break;
+            case GameEventType::CompanionNotice:
+                text = ev.detail;
+                priority = std::max(1, std::min(3, ev.value));
+                always = ev.value >= 2;
                 break;
             default:
                 break;

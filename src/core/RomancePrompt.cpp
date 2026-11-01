@@ -338,13 +338,25 @@ namespace romance
             if (w.inDungeon || w.inRaid)
                 o << "- You are inside a " << (w.inRaid ? "raid" : "dungeon") << ".\n";
             if (!w.followState.empty() && w.followState != "unknown")
-                o << "- You are currently " << (w.followState == "stay" ? "waiting where you were told to stay" : "following them") << ".\n";
+                o << "- You are currently "
+                  << (w.followState == "stay" ? "waiting where you were told to stay"
+                      : w.followState == "lead" ? "leading the way (they follow you)" : "following them") << ".\n";
             if (!w.equipmentSummary.empty())
                 o << "- Your gear: " << w.equipmentSummary << "\n";
             for (auto const& e : w.recentEvents)
                 o << "- Recently: " << e << "\n";
+            if (!w.knowledge.empty())
+            {
+                o << "\n## What you know about yourself right now (real game data)\n";
+                for (auto const& k : w.knowledge)
+                    o << "- " << k << "\n";
+                o << "Use this to answer their question truthfully; mention only what they asked about, in your own words.\n";
+            }
             o << "Only mention things listed here or in the conversation; never claim to see anything else.\n";
         }
+        if (!in.world.commandOutcome.empty())
+            o << "\n## What you just did\nBecause they asked: " << in.world.commandOutcome
+              << "\nReact to it naturally in a few words. Do not claim anything that is not stated here.\n";
 
         if (in.proposal && in.proposal->kind != ProposalKind::None)
         {

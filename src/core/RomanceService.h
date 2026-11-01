@@ -170,6 +170,11 @@ namespace romance
         // True if `text` addresses this companion by name or nickname.
         bool IsAddressed(CompanionKey const& key, std::string const& text) const;
         TimePoint LastActivity(CompanionKey const& key) const;
+        // For the game layer: true if `text` would reach the AI as roleplay (not a raw Playerbots command)
+        // and the companion accepts natural-language commands. `displayName` = the name she goes by.
+        bool WantsCompanionCommand(CompanionKey const& key, std::string const& text, std::string* displayName);
+        // Relationship stage of an active companion (nullopt if not active).
+        std::optional<Stage> StageOf(CompanionKey const& key) const;
         void OnGameEvent(CompanionKey const& key, GameEvent const& ev, TimePoint now);
 
         struct GiftOutcome

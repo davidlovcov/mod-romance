@@ -34,6 +34,7 @@ namespace romance::ac
     {
         constexpr uint32 kTickIntervalMs = 1000;
         constexpr uint32 kPollIntervalMs = 500;
+        constexpr uint32 kControlIntervalMs = 5000;
         constexpr time_t kSummonTimeout = 60;
         constexpr time_t kTradeSnapshotTtl = 120;
         constexpr float kNearDeathPct = 25.0f;
@@ -100,6 +101,7 @@ namespace romance::ac
             if (code == "estranged") return "She doesn't want to see you right now.";
             if (code == "module_disabled") return "The romance module is disabled.";
             if (code == "unknown_preset") return "That preset does not exist (anymore).";
+            if (code == "not_online") return "This companion is not in the world right now. Call them first.";
             if (code == "preset_label_required") return "Give the preset a name first.";
             if (code == "preset_limit_reached") return "You have reached the maximum number of custom presets. Delete one first.";
             if (code == "activation_failed") return "The companion joined, but the AI could not be activated.";
@@ -155,6 +157,7 @@ namespace romance::ac
         if (_service)
             _service->Shutdown();
         _service = std::make_unique<RomanceService>(_cfg, *_repo, std::make_shared<OllamaBackend>(_cfg.ollamaUrl));
+        _control = std::make_unique<CompanionControl>(_cfg);
     }
 
     void RomanceManager::OnShutdown()
@@ -173,9 +176,16 @@ namespace romance::ac
             return;
         _pollTimer += diff;
         _tickTimer += diff;
+        _controlTimer += diff;
         ProcessInbox();
         ProcessPendingLogins();
         ProcessTrades();
+        _control->Update(Now());
+        if (_controlTimer >= kControlIntervalMs)
+        {
+            _controlTimer = 0;
+            PollControl();
+        }
         if (_pollTimer >= kPollIntervalMs)
         {
             _pollTimer = 0;
@@ -703,6 +713,7 @@ namespace romance::ac
             return true;        // not a romance companion: Playerbots handles it as usual
 
         auto ctx = BuildContext(key).value_or(WorldContext{});
+        ApplyControl(sender, receiver, key, msg, ctx);
         auto res = _service->OnPlayerMessage(key, msg, ChatChannel::Whisper, ctx, Now());
         switch (res.result)
         {
@@ -734,6 +745,44 @@ namespace romance::ac
             }
         }
         return true;
+    }
+
+    void RomanceManager::ApplyControl(Player* owner, Player* bot, CompanionKey const& key, std::string const& text, WorldContext& ctx)
+    {
+        if (!_cfg.controlEnabled || !owner || !bot || !_service->IsActive(key))
+            return;
+        std::string displayName;
+        if (!_service->WantsCompanionCommand(key, text, &displayName))
+        {
+            // Knowledge questions still get real data when commands are off ("what's in your bags?").
+            if (!displayName.empty())
+                _control->AddKnowledge(ctx, owner, bot, DetectKnowledgeTopics(text));
+            return;
+        }
+        _control->AddKnowledge(ctx, owner, bot, DetectKnowledgeTopics(text));
+        if (auto cmd = ParseCompanionCommand(text, bot->GetName(), displayName))
+        {
+            ctx.commandOutcome = _control->Execute(owner, bot, *cmd, _service->StageOf(key), Now());
+            ctx.commandHandled = !ctx.commandOutcome.empty();
+            if (_cfg.debugLogging)
+                LOG_INFO("module", "[mod-romance] {} -> {}: command {} '{}' => {}", owner->GetName(), bot->GetName(),
+                         CompanionCommandId(cmd->kind), cmd->arg, ctx.commandOutcome);
+        }
+    }
+
+    void RomanceManager::PollControl()
+    {
+        time_t now = Now();
+        for (CompanionKey const& key : _service->ActiveKeys())
+        {
+            Player* owner = ObjectAccessor::FindConnectedPlayer(PlayerGuid(uint32(key.owner)));
+            Player* bot = ObjectAccessor::FindConnectedPlayer(PlayerGuid(uint32(key.companion)));
+            if (!owner || !bot || !owner->IsInWorld() || !bot->IsInWorld())
+                continue;
+            std::string notice = _control->Poll(owner, bot, now);
+            if (!notice.empty())
+                _service->OnGameEvent(key, { GameEventType::CompanionNotice, notice, 2, now }, now);
+        }
     }
 
     bool RomanceManager::OnGroupChat(Player* sender, uint32 type, uint32 lang, std::string& msg)
@@ -780,6 +829,8 @@ namespace romance::ac
         for (CompanionKey const& key : addressed)
         {
             auto ctx = BuildContext(key).value_or(WorldContext{});
+            if (Player* bot = ObjectAccessor::FindConnectedPlayer(PlayerGuid(uint32(key.companion))))
+                ApplyControl(sender, bot, key, msg, ctx);
             auto res = _service->OnPlayerMessage(key, msg, ChatChannel::Party, ctx, Now(), fallback.has_value());
             if (res.result == RomanceService::MessageResult::Accepted && res.command)
             {
@@ -1059,6 +1110,7 @@ namespace romance::ac
         CompanionKey key{ owner->GetGUID().GetCounter(), guidLow };
         _service->Deactivate(key, Now());
         _trackers.erase(key);
+        _control->Forget(PlayerGuid(guidLow));
         if (logout)
             PlayerbotsBridge::Dismiss(owner, PlayerGuid(guidLow));
         return "ok";
@@ -1245,6 +1297,19 @@ namespace romance::ac
             auto res = _service->SavePersonality(key, account, name, PersonalityProfile::FromJson(msg["personality"]), now);
             ack(res.ok, res.error, res.notes);
             sendCompanion();
+        }
+        else if (op == "get_character_sheet")
+        {
+            Player* bot = ObjectAccessor::FindConnectedPlayer(PlayerGuid(guid));
+            if (!bot || !bot->IsInWorld())
+            {
+                ack(false, "not_online");
+                return;
+            }
+            Json p = _control->CharacterSheet(player, bot);
+            p.Set("op", "character_sheet");
+            p.Set("guid", int64_t(guid));
+            Reply(player, msg, p);
         }
         else if (op == "apply_preset")
         {

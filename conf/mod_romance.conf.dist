@@ -154,6 +154,48 @@ Romance.Chat.MaxInstructionChars = 1200
 #        Default:     20
 Romance.Presets.MaxCustomPerAccount = 20
 
+###################################################################################################
+# COMPANION CONTROL
+#
+#    Romance.Control.Enable
+#        Description: Natural-language commands in chat: give items/gold (trade), cast a spell,
+#                     attack an enemy by name or type, sell junk, share quests, lead to a quest.
+#                     Questions about her bags, quests, spells, gold, XP and your target are
+#                     answered from real game data.
+#        Default:     1
+Romance.Control.Enable = 1
+
+#    Romance.Control.GiveMinStage
+#        Description: Relationship stage needed before she hands over items or gold.
+#                     0 strangers, 1 acquaintances, 2 friends, 3 close friends, 4 romantic interest,
+#                     5 dating, 6 engaged, 7 married.
+#        Default:     2
+Romance.Control.GiveMinStage = 2
+
+#    Romance.Control.MaxGoldPerRequest
+#        Description: Most gold she gives for one request. 0 = no limit.
+#        Default:     50
+Romance.Control.MaxGoldPerRequest = 50
+
+#    Romance.Control.AutoSellJunk / AutoSellFreeSlots
+#        Description: Sell gray items automatically when she stands at a vendor and has this many
+#                     free bag slots or fewer.
+#        Default:     1 / 2
+Romance.Control.AutoSellJunk = 1
+Romance.Control.AutoSellFreeSlots = 2
+
+#    Romance.Control.LeadMode
+#        Description: (Experimental) "lead the way" makes her walk to one of her quests using the
+#                     Playerbots "new rpg" strategy; she follows you again when the quest is done
+#                     or when you say "I'll lead".
+#        Default:     1
+Romance.Control.LeadMode = 1
+
+#    Romance.Control.CommandRange
+#        Description: Yards to search for an enemy named in a command ("attack the wolf").
+#        Default:     50
+Romance.Control.CommandRange = 50
+
 #    Romance.Chat.PartyOnly
 #        Description: Companions always answer in party chat instead of whispers.
 #        Default:     0

@@ -31,7 +31,7 @@ if(ROMANCE_SANITIZE AND NOT MSVC)
   target_link_options(romance_core PUBLIC -fsanitize=address,undefined)
 endif()
 
-set(TEST_SOURCES test_main.cpp test_core_units.cpp test_service.cpp)
+set(TEST_SOURCES test_main.cpp test_core_units.cpp test_service.cpp test_commands.cpp)
 if(NOT WIN32)
   list(APPEND TEST_SOURCES test_http.cpp)
 endif()

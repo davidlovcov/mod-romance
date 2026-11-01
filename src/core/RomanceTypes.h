@@ -285,6 +285,13 @@ namespace romance
         std::string timeOfDay;         // morning | afternoon | evening | night
         std::vector<std::string> recentEvents; // short, server-observed descriptions
         std::string equipmentSummary;
+        // Game knowledge requested by the player's message (bags, quests, spells, gold, xp, target),
+        // formatted by the game layer. Only filled when asked, to keep prompts short.
+        std::vector<std::string> knowledge;
+        // A command from the player's message the game layer already carried out (or refused), e.g.
+        // "You opened a trade and put 10 gold in it." Empty if the message contained none.
+        std::string commandOutcome;
+        bool commandHandled = false;   // true: the service must not run its own movement command
 
         bool BusyForChat(bool blockInInstances) const;
     };
@@ -305,6 +312,8 @@ namespace romance
         Dismissed,
         PlayerReturned,   // player came back after being away / logged in
         EquipmentChanged,
+        CompanionNotice,  // something about her own state (bags full, lead finished); detail = situation text,
+                          // value = priority 1..3 (>= 2 always gets a reaction)
     };
     char const* GameEventId(GameEventType t);
 

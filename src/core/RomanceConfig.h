@@ -56,6 +56,15 @@ namespace romance
         uint32_t maxPlayerMessageChars = 500;
         uint32_t maxProfileFieldChars = 600;
         uint32_t maxCustomPresets = 20;           // per account
+
+        // companion control (natural-language commands, game knowledge)
+        bool controlEnabled = true;               // give/cast/attack/sell/share/lead from chat
+        uint32_t giveMinStage = 2;                // stage needed before she gives items or gold (2 = friends)
+        uint64_t maxGoldPerRequest = 500000;      // copper (50 gold); 0 = no limit
+        bool autoSellJunk = true;                 // sell gray items at a vendor when bags are nearly full
+        uint32_t autoSellFreeSlots = 2;           // "nearly full" = this many free slots or fewer
+        bool leadMode = true;                     // experimental: she leads to a quest (Playerbots "new rpg")
+        float commandRange = 50.0f;               // yards to search for enemies named in commands
         uint32_t maxInstructionChars = 1200;
         bool partyOnlyChat = false;           // force replies to party chat
         std::string allowedLanguages = "auto"; // auto | en | de | en,de

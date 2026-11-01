@@ -37,7 +37,7 @@ namespace romance
         char const* const kGameEventIds[] = {
             "combat_start", "combat_end", "player_near_death", "player_died", "companion_died",
             "companion_level_up", "player_level_up", "quest_complete", "notable_loot", "zone_changed",
-            "summoned", "dismissed", "player_returned", "equipment_changed" };
+            "summoned", "dismissed", "player_returned", "equipment_changed", "companion_notice" };
         char const* const kActionIds[] = {
             "none", "follow", "stay", "attack", "flee", "heal",
             "emote_hug", "emote_kiss", "emote_wave", "emote_laugh", "emote_blush",

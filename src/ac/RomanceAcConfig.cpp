@@ -71,6 +71,13 @@ namespace romance::ac
         c.maxPlayerMessageChars = Opt<uint32>("Romance.Chat.MaxPlayerMessageChars", c.maxPlayerMessageChars);
         c.maxProfileFieldChars = Opt<uint32>("Romance.Chat.MaxProfileFieldChars", c.maxProfileFieldChars);
         c.maxCustomPresets = Opt<uint32>("Romance.Presets.MaxCustomPerAccount", c.maxCustomPresets);
+        c.controlEnabled = Opt<bool>("Romance.Control.Enable", c.controlEnabled);
+        c.giveMinStage = std::min<uint32>(7, Opt<uint32>("Romance.Control.GiveMinStage", c.giveMinStage));
+        c.maxGoldPerRequest = uint64_t(Opt<uint32>("Romance.Control.MaxGoldPerRequest", uint32(c.maxGoldPerRequest / 10000))) * 10000;
+        c.autoSellJunk = Opt<bool>("Romance.Control.AutoSellJunk", c.autoSellJunk);
+        c.autoSellFreeSlots = Opt<uint32>("Romance.Control.AutoSellFreeSlots", c.autoSellFreeSlots);
+        c.leadMode = Opt<bool>("Romance.Control.LeadMode", c.leadMode);
+        c.commandRange = std::max(5.0f, std::min(100.0f, Opt<float>("Romance.Control.CommandRange", c.commandRange)));
         c.maxInstructionChars = Opt<uint32>("Romance.Chat.MaxInstructionChars", c.maxInstructionChars);
         c.partyOnlyChat = Opt<bool>("Romance.Chat.PartyOnly", c.partyOnlyChat);
         c.allowedLanguages = Opt<std::string>("Romance.Chat.Language", c.allowedLanguages);

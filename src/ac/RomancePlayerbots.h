@@ -36,7 +36,16 @@ namespace romance::ac
         // Routes a plain Playerbots chat command ("follow", "stay", ...) as if whispered by the master.
         static bool Command(Player* bot, Player* master, std::string const& command);
         static bool SayToParty(Player* bot, std::string const& text);
+        // follow | stay | lead | unknown
         static std::string FollowState(Player* bot);
+
+        // Lead mode (experimental): the companion walks to `questId` with the Playerbots "new rpg"
+        // strategy instead of following; StopLead switches back to following.
+        static bool StartLead(Player* bot, Player* master, uint32 questId);
+        static bool StopLead(Player* bot, Player* master);
+        static bool IsLeading(Player* bot);
+        // Quest the leading companion is working on (0 = none / finished / switched to something else).
+        static uint32 LeadQuest(Player* bot);
     };
 }
 

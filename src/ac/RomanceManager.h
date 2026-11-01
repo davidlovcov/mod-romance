@@ -17,6 +17,7 @@
 #define MOD_ROMANCE_MANAGER_H
 
 #include "RomanceConfig.h"
+#include "RomanceControl.h"
 #include "RomanceProtocol.h"
 #include "RomanceService.h"
 
@@ -158,6 +159,9 @@ namespace romance::ac
         void ProcessInbox();
         void ProcessTrades();
         void Execute(std::vector<OutgoingAction> const& actions);
+        // Game knowledge + natural-language companion commands for one incoming message.
+        void ApplyControl(Player* owner, Player* bot, CompanionKey const& key, std::string const& text, WorldContext& ctx);
+        void PollControl();
         GiftItem DescribeItem(Item* item, Player* receiver) const;
 
         RomanceConfig _cfg;
@@ -165,6 +169,8 @@ namespace romance::ac
         bool _schemaOk = false;
         std::unique_ptr<RomanceSqlRepository> _repo;
         std::unique_ptr<RomanceService> _service;
+        std::unique_ptr<CompanionControl> _control;
+        uint32 _controlTimer = 0;
 
         std::mutex _inboxMutex;
         std::vector<InboxEvent> _inbox;
