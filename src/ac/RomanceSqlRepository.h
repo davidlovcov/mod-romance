@@ -48,6 +48,9 @@ namespace romance::ac
         std::set<uint64_t> LoadRewardedItemGuids(Guid companion) override;
         void InsertGift(CompanionKey const& key, GiftRecord const& g) override;
         void LogRelationshipEvent(CompanionKey const& key, std::string const& type, std::string const& detail, TimePoint at) override;
+        std::vector<PersonalityPreset> LoadCustomPresets(uint32_t account) override;
+        void SaveCustomPreset(uint32_t account, uint32_t number, PersonalityPreset const& p) override;
+        void DeleteCustomPreset(uint32_t account, uint32_t number) override;
 
     private:
         using PairKey = std::pair<uint64_t, uint64_t>;

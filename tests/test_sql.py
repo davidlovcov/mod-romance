@@ -41,9 +41,11 @@ def check(cond, msg):
 
 
 run(f"DROP DATABASE IF EXISTS {DB}; CREATE DATABASE {DB} CHARACTER SET utf8mb4;", db=None)
-migration = open(f"{root}/data/sql/db-characters/base/mod_romance_2026_11_01_00.sql", encoding="utf-8").read()
-run(migration)
-run(migration)  # idempotent (CREATE TABLE IF NOT EXISTS)
+import glob
+for path in sorted(glob.glob(f"{root}/data/sql/db-characters/base/*.sql")):
+    migration = open(path, encoding="utf-8").read()
+    run(migration)
+    run(migration)  # idempotent (CREATE TABLE IF NOT EXISTS)
 
 src = open(f"{root}/src/ac/RomanceSqlRepository.cpp", encoding="utf-8").read()
 columns = re.search(r'kCompanionColumns =\s*((?:"[^"]*"\s*)+);', src).group(1)
@@ -51,7 +53,7 @@ columns = "".join(re.findall(r'"([^"]*)"', columns))
 
 # Extract every SQL template passed to Query/Execute/Append.
 templates = []
-for m in re.finditer(r'(?:CharacterDatabase\.(?:Query|Execute)|trans->Append)\(\s*((?:"(?:[^"\\]|\\.)*"\s*)+)', src):
+for m in re.finditer(r'(?:CharacterDatabase\.(?:Query|Execute|DirectExecute)|trans->Append)\(\s*((?:"(?:[^"\\]|\\.)*"\s*)+)', src):
     templates.append("".join(re.findall(r'"((?:[^"\\]|\\.)*)"', m.group(1))))
 check(len(templates) >= 20, f"found {len(templates)} SQL templates in RomanceSqlRepository.cpp")
 
@@ -106,6 +108,16 @@ prune = [t for t in templates if t.startswith("DELETE FROM romance_chat_log WHER
 run(prune.replace("{0}", "1").replace("{1}", "2").replace("{2}", "5"))
 check(run("SELECT COUNT(*) FROM romance_chat_log WHERE owner_guid=1 AND companion_guid=2") == "5", "prune keeps newest 5")
 check(run("SELECT MIN(text) FROM romance_chat_log") == "line 15", "prune removed the oldest")
+
+# custom presets
+upsert = [t for t in templates if t.startswith("INSERT INTO romance_preset")][0]
+for label in ("Herbalist", "Herbalist v2"):
+    sql = upsert
+    for value in ("100", "1", label, "desc", "{}"):
+        sql = sql.replace("{}", value, 1)
+    run(sql)
+check(run("SELECT label FROM romance_preset WHERE account_id=100 AND preset_id=1") == "Herbalist v2", "preset upsert updates in place")
+check(run("SELECT COUNT(*) FROM romance_preset") == "1", "one preset row")
 
 run(f"DROP DATABASE {DB}", db=None)
 print(f"{passed} passed, {failed} failed")

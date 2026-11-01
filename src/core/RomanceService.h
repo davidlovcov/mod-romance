@@ -126,9 +126,21 @@ namespace romance
             bool ok = false;
             std::string error;
             std::vector<std::string> notes;
+            std::string id;                       // id of a created object (custom presets)
         };
         SaveResult SavePersonality(CompanionKey const& key, uint32_t ownerAccount, std::string const& companionName,
                                    PersonalityProfile profile, TimePoint now);
+        // Presets: built-in ones plus the account's custom presets.
+        std::vector<PersonalityPreset> ListPresets(uint32_t account);
+        std::optional<PersonalityPreset> FindPresetFor(uint32_t account, std::string const& id);
+        // Replaces the companion's personality with the preset (name/nickname kept).
+        SaveResult ApplyPresetTo(CompanionKey const& key, uint32_t ownerAccount, std::string const& companionName,
+                                 std::string const& presetId, TimePoint now);
+        // Saves `profile` as a custom preset; `replaceId` = "custom:<n>" overwrites one of the account's presets.
+        SaveResult SaveCustomPreset(uint32_t account, std::string const& label, std::string const& description,
+                                    PersonalityProfile profile, std::string const& replaceId);
+        bool DeleteCustomPreset(uint32_t account, std::string const& id);
+
         SaveResult SetInitialRelationship(CompanionKey const& key, uint32_t ownerAccount, std::string const& companionName,
                                           Stage stage, bool romantic, std::string const& backstory, TimePoint now);
         SaveResult SaveSettings(CompanionKey const& key, uint32_t ownerAccount, std::string const& companionName,

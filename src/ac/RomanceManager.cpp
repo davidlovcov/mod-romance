@@ -99,6 +99,9 @@ namespace romance::ac
             if (code == "companion_in_use") return "This companion is already active for another of your characters.";
             if (code == "estranged") return "She doesn't want to see you right now.";
             if (code == "module_disabled") return "The romance module is disabled.";
+            if (code == "unknown_preset") return "That preset does not exist (anymore).";
+            if (code == "preset_label_required") return "Give the preset a name first.";
+            if (code == "preset_limit_reached") return "You have reached the maximum number of custom presets. Delete one first.";
             if (code == "activation_failed") return "The companion joined, but the AI could not be activated.";
             return code;
         }
@@ -517,6 +520,7 @@ namespace romance::ac
             c.companionInWorld = true;
             c.companionClass = ClassName(bot->getClass());
             c.companionRace = RaceName(bot->getRace());
+            c.companionGender = bot->getGender() == GENDER_FEMALE ? "female" : "male";
             c.companionLevel = bot->GetLevel();
             c.companionHealthPct = int(bot->GetHealthPct());
             c.companionManaPct = bot->getPowerType() == POWER_MANA ? int(bot->GetPowerPct(POWER_MANA)) : -1;
@@ -930,6 +934,14 @@ namespace romance::ac
         return CharacterStatus::Available;
     }
 
+    Json RomanceManager::PresetListJson(uint32 account)
+    {
+        Json presets = Json::MakeArray();
+        for (auto const& pr : _service->ListPresets(account))
+            presets.Push(pr.ToJson());
+        return presets;
+    }
+
     Json RomanceManager::BuildCharacterList(Player* owner)
     {
         uint32 myAccount = owner->GetSession()->GetAccountId();
@@ -1078,18 +1090,8 @@ namespace romance::ac
             f.Set("playerbots", PlayerbotsBridge::Available());
             f.Set("memory", _cfg.memoryEnabled);
             p.Set("features", f);
-            Json presets = Json::MakeArray();
-            for (auto const& pr : BuiltInPresets())
-            {
-                Json j = Json::MakeObject();
-                j.Set("id", pr.id);
-                j.Set("label", pr.label);
-                j.Set("description", pr.description);
-                j.Set("stage", StageId(pr.suggestedStage));
-                j.Set("profile", pr.profile.ToJson());
-                presets.Push(j);
-            }
-            p.Set("presets", presets);
+            p.Set("presets", PresetListJson(account));
+            p.Set("maxCustomPresets", int64_t(_cfg.maxCustomPresets));
             Json stages = Json::MakeArray();
             for (int i = 0; i < kStageCount; ++i)
             {
@@ -1147,6 +1149,37 @@ namespace romance::ac
             p.Set("op", "ack");
             p.Set("for", op);
             p.Set("ok", res.ok);
+            Reply(player, msg, p);
+            return;
+        }
+        if (op == "list_presets" || op == "save_preset" || op == "delete_preset")
+        {
+            Json p = Json::MakeObject();
+            p.Set("op", "presets");
+            bool ok = true;
+            std::string code;
+            if (op == "save_preset")
+            {
+                auto res = _service->SaveCustomPreset(account, msg.GetString("label"), msg.GetString("description"),
+                                                      PersonalityProfile::FromJson(msg["personality"]), msg.GetString("replace"));
+                ok = res.ok;
+                code = res.error;
+                p.Set("savedId", res.id);
+            }
+            else if (op == "delete_preset")
+            {
+                ok = _service->DeleteCustomPreset(account, msg.GetString("preset"));
+                if (!ok)
+                    code = "unknown_preset";
+            }
+            p.Set("for", op);
+            p.Set("ok", ok);
+            if (!code.empty())
+            {
+                p.Set("code", code);
+                p.Set("message", HumanError(code, _cfg.maxActiveCompanionsPerPlayer));
+            }
+            p.Set("presets", PresetListJson(account));
             Reply(player, msg, p);
             return;
         }
@@ -1215,15 +1248,7 @@ namespace romance::ac
         }
         else if (op == "apply_preset")
         {
-            PersonalityPreset const* preset = FindPreset(msg.GetString("preset"));
-            if (!preset)
-            {
-                ReplyError(player, msg, "unknown_preset");
-                return;
-            }
-            CompanionRecord rec = _service->GetOrCreateRecord(key, account, name, now);
-            ApplyPreset(rec.personality, *preset);
-            auto res = _service->SavePersonality(key, account, name, rec.personality, now);
+            auto res = _service->ApplyPresetTo(key, account, name, msg.GetString("preset"), now);
             ack(res.ok, res.error, res.notes);
             sendCompanion();
         }

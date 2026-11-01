@@ -263,6 +263,7 @@ namespace romance
         std::string area;
         std::string companionClass;
         std::string companionRace;
+        std::string companionGender;          // "female" | "male" (the character's model)
         int companionLevel = 0;
         std::string playerName;
         std::string playerClass;

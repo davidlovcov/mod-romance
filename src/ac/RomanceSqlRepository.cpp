@@ -52,7 +52,8 @@ namespace romance::ac
     bool RomanceSqlRepository::CheckSchema()
     {
         static char const* const tables[] = { "romance_companion", "romance_player_profile", "romance_memory",
-                                              "romance_chat_log", "romance_gift_log", "romance_relationship_log" };
+                                              "romance_chat_log", "romance_gift_log", "romance_relationship_log",
+                                              "romance_preset" };
         bool ok = true;
         for (char const* t : tables)
         {
@@ -313,5 +314,45 @@ namespace romance::ac
     {
         CharacterDatabase.Execute("INSERT INTO romance_relationship_log (owner_guid, companion_guid, type, detail, created_at) VALUES ({}, {}, '{}', '{}', {})",
                                   uint32(key.owner), uint32(key.companion), Esc(LimitUtf8(type, 32)), Esc(LimitUtf8(detail, 255)), int64(at));
+    }
+
+    std::vector<PersonalityPreset> RomanceSqlRepository::LoadCustomPresets(uint32_t account)
+    {
+        std::vector<PersonalityPreset> out;
+        QueryResult r = CharacterDatabase.Query(
+            "SELECT preset_id, label, description, profile FROM romance_preset WHERE account_id = {} ORDER BY preset_id", account);
+        if (!r)
+            return out;
+        do
+        {
+            Field* f = r->Fetch();
+            PersonalityPreset p;
+            p.id = CustomPresetId(f[0].Get<uint32>());
+            p.label = f[1].Get<std::string>();
+            p.description = f[2].Get<std::string>();
+            p.custom = true;
+            if (auto j = Json::Parse(f[3].Get<std::string>()))
+                p.profile = PersonalityProfile::FromJson(*j);
+            p.profile.Sanitize(4000, 4000);
+            p.profile.preset = p.id;
+            out.push_back(std::move(p));
+        } while (r->NextRow());
+        return out;
+    }
+
+    void RomanceSqlRepository::SaveCustomPreset(uint32_t account, uint32_t number, PersonalityPreset const& p)
+    {
+        // Player-triggered and rare: written directly so the list sent right after is current.
+        CharacterDatabase.DirectExecute(
+            "INSERT INTO romance_preset (account_id, preset_id, label, description, profile, updated_at) "
+            "VALUES ({}, {}, '{}', '{}', '{}', UNIX_TIMESTAMP()) "
+            "ON DUPLICATE KEY UPDATE label = VALUES(label), description = VALUES(description), profile = VALUES(profile), "
+            "updated_at = VALUES(updated_at)",
+            account, number, Esc(LimitUtf8(p.label, 64)), Esc(LimitUtf8(p.description, 255)), Esc(p.profile.ToJson().Dump()));
+    }
+
+    void RomanceSqlRepository::DeleteCustomPreset(uint32_t account, uint32_t number)
+    {
+        CharacterDatabase.DirectExecute("DELETE FROM romance_preset WHERE account_id = {} AND preset_id = {}", account, number);
     }
 }

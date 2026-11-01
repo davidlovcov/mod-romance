@@ -148,6 +148,12 @@ Romance.Chat.MaxPlayerMessageChars = 500
 Romance.Chat.MaxProfileFieldChars = 600
 Romance.Chat.MaxInstructionChars = 1200
 
+#    Romance.Presets.MaxCustomPerAccount
+#        Description: How many custom personality presets a player account can save
+#                     ("Save as preset" in the addon). 0 disables custom presets.
+#        Default:     20
+Romance.Presets.MaxCustomPerAccount = 20
+
 #    Romance.Chat.PartyOnly
 #        Description: Companions always answer in party chat instead of whispers.
 #        Default:     0

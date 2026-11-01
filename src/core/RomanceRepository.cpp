@@ -176,4 +176,31 @@ namespace romance
         std::lock_guard<std::mutex> g(_m);
         return _writes;
     }
+
+    std::vector<PersonalityPreset> InMemoryRepository::LoadCustomPresets(uint32_t account)
+    {
+        std::lock_guard<std::mutex> g(_m);
+        std::vector<PersonalityPreset> out;
+        auto it = _presets.find(account);
+        if (it != _presets.end())
+            for (auto const& [n, p] : it->second)
+                out.push_back(p);
+        return out;
+    }
+
+    void InMemoryRepository::SaveCustomPreset(uint32_t account, uint32_t number, PersonalityPreset const& p)
+    {
+        std::lock_guard<std::mutex> g(_m);
+        _presets[account][number] = p;
+        ++_writes;
+    }
+
+    void InMemoryRepository::DeleteCustomPreset(uint32_t account, uint32_t number)
+    {
+        std::lock_guard<std::mutex> g(_m);
+        auto it = _presets.find(account);
+        if (it != _presets.end())
+            it->second.erase(number);
+        ++_writes;
+    }
 }

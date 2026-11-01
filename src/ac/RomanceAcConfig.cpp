@@ -70,6 +70,7 @@ namespace romance::ac
         c.storedChatTurns = std::max<uint32>(c.historyTurns, Opt<uint32>("Romance.Chat.StoredTurns", c.storedChatTurns));
         c.maxPlayerMessageChars = Opt<uint32>("Romance.Chat.MaxPlayerMessageChars", c.maxPlayerMessageChars);
         c.maxProfileFieldChars = Opt<uint32>("Romance.Chat.MaxProfileFieldChars", c.maxProfileFieldChars);
+        c.maxCustomPresets = Opt<uint32>("Romance.Presets.MaxCustomPerAccount", c.maxCustomPresets);
         c.maxInstructionChars = Opt<uint32>("Romance.Chat.MaxInstructionChars", c.maxInstructionChars);
         c.partyOnlyChat = Opt<bool>("Romance.Chat.PartyOnly", c.partyOnlyChat);
         c.allowedLanguages = Opt<std::string>("Romance.Chat.Language", c.allowedLanguages);

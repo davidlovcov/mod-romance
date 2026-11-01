@@ -753,6 +753,51 @@ TEST(Service, SavedNameSurvivesReactivation)
     CHECK_CONTAINS(sys, "not what you are called");
 }
 
+TEST(Service, CustomPresetsPerAccount)
+{
+    Harness h;
+    PersonalityProfile mine;
+    mine.name = "Elara";
+    mine.nickname = "Ela";
+    mine.background = "A herbalist from Ashenvale.";
+    mine.customInstructions = "Talks about plants a lot.";
+    mine.outgoing = 80;
+    auto r = h.svc->SaveCustomPreset(kAccount, "Herbalist", "Plant lover", mine, "");
+    CHECK(r.ok);
+    CHECK_EQ(r.id, std::string("custom:1"));
+    CHECK(!h.svc->SaveCustomPreset(kAccount, "   ", "", mine, "").ok);
+
+    auto list = h.svc->ListPresets(kAccount);
+    CHECK_EQ(list.size(), BuiltInPresets().size() + 1);
+    CHECK(list.back().custom);
+    CHECK(list.back().profile.name.empty());          // name is not part of a template
+    CHECK_EQ(h.svc->ListPresets(999).size(), BuiltInPresets().size()); // other accounts don't see it
+
+    // apply the custom preset to a companion that has a different story
+    PersonalityProfile lyra;
+    lyra.name = "Lyra";
+    lyra.background = "Something else.";
+    h.svc->SavePersonality(h.Key(kArthas, kLyra), kAccount, "Lyra", lyra, h.now);
+    auto ap = h.svc->ApplyPresetTo(h.Key(kArthas, kLyra), kAccount, "Lyra", "custom:1", h.now);
+    CHECK(ap.ok);
+    auto rec = h.repo.LoadCompanion(h.Key(kArthas, kLyra));
+    CHECK_EQ(rec->personality.name, std::string("Lyra"));
+    CHECK_EQ(rec->personality.background, std::string("A herbalist from Ashenvale."));
+    CHECK_EQ(rec->personality.outgoing, 80);
+    CHECK_EQ(rec->personality.preset, std::string("custom:1"));
+
+    // overwrite, foreign delete, delete
+    CHECK_EQ(h.svc->SaveCustomPreset(kAccount, "Herbalist v2", "", mine, "custom:1").id, std::string("custom:1"));
+    CHECK(!h.svc->DeleteCustomPreset(999, "custom:1"));
+    CHECK(!h.svc->ApplyPresetTo(h.Key(kArthas, kLyra), 999, "Lyra", "custom:1", h.now).ok);
+    CHECK(h.svc->DeleteCustomPreset(kAccount, "custom:1"));
+    CHECK_EQ(h.svc->ListPresets(kAccount).size(), BuiltInPresets().size());
+
+    h.cfg.maxCustomPresets = 1;
+    CHECK(h.svc->SaveCustomPreset(kAccount, "A", "", mine, "").ok);
+    CHECK_EQ(h.svc->SaveCustomPreset(kAccount, "B", "", mine, "").error, std::string("preset_limit_reached"));
+}
+
 TEST(Service, SettingsValidation)
 {
     Harness h;

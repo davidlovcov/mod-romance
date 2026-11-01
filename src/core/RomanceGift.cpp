@@ -134,7 +134,7 @@ namespace romance
             if (!item.usableByCompanion)
             {
                 usefulness = 0;
-                g.notes.push_back("she cannot use this item (wrong class or armor type)");
+                g.notes.push_back("you cannot use this item (wrong class or armor type)");
             }
             else if (item.equippedItemLevel < 0)
             {
@@ -147,12 +147,12 @@ namespace romance
                 if (delta > 0)
                 {
                     usefulness = 20 + std::min(30, delta * 2);
-                    g.notes.push_back("a real upgrade over her current gear");
+                    g.notes.push_back("a real upgrade over your current gear");
                 }
                 else
                 {
                     usefulness = 4;
-                    g.notes.push_back("not better than what she already wears");
+                    g.notes.push_back("not better than what you already wear");
                 }
             }
         }
@@ -182,7 +182,7 @@ namespace romance
             if (g.isRing && st.stage <= Stage::Acquaintances)
             {
                 g.awkward = true;
-                g.notes.push_back("a ring from someone she barely knows feels too forward");
+                g.notes.push_back("a ring from someone you barely know feels too forward");
                 f *= 0.5;
             }
             if (!romanticCtx)
@@ -215,12 +215,12 @@ namespace romance
         if (matches(p.likes) || matches(p.interests))
         {
             personal = 25;
-            g.notes.push_back("matches something she loves");
+            g.notes.push_back("matches something you love");
         }
         if (matches(p.dislikes))
         {
             personal = -30;
-            g.notes.push_back("it is something she dislikes");
+            g.notes.push_back("it is something you dislike");
         }
 
         if (g.category == GiftCategory::Junk)
@@ -252,7 +252,7 @@ namespace romance
         }
         double repeat = 1.0 / (1.0 + sameEntry) * (sameCategoryHour >= 3 ? 0.6 : 1.0);
         if (sameEntry > 0)
-            g.notes.push_back("she has received this same item recently");
+            g.notes.push_back("you received this same item recently");
 
         g.score = std::max(0.0, std::min(100.0, raw * repeat));
 

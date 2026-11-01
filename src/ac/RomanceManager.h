@@ -141,6 +141,7 @@ namespace romance::ac
         // ownership & characters
         bool ResolveOwnedCompanion(Player* owner, uint32 guidLow, std::string& name, std::string& error);
         Json BuildCharacterList(Player* owner);
+        Json PresetListJson(uint32 account);
         CharacterStatus StatusFor(Player* owner, uint32 guidLow, std::string& reason);
 
         // companion lifecycle

@@ -763,9 +763,47 @@ TEST(Personality, PresetsIncludeAnimeGirlfriend)
     CHECK(std::find(ag->profile.styles.begin(), ag->profile.styles.end(), "anime") != ag->profile.styles.end());
     PersonalityProfile mine;
     mine.name = "Elara";
+    mine.nickname = "Ela";
+    mine.language = "de";
     mine.background = "Childhood friend.";
+    mine.customInstructions = "Old instructions.";
+    mine.autoAcceptProposals = true;
     ApplyPreset(mine, *ag);
+    // identity survives, everything else is the preset
     CHECK_EQ(mine.name, std::string("Elara"));
-    CHECK_EQ(mine.background, std::string("Childhood friend."));
+    CHECK_EQ(mine.nickname, std::string("Ela"));
+    CHECK_EQ(mine.language, std::string("de"));
+    CHECK(mine.autoAcceptProposals);
+    CHECK_EQ(mine.background, ag->profile.background);
+    CHECK_EQ(mine.customInstructions, ag->profile.customInstructions);
     CHECK_EQ(mine.preset, std::string("anime_girlfriend"));
+}
+
+TEST(Personality, EveryPresetIsComplete)
+{
+    size_t male = 0, female = 0;
+    for (auto const& pr : BuiltInPresets())
+    {
+        PersonalityProfile const& p = pr.profile;
+        for (std::string const* f : { &p.gender, &p.pronouns, &p.background, &p.history, &p.interests, &p.likes, &p.dislikes,
+                                      &p.goals, &p.fears, &p.relationshipPreferences, &p.lore, &p.customInstructions })
+            CHECK(!f->empty());
+        CHECK(p.age >= 18);
+        CHECK(!p.styles.empty());
+        CHECK_EQ(p.preset, pr.id);
+        PersonalityProfile copy = p;
+        CHECK(copy.Sanitize(600, 1200).empty());
+        (p.gender == "male" ? male : female)++;
+    }
+    CHECK(male >= 5);
+    CHECK(female >= 5);
+}
+
+TEST(Personality, CustomPresetIds)
+{
+    CHECK_EQ(CustomPresetNumber("custom:12"), 12u);
+    CHECK_EQ(CustomPresetNumber("custom:"), 0u);
+    CHECK_EQ(CustomPresetNumber("custom:1x"), 0u);
+    CHECK_EQ(CustomPresetNumber("anime_girlfriend"), 0u);
+    CHECK_EQ(CustomPresetId(3), std::string("custom:3"));
 }

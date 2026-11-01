@@ -9,6 +9,7 @@
 #ifndef MOD_ROMANCE_REPOSITORY_H
 #define MOD_ROMANCE_REPOSITORY_H
 
+#include "RomancePresets.h"
 #include "RomanceTypes.h"
 
 #include <map>
@@ -75,6 +76,11 @@ namespace romance
         virtual void InsertGift(CompanionKey const& key, GiftRecord const& g) = 0;
 
         virtual void LogRelationshipEvent(CompanionKey const& key, std::string const& type, std::string const& detail, TimePoint at) = 0;
+
+        // Custom presets belong to an account; `number` is the n of "custom:<n>".
+        virtual std::vector<PersonalityPreset> LoadCustomPresets(uint32_t account) = 0;
+        virtual void SaveCustomPreset(uint32_t account, uint32_t number, PersonalityPreset const& p) = 0; // upsert
+        virtual void DeleteCustomPreset(uint32_t account, uint32_t number) = 0;
     };
 
     // Thread-safe in-process repository (tests, and a fallback if the DB layer is disabled).
@@ -99,6 +105,9 @@ namespace romance
         std::set<uint64_t> LoadRewardedItemGuids(Guid companion) override;
         void InsertGift(CompanionKey const& key, GiftRecord const& g) override;
         void LogRelationshipEvent(CompanionKey const& key, std::string const& type, std::string const& detail, TimePoint at) override;
+        std::vector<PersonalityPreset> LoadCustomPresets(uint32_t account) override;
+        void SaveCustomPreset(uint32_t account, uint32_t number, PersonalityPreset const& p) override;
+        void DeleteCustomPreset(uint32_t account, uint32_t number) override;
 
         struct EventRow { CompanionKey key; std::string type, detail; TimePoint at; };
         std::vector<EventRow> Events() const;
@@ -112,6 +121,7 @@ namespace romance
         std::map<CompanionKey, std::vector<ChatTurn>> _chat;
         std::map<CompanionKey, std::vector<GiftRecord>> _gifts;
         std::vector<EventRow> _events;
+        std::map<uint32_t, std::map<uint32_t, PersonalityPreset>> _presets;
         size_t _writes = 0;
     };
 }

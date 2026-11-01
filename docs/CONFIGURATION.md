@@ -40,6 +40,7 @@ There are two layers:
 | `Romance.Chat.HistoryTurns` / `StoredTurns` | 12 / 80 | Turns sent to the model / kept in the DB |
 | `Romance.Chat.MaxPlayerMessageChars` | 500 | Longer player messages are truncated |
 | `Romance.Chat.MaxProfileFieldChars` / `MaxInstructionChars` | 600 / 1200 | Text limits for personality and profile |
+| `Romance.Presets.MaxCustomPerAccount` | 20 | Custom personality presets a player account can save (0 = none) |
 | `Romance.Chat.PartyOnly` | 0 | Always answer in party chat |
 | `Romance.Chat.Language` | `auto` | `auto` (EN/DE per message), `en`, `de` |
 | `Romance.Chat.NaturalLanguageCommands` | 1 | "follow me" → Playerbots `follow` (allow-list) |

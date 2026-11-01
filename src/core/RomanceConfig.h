@@ -55,6 +55,7 @@ namespace romance
         uint32_t storedChatTurns = 80;        // persisted chat log per companion
         uint32_t maxPlayerMessageChars = 500;
         uint32_t maxProfileFieldChars = 600;
+        uint32_t maxCustomPresets = 20;           // per account
         uint32_t maxInstructionChars = 1200;
         bool partyOnlyChat = false;           // force replies to party chat
         std::string allowedLanguages = "auto"; // auto | en | de | en,de

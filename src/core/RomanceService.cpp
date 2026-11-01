@@ -328,7 +328,7 @@ namespace romance
         r.notes = profile.Sanitize(_cfg.maxProfileFieldChars, _cfg.maxInstructionChars);
         if (profile.name.empty())
             profile.name = companionName;
-        if (!profile.preset.empty() && !FindPreset(profile.preset))
+        if (!profile.preset.empty() && !FindPreset(profile.preset) && !CustomPresetNumber(profile.preset))
             profile.preset.clear();
 
         if (Session* s = Find(key))
@@ -354,6 +354,102 @@ namespace romance
         }
         r.ok = true;
         return r;
+    }
+
+    std::vector<PersonalityPreset> RomanceService::ListPresets(uint32_t account)
+    {
+        std::vector<PersonalityPreset> out = BuiltInPresets();
+        for (auto& p : _repo.LoadCustomPresets(account))
+        {
+            p.custom = true;
+            out.push_back(std::move(p));
+        }
+        return out;
+    }
+
+    std::optional<PersonalityPreset> RomanceService::FindPresetFor(uint32_t account, std::string const& id)
+    {
+        if (PersonalityPreset const* p = FindPreset(id))
+            return *p;
+        if (!CustomPresetNumber(id))
+            return std::nullopt;
+        for (auto& p : _repo.LoadCustomPresets(account))
+            if (p.id == id)
+            {
+                p.custom = true;
+                return p;
+            }
+        return std::nullopt;
+    }
+
+    RomanceService::SaveResult RomanceService::ApplyPresetTo(CompanionKey const& key, uint32_t ownerAccount, std::string const& companionName,
+                                                             std::string const& presetId, TimePoint now)
+    {
+        SaveResult r;
+        auto preset = FindPresetFor(ownerAccount, presetId);
+        if (!preset)
+        {
+            r.error = "unknown_preset";
+            return r;
+        }
+        PersonalityProfile p = GetOrCreateRecord(key, ownerAccount, companionName, now).personality;
+        ApplyPreset(p, *preset);
+        return SavePersonality(key, ownerAccount, companionName, p, now);
+    }
+
+    RomanceService::SaveResult RomanceService::SaveCustomPreset(uint32_t account, std::string const& labelIn, std::string const& description,
+                                                                PersonalityProfile profile, std::string const& replaceId)
+    {
+        SaveResult r;
+        std::string label = Trim(LimitUtf8(labelIn, 40));
+        if (label.empty())
+        {
+            r.error = "preset_label_required";
+            return r;
+        }
+        r.notes = profile.Sanitize(_cfg.maxProfileFieldChars, _cfg.maxInstructionChars);
+        std::vector<PersonalityPreset> existing = _repo.LoadCustomPresets(account);
+        uint32_t number = CustomPresetNumber(replaceId);
+        if (number && std::none_of(existing.begin(), existing.end(), [&](PersonalityPreset const& p) { return p.id == replaceId; }))
+            number = 0; // not one of this account's presets: create a new one
+        if (!number)
+        {
+            if (existing.size() >= _cfg.maxCustomPresets)
+            {
+                r.error = "preset_limit_reached";
+                return r;
+            }
+            for (auto const& p : existing)
+                number = std::max(number, CustomPresetNumber(p.id));
+            ++number;
+        }
+        PersonalityPreset preset;
+        preset.id = CustomPresetId(number);
+        preset.label = label;
+        preset.description = Trim(LimitUtf8(description, 200));
+        preset.custom = true;
+        // A preset is a personality template: the companion's own name and nickname are not part of it.
+        profile.name.clear();
+        profile.nickname.clear();
+        profile.stageLabels = {};
+        profile.preset = preset.id;
+        preset.profile = profile;
+        _repo.SaveCustomPreset(account, number, preset);
+        r.ok = true;
+        r.id = preset.id;
+        return r;
+    }
+
+    bool RomanceService::DeleteCustomPreset(uint32_t account, std::string const& id)
+    {
+        uint32_t number = CustomPresetNumber(id);
+        if (!number)
+            return false;
+        auto existing = _repo.LoadCustomPresets(account);
+        if (std::none_of(existing.begin(), existing.end(), [&](PersonalityPreset const& p) { return p.id == id; }))
+            return false;
+        _repo.DeleteCustomPreset(account, number);
+        return true;
     }
 
     RomanceService::SaveResult RomanceService::SetInitialRelationship(CompanionKey const& key, uint32_t ownerAccount,
@@ -393,7 +489,7 @@ namespace romance
         if (stage >= Stage::Dating)
         {
             static char const* const what[] = { "", "", "", "", "", "are a couple", "are engaged", "are married" };
-            seeds.push_back({ MemoryKind::Relationship, cname + " and " + (s ? pname : std::string("her partner")) + " " + what[int(stage)] + "." });
+            seeds.push_back({ MemoryKind::Relationship, cname + " and " + (s ? pname : std::string("their partner")) + " " + what[int(stage)] + "." });
         }
 
         if (s)
@@ -1414,7 +1510,7 @@ namespace romance
                 switch (d.kind)
                 {
                     case ProposalKind::Dating: text = cname + " and " + pname + " became a couple" + where + "."; break;
-                    case ProposalKind::Engagement: text = pname + " asked " + cname + " to marry them and she said yes: they got engaged" + where + "."; break;
+                    case ProposalKind::Engagement: text = pname + " asked " + cname + " to marry them and the answer was yes: they got engaged" + where + "."; break;
                     case ProposalKind::Marriage: text = cname + " and " + pname + " were married" + where + "."; break;
                     case ProposalKind::Breakup: text = pname + " ended the romantic relationship with " + cname + where + "."; importance = 90; break;
                     default: break;

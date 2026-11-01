@@ -251,8 +251,14 @@ namespace romance
 
         o << "## Who you are\n";
         o << "- Age: " << std::max(18, p.age) << "\n";
-        AddIf(o, "Gender", p.gender);
-        AddIf(o, "Pronouns", p.pronouns);
+        std::string gender = p.gender.empty() ? in.world.companionGender : p.gender;
+        std::string pronouns = p.pronouns;
+        if (pronouns.empty() && gender == "female")
+            pronouns = "she/her";
+        else if (pronouns.empty() && gender == "male")
+            pronouns = "he/him";
+        AddIf(o, "Gender", gender);
+        AddIf(o, "Pronouns", pronouns);
         o << "- Personality: " << DescribeTraits(p) << "\n";
         AddIf(o, "Background", p.background);
         AddIf(o, "Personal history", p.history);
@@ -489,7 +495,7 @@ namespace romance
                                                                   std::string const& playerName, std::string const& language)
     {
         std::ostringstream sys;
-        sys << "You maintain the long-term memory of " << companionName << ", a character in World of Warcraft, about her time with "
+        sys << "You maintain the long-term memory of " << companionName << ", a character in World of Warcraft, about the time spent with "
             << playerName << ". Summarize the conversation below in 1-3 sentences from " << companionName
             << "'s point of view (third person, past tense). Then list up to 4 durable facts worth remembering "
                "(preferences, personal facts, promises, important moments). Only include things that were actually said or "
