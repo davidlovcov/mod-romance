@@ -104,6 +104,7 @@ namespace romance::ac
             time_t lastMove = 0;
             float lastX = 0, lastY = 0;
             uint32 stuck = 0;
+            bool paused = false;           // "wait": she stays where she is and keeps the lead
         };
 
         std::string GiveItem(Player* owner, Player* bot, CompanionCommand const& cmd, time_t now);
@@ -121,6 +122,7 @@ namespace romance::ac
         void FinishLead(Player* owner, Player* bot, std::string const& notice);
         std::string StartLead(Player* owner, Player* bot, CompanionCommand const& cmd, time_t now);
         std::string StopLead(Player* owner, Player* bot);
+        std::string ResumeLead(Player* owner, Player* bot);
         void Trade(Player* owner, Player* bot, std::string const& command, time_t now);
 
         RomanceConfig const& _cfg;

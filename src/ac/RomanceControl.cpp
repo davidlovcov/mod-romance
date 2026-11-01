@@ -564,6 +564,19 @@ namespace romance::ac
             case CompanionCommandKind::ShareQuest: return Share(owner, bot, cmd, now);
             case CompanionCommandKind::Lead: return StartLead(owner, bot, cmd, now);
             case CompanionCommandKind::StopLead: return StopLead(owner, bot);
+            case CompanionCommandKind::PauseLead:
+            {
+                auto it = _leads.find(bot->GetGUID());
+                if (it == _leads.end())
+                    return "";   // not leading: the normal Playerbots "stay"
+                it->second.paused = true;
+                bot->GetMotionMaster()->Clear();
+                bot->StopMoving();
+                return "You stopped and wait here. You are still leading the way to \"" + it->second.title +
+                       "\" and continue when they say so.";
+            }
+            case CompanionCommandKind::ResumeLead:
+                return _leads.count(bot->GetGUID()) ? ResumeLead(owner, bot) : "";
             default: return "";
         }
     }
@@ -1016,6 +1029,10 @@ namespace romance::ac
     {
         if (!_cfg.leadMode || !PlayerbotsBridge::Available())
             return "Nothing. Leading the way is not possible here; you keep following them. Tell them.";
+        // "lead again" while a lead is paused: continue it
+        if (cmd.arg.empty())
+            if (auto cur = _leads.find(bot->GetGUID()); cur != _leads.end())
+                return ResumeLead(owner, bot);
         auto log = QuestLog(bot);
         Quest const* pick = nullptr;
         if (!cmd.arg.empty())
@@ -1057,6 +1074,8 @@ namespace romance::ac
         }
         if (bot->GetQuestStatus(pick->GetQuestId()) == QUEST_STATUS_COMPLETE)
             return "Nothing. \"" + pick->GetTitle() + "\" is already finished and only needs to be turned in; tell them.";
+        if (auto cur = _leads.find(bot->GetGUID()); cur != _leads.end() && cur->second.quest == pick->GetQuestId())
+            return ResumeLead(owner, bot);
 
         Lead lead;
         lead.owner = owner->GetGUID();
@@ -1076,6 +1095,21 @@ namespace romance::ac
         std::string where = KillEntries(bot, pick).empty() ? "the area of" : "where the targets of";
         return "You took the lead and are walking to " + where + " your quest \"" + pick->GetTitle() + "\" (about " +
                std::to_string(int(dist)) + " yards away); they follow you. You wait if they fall behind. Tell them where you are going.";
+    }
+
+    std::string CompanionControl::ResumeLead(Player* owner, Player* bot)
+    {
+        Lead& lead = _leads[bot->GetGUID()];
+        bool wasPaused = lead.paused;
+        lead.paused = false;
+        lead.waiting = false;
+        lead.stuck = 0;
+        lead.lastMove = 0;
+        lead.lastX = bot->GetPositionX();
+        lead.lastY = bot->GetPositionY();
+        PlayerbotsBridge::StartLead(bot, owner);   // drops a Playerbots "stay" that may have been set
+        return wasPaused ? "You continue leading the way to \"" + lead.title + "\"."
+                         : "You are already leading the way to \"" + lead.title + "\"; keep going.";
     }
 
     std::string CompanionControl::StopLead(Player* owner, Player* bot)
@@ -1117,6 +1151,14 @@ namespace romance::ac
         }
         if (bot->IsInCombat() || !bot->IsAlive())
             return;   // fighting is Playerbots' job
+        // "wait" (ours) or a plain Playerbots "stay": hold position, keep the lead, never count as stuck
+        if (lead.paused || PlayerbotsBridge::FollowState(bot) == "stay")
+        {
+            lead.paused = true;
+            lead.stuck = 0;
+            lead.lastMove = 0;
+            return;
+        }
 
         // never run away from them: wait when they fall behind
         bool ownerNear = owner->GetMapId() == bot->GetMapId() && bot->GetDistance(owner) < 40.0f;

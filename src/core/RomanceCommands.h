@@ -42,6 +42,8 @@ namespace romance
         TurnInQuests,  // turn in finished quests at nearby quest enders; arg = optional title
         Lead,          // she leads; arg = quest title to do (optional)
         StopLead,      // back to following
+        PauseLead,     // "wait" while she leads: stop and wait, keep the lead (else it is the normal "stay")
+        ResumeLead,    // "go on", "lead again": continue a paused lead (ignored when she isn't leading)
     };
 
     struct CompanionCommand

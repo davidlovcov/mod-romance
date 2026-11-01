@@ -196,6 +196,8 @@ namespace romance
             case CompanionCommandKind::ShareQuest: return "share_quest";
             case CompanionCommandKind::Lead: return "lead";
             case CompanionCommandKind::StopLead: return "stop_lead";
+            case CompanionCommandKind::PauseLead: return "pause_lead";
+            case CompanionCommandKind::ResumeLead: return "resume_lead";
             default: return "none";
         }
     }
@@ -258,6 +260,30 @@ namespace romance
         CompanionCommand c;
 
         // ---- lead / follow
+        // pause / resume while leading (checked before "lead ..." so "lead again" resumes)
+        static char const* const pause[] = { "wait", "wait here", "wait a moment", "wait a second", "wait a sec", "hold on", "hold up",
+                                             "stay", "stay here", "stop here", "halt", "wait for me", "warte", "warte hier", "warte kurz" };
+        for (char const* p : pause)
+            if (s == p)
+            {
+                c.kind = CompanionCommandKind::PauseLead;
+                return c;
+            }
+        static char const* const resume[] = { "keep leading", "continue leading", "lead on", "go on", "keep going", "carry on",
+                                              "continue", "move on", "let's go", "lets go", "let's continue", "weiter", "geh weiter",
+                                              "führ weiter", "los geht's" };
+        for (char const* p : resume)
+            if (s == p || s == std::string(p) + " again")
+            {
+                c.kind = CompanionCommandKind::ResumeLead;
+                return c;
+            }
+        if (s == "lead" || s == "lead again" || s == "lead the way again" || s == "lead us again" || s == "you lead again")
+        {
+            c.kind = CompanionCommandKind::Lead;   // resumes a paused lead, otherwise starts one
+            return c;
+        }
+
         static char const* const lead[] = { "lead the way", "you lead", "take the lead", "you go first", "lead us", "lead me",
                                             "show me the way", "show us the way", "go ahead", "führ uns", "geh vor", "du führst" };
         for (char const* p : lead)

@@ -119,6 +119,20 @@ TEST(Commands, GroupOrdersQuestsAndClearing)
     CHECK(!AddressesEveryone("I love you"));
 }
 
+TEST(Commands, PauseAndResumeLead)
+{
+    CHECK(Kind("wait") == CompanionCommandKind::PauseLead);
+    CHECK(Kind("Jina, wait here!", "Jina") == CompanionCommandKind::PauseLead);
+    CHECK(Kind("hold on") == CompanionCommandKind::PauseLead);
+    CHECK(Kind("lead again") == CompanionCommandKind::Lead);
+    CHECK(Kind("lead") == CompanionCommandKind::Lead);
+    CHECK(Kind("ok go on") == CompanionCommandKind::ResumeLead);
+    CHECK(Kind("keep going") == CompanionCommandKind::ResumeLead);
+    CHECK(Kind("let's go") == CompanionCommandKind::ResumeLead);
+    CHECK(Kind("lead the way") == CompanionCommandKind::Lead);
+    CHECK(Kind("wait, what did you say?") == CompanionCommandKind::None);
+}
+
 TEST(Commands, KnowledgeTopics)
 {
     using namespace knowledge;

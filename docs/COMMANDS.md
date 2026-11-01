@@ -66,6 +66,7 @@ The **Character** tab in the addon shows the same data at a glance.
 | Automatic | (nothing to say) | When you take a quest, companions near you take it too; when you turn one in, they turn theirs in as well (`Romance.Control.QuestSync`). |
 | Share quests | "Share your quests", "Share the quest Kobold Camp Cleanup" | Shares the quests you don't have yet and can take, one per second. |
 | Lead | "Lead the way", "Lead me to Kobold Camp Cleanup", "Let's do the Fargodeep Mine quest" | She walks to the area of one of her quests and you follow (you don't need to make her group leader). Without a quest name she picks one you both have. She waits when you fall behind, fights the quest creatures when she arrives, and follows you again when the objectives are done, telling you to turn it in. Quests without creatures to kill: she takes you to the area and tells you what to look for. |
+| Pause / continue | "Wait", "Hold on" … "Lead again", "Go on", "Keep going" | While leading, "wait" makes her stop where she is without giving up the lead; "lead again" (or "go on") continues to the same quest. When she isn't leading, "wait" is the normal Playerbots stay. |
 | Stop leading | "I'll lead", "Stop leading" | She follows you again. |
 
 Giving items or gold needs at least the relationship stage **Friends** (`Romance.Control.GiveMinStage`). Before that she politely refuses.
