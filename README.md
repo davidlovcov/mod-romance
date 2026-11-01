@@ -8,6 +8,14 @@ Turn one of your own characters into a companion who remembers you. She keeps he
 
 The in-game interface is the companion addon: **[azerothcore-romance-addon](https://github.com/davidlovcov/azerothcore-romance-addon)**.
 
+## Screenshots
+
+| Companion | Chat | Character |
+|---|---|---|
+| ![Companion tab](docs/images/companion.jpg) | ![Chat tab](docs/images/chat.jpg) | ![Character tab](docs/images/character.jpg) |
+
+More screenshots in the [addon repository](https://github.com/davidlovcov/azerothcore-romance-addon#screenshots).
+
 ## Features
 
 | Area | Summary |
