@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Added
+- She knows which quests she could pick up around you (quest givers within ~250 yards, with direction, distance and class-quest marker); ask her or see "Available nearby" on the Character tab.
+- "Pick up your quests" / "go get your class quest": she walks to the nearest quest giver with something for her (e.g. her class trainer), picks the quests up and comes back.
+
 ### Fixed
 - Party chat lines could open a trade window ("how many more to kill?"): that is Playerbots' `EnableAutoTradeOnItemMention`. mod-romance now warns about it at startup; set `Playerbots.EnableAutoTradeOnItemMention = 0` (see docs/INSTALLATION.md).
 - mod-romance's own bot commands respect `Playerbots.CommandPrefix` when one is set.

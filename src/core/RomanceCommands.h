@@ -38,7 +38,7 @@ namespace romance
         SellItem,      // arg = item name
         ShareQuests,   // share every quest the player could take
         ShareQuest,    // arg = quest title
-        AcceptQuests,  // take quests from nearby quest givers; arg = optional title
+        AcceptQuests,  // take quests from quest givers (walks to one nearby if needed); arg = title or "class"
         TurnInQuests,  // turn in finished quests at nearby quest enders; arg = optional title
         Lead,          // she leads; arg = quest title to do (optional)
         StopLead,      // back to following

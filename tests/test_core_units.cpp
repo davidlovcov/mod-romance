@@ -14,6 +14,10 @@
 #include "RomanceRelationship.h"
 #include "RomanceText.h"
 
+#include <algorithm>
+#include <string>
+#include <vector>
+
 using namespace romance;
 
 namespace

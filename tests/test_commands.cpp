@@ -6,6 +6,8 @@
 #include "TestFramework.h"
 #include "RomanceCommands.h"
 
+#include <string>
+
 using namespace romance;
 
 namespace
@@ -131,6 +133,16 @@ TEST(Commands, PauseAndResumeLead)
     CHECK(Kind("let's go") == CompanionCommandKind::ResumeLead);
     CHECK(Kind("lead the way") == CompanionCommandKind::Lead);
     CHECK(Kind("wait, what did you say?") == CompanionCommandKind::None);
+}
+
+TEST(Commands, PickUpQuests)
+{
+    CHECK(Kind("pick up your quests") == CompanionCommandKind::AcceptQuests);
+    CHECK_EQ(Arg("go get your class quest"), std::string("class"));
+    CHECK_EQ(Arg("go pick up the available quests"), std::string(""));
+    CHECK_EQ(Arg("fetch your quests nearby"), std::string(""));
+    CHECK(Kind("what quests are available here?") == CompanionCommandKind::None);
+    CHECK(DetectKnowledgeTopics("what quests are available here?") & knowledge::Quests);
 }
 
 TEST(Commands, KnowledgeTopics)

@@ -108,6 +108,10 @@ namespace romance::ac
             float lastX = 0, lastY = 0;
             uint32 stuck = 0;
             bool paused = false;           // "wait": she stays where she is and keeps the lead
+            // fetch mode: walk alone to a quest giver, pick up quests there, come back
+            bool fetch = false;
+            uint32 fetchEntry = 0;
+            std::string fetchFilter;       // quest title words, "class" = class quests only
         };
 
         std::string GiveItem(Player* owner, Player* bot, CompanionCommand const& cmd, time_t now);
@@ -118,7 +122,7 @@ namespace romance::ac
         std::string Share(Player* owner, Player* bot, CompanionCommand const& cmd, time_t now);
         std::string AttackAll(Player* owner, Player* bot, CompanionCommand const& cmd, time_t now);
         std::string StopAttack(Player* owner, Player* bot);
-        std::string AcceptQuests(Player* owner, Player* bot, CompanionCommand const& cmd);
+        std::string AcceptQuests(Player* owner, Player* bot, CompanionCommand const& cmd, time_t now);
         std::string TurnInQuests(Player* owner, Player* bot, CompanionCommand const& cmd);
         bool HuntStep(Hunt& h, time_t now);           // false = finished
         void LeadStep(Player* owner, Player* bot, Lead& lead, time_t now);

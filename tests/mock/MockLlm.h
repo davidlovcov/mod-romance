@@ -17,6 +17,9 @@
 #include <functional>
 #include <mutex>
 #include <thread>
+#include <optional>
+#include <string>
+#include <vector>
 
 namespace romance::test
 {

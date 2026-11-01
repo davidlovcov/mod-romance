@@ -9,6 +9,8 @@
 #include "RomanceLlm.h"
 
 #include <chrono>
+#include <string>
+#include <thread>
 
 using namespace romance;
 using namespace romance::test;

@@ -15,6 +15,12 @@
 
 #include <chrono>
 #include <thread>
+#include <algorithm>
+#include <functional>
+#include <memory>
+#include <optional>
+#include <string>
+#include <vector>
 
 using namespace romance;
 using namespace romance::test;

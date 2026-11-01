@@ -8,6 +8,7 @@
 #include "Bag.h"
 #include "CellImpl.h"
 #include "Creature.h"
+#include "DBCStores.h"
 #include "GridNotifiers.h"
 #include "GridNotifiersImpl.h"
 #include "Group.h"
@@ -376,6 +377,102 @@ namespace romance::ac
             return out;
         }
 
+        constexpr float kAreaRadius = 250.0f;
+
+        // "north-east" etc. from `from` towards (x, y); in WoW +x is north and +y is west.
+        char const* Direction(WorldObject const* from, float x, float y)
+        {
+            static char const* const names[] = { "north", "north-west", "west", "south-west", "south", "south-east", "east", "north-east" };
+            float a = std::atan2(y - from->GetPositionY(), x - from->GetPositionX());   // 0 = north, +pi/2 = west
+            int idx = int(std::lround(a / (3.14159265358979 / 4.0))) & 7;
+            return names[idx];
+        }
+
+        bool IsClassQuest(Quest const* q) { return q->GetRequiredClasses() != 0; }
+
+        bool CanTakeNow(Player* p, Quest const* q)
+        {
+            return q && p->FindQuestSlot(q->GetQuestId()) >= MAX_QUEST_LOG_SIZE && !p->GetQuestRewardStatus(q->GetQuestId()) &&
+                   p->CanTakeQuest(q, false) && p->CanAddQuest(q, false);
+        }
+
+        struct GiverInfo
+        {
+            uint32 entry = 0;
+            std::string name;
+            float x = 0, y = 0, z = 0;
+            float dist = 0;
+            std::vector<Quest const*> quests;
+        };
+
+        // Quest givers (spawned creatures) within `radius` that offer quests `p` can take right now; nearest first.
+        std::vector<GiverInfo> AvailableGivers(Player* p, float radius, std::string const& filter)
+        {
+            bool classOnly = filter == "class";
+            std::map<uint32, GiverInfo> byEntry;
+            FactionTemplateEntry const* mine = p->GetFactionTemplateEntry();
+            for (auto const& [spawnId, data] : sObjectMgr->GetAllCreatureData())
+            {
+                if (data.mapid != p->GetMapId())
+                    continue;
+                float d = p->GetDistance2d(data.posX, data.posY);
+                if (d > radius)
+                    continue;
+                auto known = byEntry.find(data.id);
+                if (known != byEntry.end())
+                {
+                    if (d < known->second.dist)
+                    {
+                        known->second.dist = d;
+                        known->second.x = data.posX;
+                        known->second.y = data.posY;
+                        known->second.z = data.posZ;
+                    }
+                    continue;
+                }
+                QuestRelationBounds b = sObjectMgr->GetCreatureQuestRelationBounds(data.id);
+                if (b.first == b.second)
+                    continue;
+                CreatureTemplate const* ct = sObjectMgr->GetCreatureTemplate(data.id);
+                if (!ct)
+                    continue;
+                if (FactionTemplateEntry const* ft = sFactionTemplateStore.LookupEntry(ct->faction))
+                    if (mine && mine->IsHostileTo(*ft))
+                        continue;
+                GiverInfo g;
+                g.entry = data.id;
+                g.name = ct->Name;
+                g.x = data.posX;
+                g.y = data.posY;
+                g.z = data.posZ;
+                g.dist = d;
+                for (auto it = b.first; it != b.second; ++it)
+                {
+                    Quest const* q = sObjectMgr->GetQuestTemplate(it->second);
+                    if (!CanTakeNow(p, q))
+                        continue;
+                    if (classOnly ? !IsClassQuest(q) : (!filter.empty() && MatchScore(q->GetTitle(), filter) == 0))
+                        continue;
+                    g.quests.push_back(q);
+                }
+                byEntry[data.id] = g;
+            }
+            std::vector<GiverInfo> out;
+            for (auto& [e, g] : byEntry)
+                if (!g.quests.empty())
+                    out.push_back(std::move(g));
+            std::sort(out.begin(), out.end(), [](GiverInfo const& a, GiverInfo const& b) { return a.dist < b.dist; });
+            return out;
+        }
+
+        std::string QuestList(std::vector<Quest const*> const& qs)
+        {
+            std::string s;
+            for (Quest const* q : qs)
+                s += (s.empty() ? "\"" : ", \"") + q->GetTitle() + "\"" + (IsClassQuest(q) ? " (class quest)" : "");
+            return s;
+        }
+
         bool Near(Player* a, Player* b, float range)
         {
             return a && b && a->IsInWorld() && b->IsInWorld() && a->GetMapId() == b->GetMapId() && a->GetDistance(b) <= range;
@@ -513,6 +610,12 @@ namespace romance::ac
                 k.push_back("Your quest \"" + q->GetTitle() + "\" (level " + std::to_string(q->GetQuestLevel()) + "): " +
                             QuestProgress(bot, q, slot) + (theyHave ? " - they have it too" : " - they don't have it"));
             }
+            auto givers = AvailableGivers(bot, kAreaRadius, "");
+            if (givers.empty())
+                k.push_back("No quest giver around here has a new quest you could take.");
+            for (size_t i = 0; i < givers.size() && i < 5; ++i)
+                k.push_back("You could pick up from " + givers[i].name + " (about " + std::to_string(int(givers[i].dist)) + " yards " +
+                            Direction(bot, givers[i].x, givers[i].y) + "): " + QuestList(givers[i].quests) + ".");
             std::string theirs;
             for (auto const& [q, slot] : QuestLog(owner))
                 if (bot->FindQuestSlot(q->GetQuestId()) >= MAX_QUEST_LOG_SIZE)
@@ -556,7 +659,7 @@ namespace romance::ac
             case CompanionCommandKind::AttackTarget: return Attack(owner, bot, cmd);
             case CompanionCommandKind::AttackAll: return AttackAll(owner, bot, cmd, now);
             case CompanionCommandKind::StopAttack: return StopAttack(owner, bot);
-            case CompanionCommandKind::AcceptQuests: return AcceptQuests(owner, bot, cmd);
+            case CompanionCommandKind::AcceptQuests: return AcceptQuests(owner, bot, cmd, now);
             case CompanionCommandKind::TurnInQuests: return TurnInQuests(owner, bot, cmd);
             case CompanionCommandKind::SellJunk:
             case CompanionCommandKind::SellItem: return Sell(owner, bot, cmd);
@@ -735,7 +838,7 @@ namespace romance::ac
         return "Nothing. You can only pick fights together when you are in the same group; tell them.";
     }
 
-    std::string CompanionControl::Sell(Player* owner, Player* bot, CompanionCommand const& cmd)
+    std::string CompanionControl::Sell(Player* /*owner*/, Player* bot, CompanionCommand const& cmd)
     {
         Creature* vendor = NearbyVendor(bot, _cfg.interactRange);
         if (!vendor)
@@ -958,13 +1061,10 @@ namespace romance::ac
         return true;
     }
 
-    std::string CompanionControl::AcceptQuests(Player* owner, Player* bot, CompanionCommand const& cmd)
+    std::string CompanionControl::AcceptQuests(Player* owner, Player* bot, CompanionCommand const& cmd, time_t now)
     {
-        if (!Near(owner, bot, _cfg.interactRange + 10))
-            return "Nothing yet. You are too far away from them to see the quest giver; ask them to wait for you.";
-        auto offered = QuestNpcs(owner, _cfg.interactRange, false);
-        if (offered.empty())
-            return "Nothing. There is no quest giver nearby; tell them.";
+        bool classOnly = cmd.arg == "class";
+        auto offered = QuestNpcs(bot, _cfg.interactRange, false);
         std::vector<Quest const*> take;
         std::vector<std::string> cannot;
         for (int pass = 0; pass < 2 && take.empty(); ++pass)
@@ -973,7 +1073,7 @@ namespace romance::ac
                 Quest const* q = sObjectMgr->GetQuestTemplate(id);
                 if (!q || bot->FindQuestSlot(id) < MAX_QUEST_LOG_SIZE || bot->GetQuestRewardStatus(id))
                     continue;
-                if (!cmd.arg.empty() && MatchScore(q->GetTitle(), cmd.arg) == 0)
+                if (classOnly ? !IsClassQuest(q) : (!cmd.arg.empty() && MatchScore(q->GetTitle(), cmd.arg) == 0))
                     continue;
                 // first the quests they have taken themselves, then (if none) everything offered here
                 if (cmd.arg.empty() && pass == 0 && owner->FindQuestSlot(id) >= MAX_QUEST_LOG_SIZE)
@@ -998,12 +1098,42 @@ namespace romance::ac
         for (auto const& t : cannot)
             refused += (refused.empty() ? "\"" : ", \"") + t + "\"";
         if (take.empty())
-            return refused.empty() ? "Nothing. There is no quest here you could take; tell them."
-                                   : "Nothing. You cannot take " + refused + " (level, class or an earlier quest missing); tell them.";
+        {
+            // nothing right here: walk to the nearest quest giver in the area that has something for her
+            auto givers = AvailableGivers(bot, kAreaRadius, cmd.arg);
+            if (!givers.empty() && _cfg.leadMode && PlayerbotsBridge::Available())
+            {
+                GiverInfo const& g = givers.front();
+                Lead lead;
+                lead.owner = owner->GetGUID();
+                lead.fetch = true;
+                lead.fetchEntry = g.entry;
+                lead.fetchFilter = cmd.arg;
+                lead.title = g.name;
+                lead.since = now;
+                lead.map = bot->GetMapId();
+                lead.x = g.x;
+                lead.y = g.y;
+                lead.z = g.z;
+                lead.haveZ = true;
+                lead.lastX = bot->GetPositionX();
+                lead.lastY = bot->GetPositionY();
+                if (PlayerbotsBridge::StartLead(bot, owner))
+                {
+                    _leads[bot->GetGUID()] = lead;
+                    return "You are going over to " + g.name + " (about " + std::to_string(int(g.dist)) + " yards " +
+                           Direction(bot, g.x, g.y) + ") to pick up " + QuestList(g.quests) + ", then you come back to them. Tell them.";
+                }
+            }
+            if (!refused.empty())
+                return "Nothing. You cannot take " + refused + " (level, class or an earlier quest missing); tell them.";
+            return classOnly ? "Nothing. There is no class quest for you around here right now; tell them."
+                             : "Nothing. No quest giver around here has a quest you could take; tell them.";
+        }
         return "You took " + names + " from the quest giver." + (refused.empty() ? "" : " You could not take " + refused + ".");
     }
 
-    std::string CompanionControl::TurnInQuests(Player* owner, Player* bot, CompanionCommand const& cmd)
+    std::string CompanionControl::TurnInQuests(Player* /*owner*/, Player* bot, CompanionCommand const& cmd)
     {
         auto enders = QuestNpcs(bot, _cfg.interactRange, true);
         std::string done, notReady;
@@ -1168,13 +1298,39 @@ namespace romance::ac
 
     void CompanionControl::LeadStep(Player* owner, Player* bot, Lead& lead, time_t now)
     {
-        Quest const* q = sObjectMgr->GetQuestTemplate(lead.quest);
-        if (!q || bot->FindQuestSlot(lead.quest) >= MAX_QUEST_LOG_SIZE)
+        if (lead.fetch)
+        {
+            if (bot->IsInCombat() || !bot->IsAlive())
+                return;
+            if (now - lead.since > 240)
+            {
+                FinishLead(owner, bot, "You could not reach " + lead.title + " to pick up quests and come back to them; tell them.");
+                return;
+            }
+            if (bot->GetDistance2d(lead.x, lead.y) < 5.0f)
+            {
+                std::vector<Quest const*> taken;
+                for (GiverInfo const& g : AvailableGivers(bot, 30.0f, lead.fetchFilter))
+                    if (g.entry == lead.fetchEntry)
+                        for (Quest const* q : g.quests)
+                            if (CanTakeNow(bot, q))
+                            {
+                                bot->AddQuestAndCheckCompletion(q, nullptr);
+                                taken.push_back(q);
+                            }
+                FinishLead(owner, bot, taken.empty()
+                    ? "You reached " + lead.title + " but there was no quest left for you. You are coming back to them; tell them."
+                    : "You picked up " + QuestList(taken) + " from " + lead.title + " and are coming back to them. Tell them briefly.");
+                return;
+            }
+        }
+        Quest const* q = lead.fetch ? nullptr : sObjectMgr->GetQuestTemplate(lead.quest);
+        if (!lead.fetch && (!q || bot->FindQuestSlot(lead.quest) >= MAX_QUEST_LOG_SIZE))
         {
             FinishLead(owner, bot, "");
             return;
         }
-        if (bot->GetQuestStatus(lead.quest) == QUEST_STATUS_COMPLETE)
+        if (!lead.fetch && bot->GetQuestStatus(lead.quest) == QUEST_STATUS_COMPLETE)
         {
             FinishLead(owner, bot, "You finished the objectives of \"" + lead.title + "\" while leading. You follow them again now; "
                                    "tell them it is done and suggest turning it in.");
@@ -1192,7 +1348,8 @@ namespace romance::ac
         }
 
         // never run away from them: wait when they fall behind
-        bool ownerNear = owner->GetMapId() == bot->GetMapId() && bot->GetDistance(owner) < 40.0f;
+        // (fetching she goes alone and comes back, so she doesn't wait)
+        bool ownerNear = lead.fetch || (owner->GetMapId() == bot->GetMapId() && bot->GetDistance(owner) < 40.0f);
         if (!ownerNear)
         {
             if (!lead.waiting)
@@ -1221,7 +1378,7 @@ namespace romance::ac
         }
 
         float dist = bot->GetDistance2d(lead.x, lead.y);
-        if (dist < 25.0f)
+        if (!lead.fetch && dist < 25.0f)
         {
             std::set<uint32> entries = KillEntries(bot, q);
             if (entries.empty())
@@ -1463,6 +1620,22 @@ namespace romance::ac
             quests.Push(qj);
         }
         j.Set("quests", quests);
+
+        Json available = Json::MakeArray();
+        for (GiverInfo const& g : AvailableGivers(bot, kAreaRadius, ""))
+            for (Quest const* q : g.quests)
+            {
+                Json a = Json::MakeObject();
+                a.Set("id", int64_t(q->GetQuestId()));
+                a.Set("title", q->GetTitle());
+                a.Set("level", int64_t(q->GetQuestLevel()));
+                a.Set("giver", g.name);
+                a.Set("distance", int64_t(g.dist));
+                a.Set("direction", std::string(Direction(bot, g.x, g.y)));
+                a.Set("classQuest", IsClassQuest(q));
+                available.Push(a);
+            }
+        j.Set("available", available);
         return j;
     }
 }

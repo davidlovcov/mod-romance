@@ -62,6 +62,8 @@ The **Character** tab in the addon shows the same data at a glance.
 | Retreat | "Run away", "Fall back" | Playerbots `flee`. |
 | Sell | "Sell your junk", "Vendor, sell trash", "Sell your wolf meat" | Works when a merchant is within about 30 yards (`Romance.Control.InteractRange`); no need to target him or walk up to him. With nearly full bags she sells gray items by herself near a merchant (`Romance.Control.AutoSellJunk`). |
 | Take quests | "Accept the quest", "Everyone, take the quests too", "Accept the quest Kobold Camp Cleanup" | Takes quests from quest givers within about 30 yards, no targeting needed: first the ones you have taken, otherwise everything offered there. She tells you if she can't take one (level, class, earlier quest missing). |
+| Pick up her own quests | "Pick up your quests", "Go get your class quest", "Fetch your quests" | If no quest giver right here has something for her, she walks to the nearest one within about 250 yards that does (e.g. her class trainer), picks the quests up and comes back to you. "class quest" only takes class quests. |
+| What's available | "What quests can you pick up here?" | She lists quest givers around you with quests *she* can take, with direction and distance; class quests are marked. The Character tab shows the same list under "Available nearby". |
 | Turn in quests | "Turn in your quests", "Hand in the quest" | Turns in finished quests at quest enders nearby. |
 | Automatic | (nothing to say) | When you take a quest, companions near you take it too; when you turn one in, they turn theirs in as well (`Romance.Control.QuestSync`). |
 | Share quests | "Share your quests", "Share the quest Kobold Camp Cleanup" | Shares the quests you don't have yet and can take, one per second. |

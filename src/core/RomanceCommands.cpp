@@ -342,7 +342,8 @@ namespace romance
         // (worked on a copy: "take down the wolf" must still reach the attack rules)
         {
             std::string t = s;
-            bool accept = StripPrefix(t, { "accept", "take", "get", "pick up", "grab", "nimm", "nehmt", "annehmen" });
+            bool accept = StripPrefix(t, { "go and pick up", "go and get", "go pick up", "go get", "go grab", "fetch", "accept", "take",
+                                           "get", "pick up", "grab", "hol dir", "nimm", "nehmt", "annehmen" });
             bool turnIn = !accept && StripPrefix(t, { "turn in", "hand in", "complete", "finish", "deliver", "abgeben", "gib ab" });
             if (accept || turnIn)
             {
@@ -350,9 +351,11 @@ namespace romance
                 bool quest = StripPrefix(t, { "quests", "quest" }) || StripSuffix(t, { "quests", "quest" });
                 if (quest || (turnIn && t.empty()))
                 {
-                    StripPrefix(t, { "too", "as well", "from here", "here" });
-                    StripSuffix(t, { "too", "as well", "from here", "here", "from him", "from her", "from them", "quests", "quest" });
+                    StripPrefix(t, { "too", "as well", "from here", "here", "available", "new", "nearby", "around here", "in the area" });
+                    StripSuffix(t, { "too", "as well", "from here", "here", "from him", "from her", "from them", "quests", "quest",
+                                     "around here", "nearby", "in the area" });
                     StripDeterminers(t);
+                    StripPrefix(t, { "available", "new" });
                     c.kind = accept ? CompanionCommandKind::AcceptQuests : CompanionCommandKind::TurnInQuests;
                     c.arg = t;
                     return c;
