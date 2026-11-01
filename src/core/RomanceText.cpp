@@ -188,6 +188,20 @@ namespace romance
         return ProposalIntent::None;
     }
 
+    bool MessageClassifier::MentionsRelationshipStatus(std::string const& l)
+    {
+        static char const* const words[] = {
+            "girlfriend", "boyfriend", "partner", "couple", "together", "date", "dating", "go out", "lover", "relationship",
+            "marry", "married", "marriage", "wedding", "engaged", "engagement", "fiance", "wife", "husband", "propos",
+            "break up", "breaking up", "it's over", "we're over", "we are over",
+            "freundin", "freund sein", "zusammen", "paar", "beziehung", "heirat", "hochzeit", "verlob", "ehe",
+            "frau werden", "mann werden", "schluss", "trennen", "es ist aus" };
+        for (char const* w : words)
+            if (ContainsPhrase(l, w))
+                return true;
+        return false;
+    }
+
     ClassifiedMessage MessageClassifier::Classify(std::string const& rawText, std::string const& companionName, bool naturalCommands) const
     {
         ClassifiedMessage c;

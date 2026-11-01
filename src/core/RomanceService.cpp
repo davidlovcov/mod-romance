@@ -1171,19 +1171,40 @@ namespace romance
         switch (d.outcome)
         {
             case ProposalOutcome::Accept:
-                lines = de ? std::vector<std::string>{ "Ja... ja, natürlich will ich.", "Ich habe so gehofft, dass du das fragst. Ja!" }
-                           : std::vector<std::string>{ "Yes... yes, of course I will.", "I was hoping you'd ask. Yes!" };
+                lines = de ? std::vector<std::string>{ "Ja... ja, natürlich will ich.", "Ich habe so gehofft, dass du das fragst. Ja!",
+                                                       "*lächelt* Ja. Von ganzem Herzen, ja." }
+                           : std::vector<std::string>{ "Yes... yes, of course I will.", "I was hoping you'd ask. Yes!",
+                                                       "*smiles* Yes. With all my heart, yes." };
                 break;
             case ProposalOutcome::Defer:
-                lines = de ? std::vector<std::string>{ "Mein Herz rast gerade... gibst du mir noch ein bisschen Zeit?" }
-                           : std::vector<std::string>{ "My heart is racing... can you give me a little more time to think?" };
+                lines = de ? std::vector<std::string>{ "Mein Herz rast gerade... gibst du mir noch ein bisschen Zeit?",
+                                                       "Das bedeutet mir viel... aber lass mir noch etwas Zeit, ja?" }
+                           : std::vector<std::string>{ "My heart is racing... can you give me a little more time to think?",
+                                                       "That means a lot to me... but give me a little more time, okay?" };
                 break;
             default:
-                lines = de ? std::vector<std::string>{ "Es tut mir leid... dafür bin ich noch nicht bereit." }
-                           : std::vector<std::string>{ "I'm sorry... I'm not ready for that yet." };
+                lines = de ? std::vector<std::string>{ "Es tut mir leid... dafür bin ich noch nicht bereit.",
+                                                       "Lass uns das langsam angehen, ja? Wir kennen uns noch nicht lange genug.",
+                                                       "*schaut verlegen weg* Noch nicht... gib uns etwas Zeit." }
+                           : std::vector<std::string>{ "I'm sorry... I'm not ready for that yet.",
+                                                       "Let's take it slow, okay? We don't know each other well enough yet.",
+                                                       "*looks away, a little flustered* Not yet... give us some time." };
                 break;
         }
-        return lines[std::uniform_int_distribution<size_t>(0, lines.size() - 1)(const_cast<std::mt19937&>(_rng))];
+        std::string last;
+        for (auto it = s.history.rbegin(); it != s.history.rend(); ++it)
+            if (it->role == ChatTurn::Role::Companion)
+            {
+                last = it->text;
+                break;
+            }
+        std::vector<std::string> fresh;
+        for (auto const& l : lines)
+            if (l != last)
+                fresh.push_back(l);
+        if (fresh.empty())
+            fresh = lines;
+        return fresh[std::uniform_int_distribution<size_t>(0, fresh.size() - 1)(const_cast<std::mt19937&>(_rng))];
     }
 
     void RomanceService::HandleReply(Session& s, JobResult& r, TimePoint now)
@@ -1222,6 +1243,15 @@ namespace romance
         }
 
         // ---- relationship proposals: the server decides, the reply must agree
+        // Small models sometimes label unrelated messages as proposals (e.g. right after one).
+        // Only take the model's detection seriously if the player's words are about the relationship status.
+        if (!r.ctx.proposal && reply.proposalKind != ProposalKind::None &&
+            !MessageClassifier::MentionsRelationshipStatus(ToLower(r.ctx.playerText)))
+        {
+            reply.warnings.push_back("ignored proposal label on a message that is not about the relationship");
+            reply.proposalKind = ProposalKind::None;
+            reply.proposalResponse = ProposalOutcome::None;
+        }
         if (!r.ctx.proposal && r.ctx.trigger == TriggerKind::PlayerMessage && reply.proposalKind != ProposalKind::None)
         {
             ProposalKind kind = reply.proposalKind;

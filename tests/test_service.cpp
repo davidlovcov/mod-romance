@@ -216,6 +216,41 @@ TEST(Service, ProposalDeclinedForStrangersEvenIfModelSaysYes)
     CHECK(rec.relationship.stage == Stage::Strangers);
 }
 
+TEST(Service, ModelProposalLabelOnUnrelatedMessageIsIgnored)
+{
+    // Regression: after a declined proposal the model labelled "I also like flowers" as another
+    // proposal, the server forced a refusal and replaced the real reply with a fallback line.
+    Harness h;
+    h.Activate(h.Key());
+    h.llm->QueueReply(ReplyJson("Ehehe... that's a bit too soon for us.", "happy", "positive", {}, "dating", "decline"));
+    h.svc->OnPlayerMessage(h.Key(), "do you wanna be my girlfriend", ChatChannel::Whisper, h.ctx, h.now);
+    CHECK(h.WaitSpeak(h.Key()));
+    h.llm->ClearCalls();
+    h.llm->QueueReply(ReplyJson("Flowers? Me too! Which ones do you like best?", "happy", "positive", {}, "dating", "accept"));
+    h.svc->OnPlayerMessage(h.Key(), "did you know, I also like flowers", ChatChannel::Whisper, h.ctx, h.now + 5);
+    CHECK(h.WaitSpeak(h.Key(), 2));
+    CHECK_EQ(h.Spoken(h.Key())[1], std::string("Flowers? Me too! Which ones do you like best?"));
+    CHECK_EQ(h.llm->CallCount(), size_t(1));   // no forced retry
+    CHECK(h.svc->GetOrCreateRecord(h.Key(), kAccount, "Elara", h.now).relationship.stage == Stage::Strangers);
+}
+
+TEST(Service, FallbackLinesDoNotRepeat)
+{
+    Harness h;
+    h.Activate(h.Key());
+    for (int i = 0; i < 3; ++i)
+    {
+        // the model insists on accepting a proposal the server declines -> fallback after one retry
+        h.llm->QueueReply(ReplyJson("Yes!!", "excited", "very_positive", {}, "dating", "accept"));
+        h.llm->QueueReply(ReplyJson("Yes!!", "excited", "very_positive", {}, "dating", "accept"));
+        h.svc->OnPlayerMessage(h.Key(), "will you be my girlfriend?", ChatChannel::Whisper, h.ctx, h.now + i * 700);
+        CHECK(h.WaitSpeak(h.Key(), size_t(i + 1)));
+    }
+    auto said = h.Spoken(h.Key());
+    CHECK(said[0] != said[1]);
+    CHECK(said[1] != said[2]);
+}
+
 TEST(Service, ProposalAcceptedAndPersistedWhenReady)
 {
     Harness h;

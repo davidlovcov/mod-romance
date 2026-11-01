@@ -259,6 +259,12 @@ namespace romance
         AddIf(o, "Lore preferences", p.lore);
         if (!p.addressPlayerAs.empty())
             o << "- You call " << pname << " \"" << p.addressPlayerAs << "\" (not in every message).\n";
+        else
+            o << "- You call them " << pname << " or by no name at all"
+              << (in.relationship && in.relationship->stage >= Stage::Dating ? ", or with a fitting term of endearment for a partner" : "")
+              << ".\n";
+        o << "- Never call them \"daddy\", \"master\", \"father\", \"papa\", \"mommy\" or similar"
+          << (p.addressPlayerAs.empty() ? "" : " (unless that is exactly the name above)") << ".\n";
 
         o << "\n## How you speak\n" << DescribeStyle(p);
         if (!p.customInstructions.empty())
@@ -334,8 +340,9 @@ namespace romance
         }
         else if (in.relationship)
         {
-            o << "\nIf they ask you to become a couple, get engaged or marry, set proposal.kind accordingly and answer honestly "
-                 "for your current stage; never claim a relationship status other than the one above.\n";
+            o << "\nOnly if their LATEST message explicitly asks you to become a couple, get engaged, marry or break up, set "
+                 "proposal.kind accordingly and answer honestly for your current stage. For every other message proposal.kind "
+                 "is \"none\" - an earlier question does not count. Never claim a relationship status other than the one above.\n";
         }
 
         if (in.requestedAction)

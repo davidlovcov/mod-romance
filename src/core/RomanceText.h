@@ -52,6 +52,9 @@ namespace romance
 
         static std::optional<ActionType> DetectAction(std::string const& lowerText);
         static ProposalIntent DetectProposal(std::string const& lowerText);
+        // True if the text talks about the relationship status at all (couple, marriage, breakup...).
+        // Used to ignore proposals the model "detects" in unrelated messages.
+        static bool MentionsRelationshipStatus(std::string const& lowerText);
 
     private:
         std::set<std::string> _commands;

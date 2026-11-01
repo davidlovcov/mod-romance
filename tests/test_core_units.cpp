@@ -531,6 +531,35 @@ TEST(Text, ProposalDetection)
     CHECK(c.Classify("How are you?", "Elara", true).proposal == ProposalIntent::None);
 }
 
+TEST(Text, RelationshipStatusWording)
+{
+    CHECK(MessageClassifier::MentionsRelationshipStatus("will you marry me?"));
+    CHECK(MessageClassifier::MentionsRelationshipStatus("willst du meine freundin sein?"));
+    CHECK(MessageClassifier::MentionsRelationshipStatus("i think we should break up"));
+    CHECK(!MessageClassifier::MentionsRelationshipStatus("did you know, i also like flowers"));
+    CHECK(!MessageClassifier::MentionsRelationshipStatus("let me update my gear"));
+    CHECK(!MessageClassifier::MentionsRelationshipStatus("hey how are you"));
+}
+
+TEST(Prompt, FormsOfAddress)
+{
+    PersonalityProfile p = Elara();
+    RelationshipState strangers = RelationshipEngine::InitialFor(Stage::Strangers, true, kNow);
+    PromptInput in;
+    in.personality = &p;
+    in.relationship = &strangers;
+    in.companionName = "Elara";
+    in.playerName = "Devid";
+    std::string sys = DialogueContextBuilder::BuildSystemPrompt(in);
+    CHECK_CONTAINS(sys, "Never call them \"daddy\"");
+    CHECK_CONTAINS(sys, "You call them Devid or by no name at all.");
+    CHECK_NOT_CONTAINS(sys, "term of endearment");
+    CHECK_CONTAINS(sys, "an earlier question does not count");
+    RelationshipState couple = RelationshipEngine::InitialFor(Stage::Dating, true, kNow);
+    in.relationship = &couple;
+    CHECK_CONTAINS(DialogueContextBuilder::BuildSystemPrompt(in), "term of endearment");
+}
+
 TEST(Text, LanguageDetection)
 {
     CHECK_EQ(DetectLanguage("Hallo, wie geht es dir heute? Ich bin müde."), std::string("de"));
