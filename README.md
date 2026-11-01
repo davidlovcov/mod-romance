@@ -1,5 +1,7 @@
 # mod-romance
 
+**Author:** [davidlovcov](https://github.com/davidlovcov)
+
 An AI companion and relationship module for **AzerothCore (WotLK 3.3.5a)** with **mod-playerbots** and a local **Ollama** model.
 
 Turn one of your own characters into a companion who remembers you. She keeps her configured personality, reacts to fights, level-ups and gifts, sometimes starts conversations, and her relationship with you grows over time. Combat, movement and spellcasting stay with the normal Playerbots AI. Ollama only supplies her conversation, and **only for the companion you explicitly select**, never for your other bots.
@@ -10,15 +12,28 @@ The in-game interface is the companion addon: **[azerothcore-romance-addon](http
 
 | Area | Summary |
 |---|---|
-| Companions | Your account's characters (plus Playerbots linked accounts) with their real status. They are called through `PlayerbotHolder::AddPlayerBot`, never twice, and only after an ownership check on the server. |
-| Personality | Identity, story, 12 traits, response styles (anime, sweet, mature, teasing, tsundere, dandere, fantasy roleplay...), custom instructions, EN/DE/auto language, 7 presets including **Anime Girlfriend**. Adults only (enforced). |
+| Companions | Your account's characters (plus Playerbots linked accounts) with their real status. Up to 3 AI companions at once (configurable). They are called through `PlayerbotHolder::AddPlayerBot`, never twice, and only after an ownership check on the server. |
+| Personality | Identity, story, 12 traits, response styles (anime, sweet, mature, teasing, tsundere, dandere, fantasy roleplay...), custom instructions, EN/DE/auto language. 14 complete presets (7 female, 7 male, e.g. **Anime Girlfriend**, **Gentle Knight**), your own custom presets, and a randomizer for story & taste. Adults only (enforced). |
 | Memory | Short-term history plus long-term facts, preferences, episodes, gifts, promises, milestones and summaries. Each entry is tagged with its source; entries are de-duplicated, ranked by relevance and pruned within limits. They can be edited, deleted, exported and imported in the addon. |
 | Relationship | Friendship, affection, attraction, trust, familiarity, comfort and satisfaction, plus mood. Eight stages from Strangers to Married, with a selectable starting stage. Progress is gradual and capped per day. Dating, engagement and marriage need an accepted proposal, which the server decides. |
 | Gifts | Detected only after a **completed** trade, with the item confirmed in the companion's bags. The score weighs usefulness, upgrades, class fit, rarity, likes and dislikes, and romance (jewelry and rings count extra). Repeats count for less, there is a daily cap, and the same item instance is never rewarded twice. |
 | World awareness | Zone, party, health, fights and near-death moments, deaths, level-ups, quests and notable loot. Only events the server observed are given to the model. |
 | Initiative | Proactive lines with cooldowns, an hourly cap and a back-off when you don't reply; she stays quiet during combat. |
-| Commands | Playerbots commands pass through untouched (`follow`, `co +dps`, `!stay`). Natural language ("Elara, follow me") maps to an allow-list: follow, stay, attack, flee. |
+| Game knowledge | Ask her about her bags, gold, XP, gear, spells, quests (with progress, and which you share) or your target. She answers from real game data. |
+| Commands | Plain sentences: follow, stay, give items or gold (she opens the trade), cast a spell on you or your target, attack an enemy by name or creature type, sell junk at a vendor, share quests, and (experimental) lead the way to a quest. Playerbots commands pass through untouched (`follow`, `co +dps`, `!stay`). See [docs/COMMANDS.md](docs/COMMANDS.md). |
+| Estrangement | Treat her badly again and again and she leaves you: she refuses your calls for days and comes back cold. Winning her back takes sincere apologies over several days. |
 | Safety | Ollama requests run on a bounded worker pool with timeouts and cancellation, never on the world thread. The server keeps running when Ollama is down. The addon protocol is rate- and size-limited. Model output is sanitized and validated. |
+
+## Presets
+
+A preset is a complete personality: traits, response style, age, gender, pronouns, every story field and custom instructions.
+
+- **Apply preset** replaces all of these. Your companion's name and nickname stay, and so do the reply language, custom stage labels and the "always says yes" setting.
+- **Reset to preset** applies her current preset again, so every field goes back to the preset's values.
+- **Undo changes** throws away edits you haven't saved yet.
+- **Save as preset** stores the current personality as your own preset (per account, without the name). You can apply it to any companion, overwrite it by saving under the same name, or delete it.
+- The list shows presets for your companion's gender. Tick "All genders" to see every preset.
+- **Randomize** (Story & taste) fills the story fields with a random background. Nothing is saved until you press Save. The Player Profile tab has the same button for your own story.
 
 ## Requirements
 
@@ -45,7 +60,7 @@ See [docs/INSTALLATION.md](docs/INSTALLATION.md) for Linux and Windows 11 detail
 |---|---|
 | Tested core | mod-playerbots/azerothcore-wotlk `93333d6`, mod-playerbots `05a1f6f` |
 | Configuration | `conf/mod_romance.conf.dist`, copied automatically by CMake. See [docs/CONFIGURATION.md](docs/CONFIGURATION.md). |
-| SQL | characters database, 6 `romance_*` tables, applied automatically by the DB updater (`data/sql/db-characters/base`) |
+| SQL | characters database, 7 `romance_*` tables, applied automatically by the DB updater (`data/sql/db-characters/base`) |
 | CMake hooks | `mod-romance.cmake` (links `ws2_32` on Windows, Threads) |
 | WorldScript | `OnAfterConfigLoad`, `OnStartup`, `OnShutdown`, `OnUpdate` |
 | PlayerScript | `OnPlayerCanUseChat` (whisper, group), `OnPlayerLogin`, `OnPlayerLogout`, `OnPlayerCreatureKill`, `OnPlayerCompleteQuest`, `OnPlayerStoreNewItem` |
@@ -55,6 +70,7 @@ See [docs/INSTALLATION.md](docs/INSTALLATION.md) for Linux and Windows 11 detail
 
 ## Documentation
 
+- [docs/COMMANDS.md](docs/COMMANDS.md): everything you can say to your companion
 - [docs/INSTALLATION.md](docs/INSTALLATION.md)
 - [docs/CONFIGURATION.md](docs/CONFIGURATION.md)
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)

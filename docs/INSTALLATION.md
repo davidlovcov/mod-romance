@@ -77,7 +77,7 @@ The module's SQL lives in `data/sql/db-characters/base/`. The AzerothCore DB upd
 ```bash
 mysql -u acore -p acore_characters < modules/mod-romance/data/sql/db-characters/base/mod_romance_2026_11_01_00.sql
 ```
-On start, the module checks that its 6 tables exist. If they don't, it logs an error and disables itself; it doesn't crash.
+On start, the module checks that its 7 tables exist. If they don't, it logs an error and disables itself; it doesn't crash.
 
 ### Run
 ```bash

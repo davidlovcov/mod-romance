@@ -36,6 +36,11 @@ The design asked for components such as CompanionManager, PersonalityManager, Ol
 | DialogueContextBuilder | `core/RomancePrompt` |
 | OllamaClient | `core/RomanceLlm` (`OllamaBackend`, `WorkerPool`) + `core/RomanceHttp` |
 | RomanceConfig | `core/RomanceConfig` + `ac/RomanceAcConfig` |
+| Presets (built-in and custom) | `core/RomancePresets`, stored by `IRomanceRepository::*CustomPreset*` |
+| Natural-language commands, knowledge topics | `core/RomanceCommands` (parser, engine independent and unit tested) |
+| Command execution, game knowledge, character sheet, lead mode, auto-sell | `ac/RomanceControl` (`CompanionControl`, world thread) |
+
+Commands run **before** the message reaches the model: `RomanceManager::ApplyControl` parses the line, `CompanionControl` executes it against the real game state and writes a one-sentence outcome into `WorldContext::commandOutcome`. The prompt shows the outcome, so the companion only claims what really happened. Knowledge (bags, quests, spells...) is added to `WorldContext::knowledge` only when the message asks for it, which keeps prompts short for small models.
 
 ## Why a separate core
 

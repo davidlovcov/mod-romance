@@ -34,18 +34,22 @@ The server **never** takes identity from the payload. The owner is always the se
 
 | op | fields | reply |
 |---|---|---|
-| `hello` | `version`, `protocol` | `hello` {protocol, enabled, features{ollama, proactive, naturalCommands, initialStage, maxInitialStage, modelChoice, export, reset, debug, playerbots, memory}, presets[], stages[], styles[], status} |
-| `list_chars` | | `chars` {chars[{guid, name, race, raceName, class, className, gender, level, linked, status, reason, active, configured, stageLabel}], maxActive} |
+| `hello` | `version`, `protocol` | `hello` {protocol, enabled, features{ollama, proactive, naturalCommands, initialStage, maxInitialStage, modelChoice, export, reset, debug, playerbots, memory}, presets[{id, label, description, stage, gender, custom, profile}], maxCustomPresets, stages[], styles[], status} |
+| `list_chars` | | `chars` {chars[{guid, name, race, raceName, class, className, gender, level, linked, status, reason, active, configured, stageLabel, estrangedUntil?, estranged?}], maxActive} |
 | `get_status` | `guid?` | `status` (see StatusJson) |
 | `get_profile` | | `profile` {profile, accountDefault} |
 | `save_profile` | `profile`, `accountDefault` | `ack` |
 | `list_models` | | `models` {models[], default, choice} |
 | `get_companion` | `guid` | `companion` {guid, name, configured, personality, settings, relationship, active, status, reason} |
 | `save_personality` | `guid`, `personality` | `ack` {ok, notes[]}, then `companion` |
-| `apply_preset` | `guid`, `preset` | `ack`, `companion` |
+| `apply_preset` | `guid`, `preset` (built-in id or `custom:<n>`) | `ack`, `companion`. Replaces the whole personality except name, nickname, language, stage labels and the proposal setting. |
+| `list_presets` | | `presets` {presets[]} |
+| `save_preset` | `label`, `description`, `personality`, `replace?` (`custom:<n>` to overwrite) | `presets` {ok, savedId, code?, message?, presets[]} |
+| `delete_preset` | `preset` (`custom:<n>`) | `presets` {ok, code?, message?, presets[]} |
+| `get_character_sheet` | `guid` | `character_sheet` {name, level, class, race, xp, xpNext, money, health, freeSlots, totalSlots, follow (follow/stay/lead), leadQuest?, items[{entry, name, count, quality, soulbound}], gear[{slot, entry, name, quality}], spells[{id, name}], quests[{id, title, level, progress, complete, shared}]} or `ack` {ok: false, code: not_online} |
 | `set_relationship` | `guid`, `stage`, `romantic`, `backstory` | `ack`, `companion` |
 | `save_settings` | `guid`, `settings` | `ack`, `companion` |
-| `summon` | `guid` | `ack` {ok, code: online_as_player, controlled_elsewhere, limit_reached, already_loading, not_owner, playerbots_not_installed ...} |
+| `summon` | `guid` | `ack` {ok, code: online_as_player, controlled_elsewhere, limit_reached, already_loading, not_owner, playerbots_not_installed, estranged ...} |
 | `dismiss` | `guid`, `logout` | `ack` |
 | `chat` | `guid`, `text` | pushes (`typing`, `chat_msg`) or `error` {busy, not_active, ai_disabled} |
 | `get_history` | `guid`, `limit ≤ 50` | `history` {items[{from, text, ts}]} |
@@ -64,15 +68,17 @@ The server **never** takes identity from the payload. The owner is always the se
 `MemoryEntry` = `{id, kind, source, importance, text, createdAt, updatedAt, lastRecalledAt, recallCount, pinned}`.
 Kinds are `fact preference episode relationship promise gift summary`. Sources are `observed player_stated model_summary interpretation user_edited profile`.
 
+Every failed `ack` carries `code` (machine readable) and `message` (text for the player, e.g. "You already have the maximum number of AI companions (3). Send one home first.").
+
 ## Pushes (server → client, no `req`)
 
 | op | meaning |
 |---|---|
 | `chat_msg` {guid, from: player/companion, text, ts, mood?} | conversation line (whisper and addon input) |
 | `typing` {guid, on} | the companion is generating a reply |
-| `relationship` {guid, stage, stageIndex, stageLabel, romantic, values{…}, mood, moodIntensity, strained, labels[]} | values changed |
+| `relationship` {guid, stage, stageIndex, stageLabel, romantic, values{…}, mood, moodIntensity, strained, estranged, estrangedUntil, reconciliation, resentment, labels[]} | values changed |
 | `milestone` {guid, stage, label} | became a couple, got engaged, married, broke up |
-| `memory_changed` {guid, id} | a memory was added or updated |
+| `memory_changed` {guid, id?} | a memory was added, edited, pinned, deleted or cleared (no `id` = several changed) |
 | `companion_active` {guid, active} / `chars_changed` | refresh the character list |
 | `status` | Ollama went online or offline |
 | `error` {code, message, for} | request failed |
