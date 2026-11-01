@@ -9,6 +9,10 @@
 - **Presets:** every built-in preset is a complete personality; 7 male presets next to the 7 female ones; custom presets per account (`romance_preset` table, `Romance.Presets.MaxCustomPerAccount`).
 - **Estrangement:** constant mistreatment makes her leave; she refuses calls for 72 h (longer each time) and comes back cold; reconciliation takes several days. `Romance.Estrangement.*` options.
 - `get_character_sheet`, `list_presets`, `save_preset`, `delete_preset` addon ops; failed acks carry a readable `message`.
+- Party chat: every companion you name answers; "everyone"/"all of you"/"guys" reach all; unaddressed lines reach all companions when only bots share your group (`Romance.Party.UnaddressedReplies`). Each companion knows who else is travelling with her.
+- "Attack all here" / "clear the area" / "kill all wolves": one enemy after another until the area is clear; "stop attacking". "Attack" without a target picks the nearest enemy.
+- Quests without targeting: "accept the quest", "turn in your quests"; companions take and turn in quests together with you (`Romance.Control.QuestSync`).
+- Selling works with a merchant within 30 yards, no targeting (`Romance.Control.InteractRange`).
 
 ### Fixed
 - After renaming a companion and saving, she sometimes still introduced herself with the character's name: saves are now visible immediately (write-through cache), and the prompt says her chosen name wins over the name shown in the world.
@@ -16,6 +20,7 @@
 - "Significant moments" only refreshed after switching tabs: the server now pushes `memory_changed` after every memory edit, delete, clear and reset.
 - Party chat: she didn't answer when you wrote to the group without her name, even when only bots were in it.
 - Server texts no longer assume a female companion.
+- Lead mode didn't move: Playerbots' RPG mode ignores bots that have a master. She now walks to the quest area herself (step by step with path finding), waits for you, and fights the quest creatures there.
 - Ordinary messages right after a proposal (e.g. "I also like flowers") could be treated as another proposal and answered with a stock refusal. The model's proposal label is now ignored unless the message actually talks about the relationship status, and the prompt states that earlier questions don't count.
 - Stock fallback lines never repeat the previous line and have more variety.
 - Inappropriate forms of address ("daddy" etc.): the prompt now sets how she may address the player for the current stage and forbids such terms.

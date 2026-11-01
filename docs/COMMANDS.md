@@ -8,7 +8,7 @@ Everything you can say or type to control your companion. Examples use the compa
 |---|---|
 | Whisper (`/w Elara ...`) | Always, if she is your active AI companion. |
 | Addon chat (Chat tab) | Always. |
-| Party / raid chat | When you address her by name ("Elara, ..."). If only bots are in your group with you, she also answers lines without a name. With several companions, the one you talked to last answers. Can be turned off on the Settings tab ("Listen in party chat"). |
+| Party / raid chat | Every companion you name answers ("Jina, ...", "Jina and Tristi, ..."). "Everyone", "all of you", "guys", "you two" reach all of them. Lines without a name reach all of them too when only bots share your group (`Romance.Party.UnaddressedReplies = last` makes only the last one you talked to answer). Orders work the same way: "everyone, attack all here". Can be turned off per companion on the Settings tab ("Listen in party chat"). |
 
 ## Chat commands
 
@@ -56,11 +56,16 @@ The **Character** tab in the addon shows the same data at a glance.
 | Give an item | "Give me your linen cloth", "Can I have 5 copper ore?" | She opens a trade and puts the item in. You only accept. Soulbound items can't be traded. |
 | Give gold | "Give me 10 gold", "I need 2g 50s" | Trade with the gold. Limited per request (`Romance.Control.MaxGoldPerRequest`). |
 | Cast a spell | "Cast Power Word: Fortitude on me", "Use Frost Nova" | Casts on you ("on me"), on your target, or on herself. She tells you if she doesn't know the spell or it is on cooldown. |
-| Attack | "Attack the wolf", "Kill those murlocs", "Attack beasts", "Attack my target" | Finds the nearest matching enemy by name or creature type (beast, undead, humanoid, demon, elemental, dragonkin, giant, mechanical, critter), marks it with a skull and attacks it. |
+| Attack | "Attack the wolf", "Kill those murlocs", "Attack beasts", "Attack my target", "Attack that" | Finds the nearest matching enemy by name or creature type (beast, undead, humanoid, demon, elemental, dragonkin, giant, mechanical, critter), marks it with a skull and attacks it. You don't need to target anything: without a target she takes the nearest enemy. |
+| Clear the area | "Attack all here", "Kill everything nearby", "Clear the area", "Kill all wolves", "Everyone, kill them all" | One enemy after another (skull mark), until none are left around you; then she tells you. All companions you addressed fight the same target. Critters and other players' fights are left alone. |
+| Stop | "Stop attacking", "Stop fighting" | Stops clearing the area (the current fight still ends normally). |
 | Retreat | "Run away", "Fall back" | Playerbots `flee`. |
-| Sell | "Sell your junk", "Sell your wolf meat" | Only works while she stands at a merchant. With nearly full bags she sells gray items by herself at a vendor (`Romance.Control.AutoSellJunk`). |
+| Sell | "Sell your junk", "Vendor, sell trash", "Sell your wolf meat" | Works when a merchant is within about 30 yards (`Romance.Control.InteractRange`); no need to target him or walk up to him. With nearly full bags she sells gray items by herself near a merchant (`Romance.Control.AutoSellJunk`). |
+| Take quests | "Accept the quest", "Everyone, take the quests too", "Accept the quest Kobold Camp Cleanup" | Takes quests from quest givers within about 30 yards, no targeting needed: first the ones you have taken, otherwise everything offered there. She tells you if she can't take one (level, class, earlier quest missing). |
+| Turn in quests | "Turn in your quests", "Hand in the quest" | Turns in finished quests at quest enders nearby. |
+| Automatic | (nothing to say) | When you take a quest, companions near you take it too; when you turn one in, they turn theirs in as well (`Romance.Control.QuestSync`). |
 | Share quests | "Share your quests", "Share the quest Kobold Camp Cleanup" | Shares the quests you don't have yet and can take, one per second. |
-| Lead | "Lead the way", "Lead me to Kobold Camp Cleanup", "Let's do the Fargodeep Mine quest" | **Experimental.** She walks to one of her quests and you follow. Without a quest name she picks one you both have. When the objectives are done, she follows you again and asks what's next. |
+| Lead | "Lead the way", "Lead me to Kobold Camp Cleanup", "Let's do the Fargodeep Mine quest" | She walks to the area of one of her quests and you follow (you don't need to make her group leader). Without a quest name she picks one you both have. She waits when you fall behind, fights the quest creatures when she arrives, and follows you again when the objectives are done, telling you to turn it in. Quests without creatures to kill: she takes you to the area and tells you what to look for. |
 | Stop leading | "I'll lead", "Stop leading" | She follows you again. |
 
 Giving items or gold needs at least the relationship stage **Friends** (`Romance.Control.GiveMinStage`). Before that she politely refuses.
