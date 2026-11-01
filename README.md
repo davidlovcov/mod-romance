@@ -31,7 +31,6 @@ The in-game interface is the companion addon: **[azerothcore-romance-addon](http
 ```bash
 cd azerothcore-wotlk/modules
 git clone https://github.com/davidlovcov/mod-romance.git
-# or with SSH: git clone git@github.com:davidlovcov/mod-romance.git
 cd .. && ./acore.sh compiler build        # or your usual CMake build
 ```
 Then copy `mod_romance.conf.dist` to `mod_romance.conf` in your `etc/modules` folder and set `Romance.Ollama.Url`.

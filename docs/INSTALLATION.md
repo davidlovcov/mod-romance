@@ -46,7 +46,7 @@ sudo apt-get install git cmake make gcc g++ clang libmysqlclient-dev libssl-dev 
 git clone https://github.com/mod-playerbots/azerothcore-wotlk.git --branch=Playerbot azerothcore
 cd azerothcore/modules
 git clone https://github.com/mod-playerbots/mod-playerbots.git --branch=master
-git clone https://github.com/davidlovcov/mod-romance.git     # SSH: git@github.com:davidlovcov/mod-romance.git
+git clone https://github.com/davidlovcov/mod-romance.git
 cd ..
 ```
 
