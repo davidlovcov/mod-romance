@@ -1,0 +1,23 @@
+# Changelog
+
+## 1.0.0 — 2026-11-01
+
+First release.
+
+- Engine-independent core with relationship rules, gift evaluation, layered memory (dedup, retrieval, summaries, retention), prompt builder, structured-output validation, EN/DE language matching, intent detection, addon wire protocol, an HTTP client for Ollama, and a bounded worker pool with cancellation and backpressure.
+- AzerothCore integration:
+  - whisper/party/addon hooks;
+  - ownership checks including Playerbots linked accounts;
+  - summoning through `PlayerbotHolder::AddPlayerBot`, with polling until Playerbots has attached the bot's AI and master;
+  - on-demand activation of an online companion (whisper, addon chat, "Activate AI");
+  - completed-trade gift detection with inventory verification;
+  - world-state snapshots and event polling (combat, near death, deaths, level-ups, zones), quest and loot hooks;
+  - emotes, and allow-listed Playerbots commands.
+- Characters-DB persistence (6 tables), asynchronous idempotent writes, schema check at startup.
+- `.romance status|summon|dismiss|on|off` chat commands and `mod_romance.conf.dist` with 70+ documented options.
+- 75 C++ tests (including the full couple → ring → restart → remembers flow) and an SQL test against MySQL/MariaDB.
+
+### Known limitations
+- Gifts sent by mail aren't recognized; only completed trades count.
+- If mod-ollama-chat is installed as well, it may also answer whispers to the companion.
+- Party-chat roleplay lines are still visible to Playerbots' own party-command parser (whispers are not).

@@ -1,0 +1,305 @@
+#
+# mod-romance configuration
+# Copy to mod_romance.conf in your worldserver configs/modules directory.
+# These are SERVER-WIDE administrator settings. Players change their own
+# companion preferences in the AzerothRomance addon, within these limits.
+#
+
+[worldserver]
+
+###################################################################################################
+# MODULE
+###################################################################################################
+
+#    Romance.Enable
+#        Description: Enable the romance companion module.
+#        Default:     1
+Romance.Enable = 1
+
+#    Romance.Debug
+#        Description: Extra log output (module logger) for gifts, protocol errors and requests.
+#        Default:     0
+Romance.Debug = 0
+
+#    Romance.MaxActiveCompanionsPerPlayer
+#        Description: AI (Ollama) companions a single player character may have active at once.
+#                     Other Playerbots of the same player are never sent to Ollama.
+#        Default:     1
+Romance.MaxActiveCompanionsPerPlayer = 1
+
+#    Romance.MaxAiCompanionsServer
+#        Description: Server-wide limit of simultaneously active AI companions.
+#        Default:     50
+Romance.MaxAiCompanionsServer = 50
+
+#    Romance.AllowLinkedAccounts
+#        Description: Allow characters of accounts linked with ".playerbots account link" as companions.
+#        Default:     1
+Romance.AllowLinkedAccounts = 1
+
+#    Romance.AllowInitialStageSelection / Romance.MaxInitialStage
+#        Description: Let players pick the starting relationship (e.g. already a couple).
+#                     Stages: 0 strangers, 1 acquaintances, 2 friends, 3 close friends,
+#                     4 romantic interest, 5 dating/couple, 6 engaged, 7 married.
+#        Default:     1 / 7
+Romance.AllowInitialStageSelection = 1
+Romance.MaxInitialStage = 7
+
+###################################################################################################
+# OLLAMA (local LLM)
+###################################################################################################
+
+#    Romance.Ollama.Enable
+#        Description: Use Ollama for conversations. When 0, companions are regular Playerbots.
+#        Default:     1
+Romance.Ollama.Enable = 1
+
+#    Romance.Ollama.Url
+#        Description: Ollama base URL (http only; localhost or a trusted LAN host).
+#        Default:     "http://127.0.0.1:11434"
+Romance.Ollama.Url = "http://127.0.0.1:11434"
+
+#    Romance.Ollama.Model / Romance.Ollama.FallbackModel
+#        Description: Default model and the model used if the default is not installed.
+#        Default:     "qwen3.5:4b" / "qwen3:4b-instruct"
+Romance.Ollama.Model = "qwen3.5:4b"
+Romance.Ollama.FallbackModel = "qwen3:4b-instruct"
+
+#    Romance.Ollama.AllowPlayerModelChoice / Romance.Ollama.AllowedModels
+#        Description: Let players pick a model in the addon. AllowedModels is a comma separated
+#                     allow-list ("" = any installed model).
+#        Default:     1 / ""
+Romance.Ollama.AllowPlayerModelChoice = 1
+Romance.Ollama.AllowedModels = ""
+
+#    Romance.Ollama.Temperature / MinTemperature / MaxTemperature
+#        Description: Sampling temperature and the range players may choose from.
+#        Default:     0.8 / 0.2 / 1.2
+Romance.Ollama.Temperature = 0.8
+Romance.Ollama.MinTemperature = 0.2
+Romance.Ollama.MaxTemperature = 1.2
+
+#    Romance.Ollama.ContextLength
+#        Description: num_ctx sent to Ollama.
+#        Default:     8192
+Romance.Ollama.ContextLength = 8192
+
+#    Romance.Ollama.MaxResponseTokens / Romance.Ollama.MaxReplyChars
+#        Description: num_predict, and the hard cap on characters said in chat per reply.
+#        Default:     300 / 450
+Romance.Ollama.MaxResponseTokens = 300
+Romance.Ollama.MaxReplyChars = 450
+
+#    Romance.Ollama.Thinking
+#        Description: Allow "thinking" for reasoning models. Off = faster, more responsive chat.
+#        Default:     0
+Romance.Ollama.Thinking = 0
+
+#    Romance.Ollama.StructuredOutput
+#        Description: Request JSON-schema constrained output (recommended). Falls back automatically.
+#        Default:     1
+Romance.Ollama.StructuredOutput = 1
+
+#    Romance.Ollama.RequestTimeoutMs / ConnectTimeoutMs
+#        Default:     45000 / 3000
+Romance.Ollama.RequestTimeoutMs = 45000
+Romance.Ollama.ConnectTimeoutMs = 3000
+
+#    Romance.Ollama.MaxConcurrentRequests
+#        Description: Worker threads talking to Ollama (bounded pool; never the world thread).
+#        Default:     2
+Romance.Ollama.MaxConcurrentRequests = 2
+
+#    Romance.Ollama.MaxQueuedRequests / MaxPendingPerCompanion
+#        Description: Global queue bound (backpressure) and per-companion in-flight limit.
+#        Default:     16 / 2
+Romance.Ollama.MaxQueuedRequests = 16
+Romance.Ollama.MaxPendingPerCompanion = 2
+
+#    Romance.Ollama.MinResponseCooldownMs
+#        Description: Minimum time between two roleplay messages accepted for one companion
+#                     (spam protection; Playerbots commands are not affected).
+#        Default:     1500
+Romance.Ollama.MinResponseCooldownMs = 1500
+
+#    Romance.Ollama.HealthCheckIntervalSec
+#        Default:     30
+Romance.Ollama.HealthCheckIntervalSec = 30
+
+#    Romance.Ollama.KeepAlive
+#        Description: How long Ollama keeps the model loaded between requests.
+#        Default:     "10m"
+Romance.Ollama.KeepAlive = "10m"
+
+###################################################################################################
+# CONVERSATION
+###################################################################################################
+
+#    Romance.Chat.HistoryTurns / Romance.Chat.StoredTurns
+#        Description: Recent turns sent to the model / turns kept in the database per companion.
+#        Default:     12 / 80
+Romance.Chat.HistoryTurns = 12
+Romance.Chat.StoredTurns = 80
+
+#    Romance.Chat.MaxPlayerMessageChars / MaxProfileFieldChars / MaxInstructionChars
+#        Default:     500 / 600 / 1200
+Romance.Chat.MaxPlayerMessageChars = 500
+Romance.Chat.MaxProfileFieldChars = 600
+Romance.Chat.MaxInstructionChars = 1200
+
+#    Romance.Chat.PartyOnly
+#        Description: Companions always answer in party chat instead of whispers.
+#        Default:     0
+Romance.Chat.PartyOnly = 0
+
+#    Romance.Chat.Language
+#        Description: auto (match the player per message, EN/DE), en, de
+#        Default:     "auto"
+Romance.Chat.Language = "auto"
+
+#    Romance.Chat.NaturalLanguageCommands
+#        Description: "Elara, follow me." -> Playerbots "follow" (strict allow-list:
+#                     follow, stay, attack, flee). Players can still disable it per companion.
+#        Default:     1
+Romance.Chat.NaturalLanguageCommands = 1
+
+#    Romance.Chat.GameplayContext
+#        Description: Include observed game state (zone, health, fights...) in prompts.
+#        Default:     1
+Romance.Chat.GameplayContext = 1
+
+#    Romance.Chat.QuietInInstances
+#        Description: Suppress proactive chatter inside dungeons/raids (combat is always quiet).
+#        Default:     0
+Romance.Chat.QuietInInstances = 0
+
+###################################################################################################
+# PROACTIVE CONVERSATION
+###################################################################################################
+
+#    Romance.Proactive.Enable
+#        Default:     1
+Romance.Proactive.Enable = 1
+
+#    Romance.Proactive.MinIntervalSec / MaxIntervalSec
+#        Description: Spacing of spontaneous lines (scaled by player frequency and personality initiative,
+#                     doubled after each unanswered line; stops after two unanswered lines).
+#        Default:     240 / 900
+Romance.Proactive.MinIntervalSec = 240
+Romance.Proactive.MaxIntervalSec = 900
+
+#    Romance.Proactive.Chance / Romance.Proactive.MaxPerHour
+#        Default:     0.6 / 6
+Romance.Proactive.Chance = 0.6
+Romance.Proactive.MaxPerHour = 6
+
+#    Romance.Proactive.IdleCheckInSec
+#        Description: Silence after which a gentle "are you still there?" may happen (once).
+#        Default:     600
+Romance.Proactive.IdleCheckInSec = 600
+
+#    Romance.Proactive.EventReactionCooldownSec / EventReactionChance
+#        Description: Reactions to ordinary events (won fights, quests, new zones). Important events
+#                     (near death, level up, summon, gifts) always get a reaction.
+#        Default:     90 / 0.5
+Romance.Proactive.EventReactionCooldownSec = 90
+Romance.Proactive.EventReactionChance = 0.5
+
+###################################################################################################
+# MEMORY
+###################################################################################################
+
+#    Romance.Memory.Enable
+#        Default:     1
+Romance.Memory.Enable = 1
+
+#    Romance.Memory.MaxPerCompanion
+#        Description: Upper bound; least important, old, unpinned entries are pruned first.
+#                     Milestones, pinned and player-edited memories are never pruned.
+#        Default:     400
+Romance.Memory.MaxPerCompanion = 400
+
+#    Romance.Memory.RetrievalCount / RetrievalChars
+#        Description: Memories selected per prompt (relevance + importance + recency).
+#        Default:     10 / 1400
+Romance.Memory.RetrievalCount = 10
+Romance.Memory.RetrievalChars = 1400
+
+#    Romance.Memory.SummarizeEveryTurns
+#        Description: Summarize conversation into episodic memory every N turns (0 = off).
+#        Default:     24
+Romance.Memory.SummarizeEveryTurns = 24
+
+#    Romance.Memory.RetentionDays
+#        Description: Forget low-importance memories older than this (0 = keep).
+#        Default:     0
+Romance.Memory.RetentionDays = 0
+
+#    Romance.Memory.DedupeThreshold
+#        Description: Similarity (0..1) above which a new memory is merged into an existing one.
+#        Default:     0.72
+Romance.Memory.DedupeThreshold = 0.72
+
+###################################################################################################
+# RELATIONSHIP
+###################################################################################################
+
+#    Romance.Relationship.ProgressionSpeed / GainMultiplier / LossMultiplier
+#        Default:     1.0 / 1.0 / 1.0
+Romance.Relationship.ProgressionSpeed = 1.0
+Romance.Relationship.GainMultiplier = 1.0
+Romance.Relationship.LossMultiplier = 1.0
+
+#    Romance.Relationship.MoodSensitivity / RomanticInitiative
+#        Default:     1.0 / 1.0
+Romance.Relationship.MoodSensitivity = 1.0
+Romance.Relationship.RomanticInitiative = 1.0
+
+#    Romance.Relationship.DailyGainCap
+#        Description: Maximum positive points per day from conversation (keeps it gradual).
+#        Default:     12
+Romance.Relationship.DailyGainCap = 12
+
+#    Romance.Relationship.MinDaysDatingBeforeEngagement / MinDaysEngagedBeforeMarriage
+#        Default:     2 / 1
+Romance.Relationship.MinDaysDatingBeforeEngagement = 2
+Romance.Relationship.MinDaysEngagedBeforeMarriage = 1
+
+#    Romance.Relationship.RequireRingForEngagement
+#        Description: A ring must have been traded within the last hour for an engagement "yes".
+#        Default:     0
+Romance.Relationship.RequireRingForEngagement = 0
+
+#    Romance.Relationship.NeglectDaysBeforeDecay
+#        Default:     7
+Romance.Relationship.NeglectDaysBeforeDecay = 7
+
+###################################################################################################
+# GIFTS
+###################################################################################################
+
+#    Romance.Gift.Multiplier / JewelryMultiplier / DailyCap
+#        Default:     1.0 / 1.6 / 30
+Romance.Gift.Multiplier = 1.0
+Romance.Gift.JewelryMultiplier = 1.6
+Romance.Gift.DailyCap = 30
+
+#    Romance.Gift.RomanticItemEntries
+#        Description: Comma separated item entries treated as romantic gifts (in addition to keywords).
+#        Default:     ""
+Romance.Gift.RomanticItemEntries = ""
+
+#    Romance.Gift.RomanticKeywords
+#        Description: Comma separated name keywords for romantic items ("" = built-in EN/DE list).
+#        Default:     ""
+Romance.Gift.RomanticKeywords = ""
+
+###################################################################################################
+# PRIVACY
+###################################################################################################
+
+#    Romance.Privacy.AllowExport / AllowFullReset / DebugTabForPlayers
+#        Default:     1 / 1 / 1
+Romance.Privacy.AllowExport = 1
+Romance.Privacy.AllowFullReset = 1
+Romance.Privacy.DebugTabForPlayers = 1
