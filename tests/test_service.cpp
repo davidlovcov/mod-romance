@@ -708,6 +708,51 @@ TEST(Service, SeveralCompanionsPerPlayer)
     CHECK(h.svc->LastActivity(h.Key(kArthas, kLyra)) >= h.svc->LastActivity(h.Key(kArthas, kElara)));
 }
 
+TEST(Service, MemoryEditsNotifyTheAddon)
+{
+    Harness h;
+    h.Activate(h.Key());
+    auto pushes = [&]()
+    {
+        size_t n = 0;
+        for (auto const& a : h.svc->TakeOutgoing())
+            if (a.type == OutgoingAction::Type::UiPush && a.payload["op"].AsString() == "memory_changed")
+                ++n;
+        return n;
+    };
+    pushes();
+    auto m = h.svc->AddUserMemory(h.Key(), MemoryKind::Fact, "I grew up in Goldshire.", 50, h.now);
+    CHECK(m.has_value());
+    CHECK_EQ(pushes(), size_t(1));
+    h.svc->PinMemory(h.Key(), m->id, true);
+    CHECK_EQ(pushes(), size_t(1));
+    h.svc->ClearMemories(h.Key(), std::nullopt);
+    CHECK_EQ(pushes(), size_t(1));
+}
+
+TEST(Service, SavedNameSurvivesReactivation)
+{
+    Harness h;
+    PersonalityProfile p;
+    p.name = "Seren";
+    CHECK(h.svc->SavePersonality(h.Key(), kAccount, "Taren", p, h.now).ok);
+    auto r = h.svc->Activate(h.Key(), kAccount, "Taren", "Arthas", h.now);
+    CHECK(r.ok);
+    std::string sys;
+    h.llm->SetResponder([&](LlmRequest const& req)
+    {
+        sys = req.messages[0].content;
+        LlmResult res;
+        res.status = LlmResult::Status::Ok;
+        res.content = ReplyJson("Hello there.");
+        return res;
+    });
+    h.svc->OnPlayerMessage(h.Key(), "What is your name?", ChatChannel::Whisper, h.ctx, h.now);
+    CHECK(h.WaitSpeak(h.Key()));
+    CHECK_CONTAINS(sys, "You are Seren");
+    CHECK_CONTAINS(sys, "not what you are called");
+}
+
 TEST(Service, SettingsValidation)
 {
     Harness h;

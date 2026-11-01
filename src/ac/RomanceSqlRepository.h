@@ -4,8 +4,13 @@
  * IRomanceRepository on the AzerothCore characters database.
  *  - reads are synchronous and only happen when a companion is activated,
  *    configured or inspected (small, indexed queries);
- *  - writes are asynchronous (DatabaseWorkerPool::Execute), idempotent upserts,
- *    so the world thread never waits on MySQL during gameplay.
+ *  - frequent writes (companion state, player profile, chat log) are asynchronous
+ *    (DatabaseWorkerPool::Execute), idempotent upserts, so the world thread never
+ *    waits on MySQL during gameplay. Because async writes and sync reads use
+ *    different connections, saved companion records and player profiles are kept
+ *    in a write-through cache: a load right after a save always sees the save;
+ *  - rare, player-triggered writes (memory edits, deletes, clears) run directly
+ *    so the next read cannot see the old rows.
  * Must be used from the world thread only (like the RomanceService).
  */
 
@@ -13,6 +18,9 @@
 #define MOD_ROMANCE_SQL_REPOSITORY_H
 
 #include "RomanceRepository.h"
+
+#include <map>
+#include <utility>
 
 namespace romance::ac
 {
@@ -40,6 +48,13 @@ namespace romance::ac
         std::set<uint64_t> LoadRewardedItemGuids(Guid companion) override;
         void InsertGift(CompanionKey const& key, GiftRecord const& g) override;
         void LogRelationshipEvent(CompanionKey const& key, std::string const& type, std::string const& detail, TimePoint at) override;
+
+    private:
+        using PairKey = std::pair<uint64_t, uint64_t>;
+        static PairKey K(CompanionKey const& k) { return { uint64_t(k.owner), uint64_t(k.companion) }; }
+
+        std::map<PairKey, CompanionRecord> _companions; // last saved state per companion
+        std::map<PairKey, PlayerProfile> _profiles;      // (account, owner) -> last saved profile
     };
 }
 

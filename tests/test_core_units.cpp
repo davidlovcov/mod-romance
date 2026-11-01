@@ -595,6 +595,26 @@ TEST(Text, RepetitionAndNameCount)
 
 // ============================================================ Prompt / structured output
 
+TEST(Prompt, ChosenNameBeatsWorldNameAndSecondPerson)
+{
+    PersonalityProfile p;
+    p.name = "Seren";
+    RelationshipState st = RelationshipEngine::InitialFor(Stage::Strangers, true, kNow);
+    PromptInput in;
+    in.personality = &p;
+    in.relationship = &st;
+    in.companionName = "Seren";
+    in.worldName = "Taren";
+    in.playerName = "Devid";
+    std::string sys = DialogueContextBuilder::BuildSystemPrompt(in);
+    CHECK_CONTAINS(sys, "You are Seren");
+    CHECK_CONTAINS(sys, "Your name is Seren.");
+    CHECK_CONTAINS(sys, "refer to yourself as Seren");
+    CHECK_CONTAINS(sys, "The person writing to you IS Devid");
+    in.worldName = "Seren";
+    CHECK_NOT_CONTAINS(DialogueContextBuilder::BuildSystemPrompt(in), "above your head");
+}
+
 TEST(Prompt, SystemPromptContainsPersonaMemoriesAndRules)
 {
     PersonalityProfile p = Elara();

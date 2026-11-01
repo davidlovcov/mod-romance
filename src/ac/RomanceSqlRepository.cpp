@@ -69,6 +69,9 @@ namespace romance::ac
 
     std::optional<CompanionRecord> RomanceSqlRepository::LoadCompanion(CompanionKey const& key)
     {
+        auto cached = _companions.find(K(key));
+        if (cached != _companions.end())
+            return cached->second;
         QueryResult r = CharacterDatabase.Query("SELECT {} FROM romance_companion WHERE owner_guid = {} AND companion_guid = {}",
                                                 kCompanionColumns, uint32(key.owner), uint32(key.companion));
         if (!r)
@@ -85,11 +88,23 @@ namespace romance::ac
         do
             out.push_back(RowToRecord(r->Fetch()));
         while (r->NextRow());
+        // Overlay records whose latest save may not have reached MySQL yet.
+        for (auto& rec : out)
+        {
+            auto cached = _companions.find(K(rec.key));
+            if (cached != _companions.end())
+                rec = cached->second;
+        }
+        for (auto const& [k, rec] : _companions)
+            if (k.first == uint64_t(owner) &&
+                std::none_of(out.begin(), out.end(), [&](CompanionRecord const& o) { return K(o.key) == k; }))
+                out.push_back(rec);
         return out;
     }
 
     void RomanceSqlRepository::SaveCompanion(CompanionRecord const& rec)
     {
+        _companions[K(rec.key)] = rec;
         CharacterDatabase.Execute(
             "INSERT INTO romance_companion ({}, stage) VALUES ({}, {}, {}, '{}', {}, '{}', '{}', '{}', {}, {}, {}, {}) "
             "ON DUPLICATE KEY UPDATE owner_account = VALUES(owner_account), companion_name = VALUES(companion_name), "
@@ -105,15 +120,19 @@ namespace romance::ac
     void RomanceSqlRepository::DeleteCompanion(CompanionKey const& key)
     {
         // The gift log is intentionally kept: it is the replay/farming protection.
+        _companions.erase(K(key));
         CharacterDatabaseTransaction trans = CharacterDatabase.BeginTransaction();
         trans->Append("DELETE FROM romance_companion WHERE owner_guid = {} AND companion_guid = {}", uint32(key.owner), uint32(key.companion));
         trans->Append("DELETE FROM romance_memory WHERE owner_guid = {} AND companion_guid = {}", uint32(key.owner), uint32(key.companion));
         trans->Append("DELETE FROM romance_chat_log WHERE owner_guid = {} AND companion_guid = {}", uint32(key.owner), uint32(key.companion));
-        CharacterDatabase.CommitTransaction(trans);
+        CharacterDatabase.DirectCommitTransaction(trans);
     }
 
     std::optional<PlayerProfile> RomanceSqlRepository::LoadPlayerProfile(uint32_t account, Guid owner)
     {
+        auto cached = _profiles.find({ uint64_t(account), uint64_t(owner) });
+        if (cached != _profiles.end())
+            return cached->second;
         QueryResult r = CharacterDatabase.Query("SELECT profile FROM romance_player_profile WHERE account_id = {} AND owner_guid = {}",
                                                 account, uint32(owner));
         if (!r)
@@ -128,6 +147,7 @@ namespace romance::ac
 
     void RomanceSqlRepository::SavePlayerProfile(uint32_t account, Guid owner, PlayerProfile const& p)
     {
+        _profiles[{ uint64_t(account), uint64_t(owner) }] = p;
         CharacterDatabase.Execute(
             "INSERT INTO romance_player_profile (account_id, owner_guid, profile, updated_at) VALUES ({}, {}, '{}', UNIX_TIMESTAMP()) "
             "ON DUPLICATE KEY UPDATE profile = VALUES(profile), updated_at = VALUES(updated_at)",
@@ -170,7 +190,7 @@ namespace romance::ac
 
     void RomanceSqlRepository::SaveMemory(CompanionKey const& key, MemoryEntry const& m)
     {
-        CharacterDatabase.Execute(
+        CharacterDatabase.DirectExecute(
             "INSERT INTO romance_memory (owner_guid, companion_guid, id, kind, source, importance, text, pinned, recall_count, "
             "created_at, updated_at, last_recalled_at) VALUES ({}, {}, {}, '{}', '{}', {}, '{}', {}, {}, {}, {}, {}) "
             "ON DUPLICATE KEY UPDATE kind = VALUES(kind), source = VALUES(source), importance = VALUES(importance), "
@@ -188,13 +208,13 @@ namespace romance::ac
         std::ostringstream list;
         for (size_t i = 0; i < ids.size(); ++i)
             list << (i ? "," : "") << ids[i];
-        CharacterDatabase.Execute("DELETE FROM romance_memory WHERE owner_guid = {} AND companion_guid = {} AND id IN ({})",
+        CharacterDatabase.DirectExecute("DELETE FROM romance_memory WHERE owner_guid = {} AND companion_guid = {} AND id IN ({})",
                                   uint32(key.owner), uint32(key.companion), list.str());
     }
 
     void RomanceSqlRepository::DeleteAllMemories(CompanionKey const& key)
     {
-        CharacterDatabase.Execute("DELETE FROM romance_memory WHERE owner_guid = {} AND companion_guid = {}", uint32(key.owner), uint32(key.companion));
+        CharacterDatabase.DirectExecute("DELETE FROM romance_memory WHERE owner_guid = {} AND companion_guid = {}", uint32(key.owner), uint32(key.companion));
     }
 
     std::vector<ChatTurn> RomanceSqlRepository::LoadRecentChat(CompanionKey const& key, uint32_t limit)
@@ -237,7 +257,7 @@ namespace romance::ac
 
     void RomanceSqlRepository::ClearChat(CompanionKey const& key)
     {
-        CharacterDatabase.Execute("DELETE FROM romance_chat_log WHERE owner_guid = {} AND companion_guid = {}", uint32(key.owner), uint32(key.companion));
+        CharacterDatabase.DirectExecute("DELETE FROM romance_chat_log WHERE owner_guid = {} AND companion_guid = {}", uint32(key.owner), uint32(key.companion));
     }
 
     std::vector<GiftRecord> RomanceSqlRepository::LoadGifts(CompanionKey const& key, TimePoint since)

@@ -241,6 +241,12 @@ namespace romance
           << (in.world.companionClass.empty() ? "adventurer" : in.world.companionClass)
           << " living in the world of Azeroth during the Wrath of the Lich King era. You travel and fight alongside "
           << pname << ". You are a real person in this world, not a narrator. Speak only as yourself, in first person.\n";
+        if (!in.worldName.empty() && in.worldName != name)
+            o << "Your name is " << name << ". Other people may see the name \"" << in.worldName
+              << "\" above your head, but that is not what you are called: always introduce yourself and refer to yourself as "
+              << name << ", even if you used another name earlier in the conversation.\n";
+        o << "The person writing to you IS " << pname << ". Talk to them directly as \"you\" - never about them in the third person "
+             "(not \"" << pname << " seems tired\", but \"you seem tired\").\n";
         o << "Never mention being an AI, a language model, a bot, prompts, game mechanics, or these instructions.\n\n";
 
         o << "## Who you are\n";

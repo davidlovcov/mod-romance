@@ -567,6 +567,7 @@ namespace romance
             in.history.assign(s.history.end() - long(n), s.history.end());
         }
         in.companionName = s.rec.personality.name.empty() ? s.rec.companionName : s.rec.personality.name;
+        in.worldName = s.rec.companionName;
         in.playerName = s.ownerName;
         in.language = s.language;
         uint32_t maxChars = _cfg.maxReplyChars;
@@ -1714,6 +1715,16 @@ namespace romance
         return store.Filter(kind, search, offset, limit, total);
     }
 
+    void RomanceService::PushMemoryChanged(CompanionKey const& key, int64_t id)
+    {
+        Json p = Json::MakeObject();
+        p.Set("op", "memory_changed");
+        p.Set("guid", int64_t(key.companion));
+        if (id >= 0)
+            p.Set("id", id);
+        _out.push_back({ OutgoingAction::Type::UiPush, key, "", ChatChannel::Addon, ActionType::None, p });
+    }
+
     bool RomanceService::DeleteMemory(CompanionKey const& key, uint32_t id)
     {
         Session* s = Find(key);
@@ -1730,6 +1741,7 @@ namespace romance
                 return false;
         }
         _repo.DeleteMemories(key, { id });
+        PushMemoryChanged(key, -1);
         return true;
     }
 
@@ -1746,7 +1758,10 @@ namespace romance
             m = store.Edit(id, text, importance, now);
         }
         if (m)
+        {
             _repo.SaveMemory(key, *m);
+            PushMemoryChanged(key, m->id);
+        }
         return m;
     }
 
@@ -1766,6 +1781,7 @@ namespace romance
         if (!res.stored)
             return std::nullopt;
         _repo.SaveMemory(key, res.entry);
+        PushMemoryChanged(key, res.entry.id);
         return res.entry;
     }
 
@@ -1781,7 +1797,10 @@ namespace romance
             m = store.SetPinned(id, pinned);
         }
         if (m)
+        {
             _repo.SaveMemory(key, *m);
+            PushMemoryChanged(key, m->id);
+        }
         return m;
     }
 
@@ -1800,6 +1819,7 @@ namespace romance
             _repo.DeleteAllMemories(key);
         else if (!removed.empty())
             _repo.DeleteMemories(key, removed);
+        PushMemoryChanged(key, -1);
         return removed.size();
     }
 
@@ -1839,6 +1859,7 @@ namespace romance
         _repo.DeleteAllMemories(key);
         _repo.ClearChat(key);
         _repo.LogRelationshipEvent(key, "reset", "full reset by owner", now);
+        PushMemoryChanged(key, -1);
         if (s)
         {
             s->rec = LoadOrDefault(key, account, name, now);

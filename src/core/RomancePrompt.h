@@ -50,7 +50,8 @@ namespace romance
         WorldContext world;
         bool includeWorld = true;
         std::vector<ChatTurn> history;           // oldest first
-        std::string companionName;
+        std::string companionName;               // the name she goes by (personality name)
+        std::string worldName;                   // the bot character's name in the game world
         std::string playerName;                  // character name of the player
         std::string language;                    // en | de
         std::optional<ProposalDecision> proposal;
