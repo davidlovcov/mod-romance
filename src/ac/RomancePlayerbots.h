@@ -24,6 +24,8 @@ namespace romance::ac
     {
     public:
         static bool Available();
+        // Playerbots settings that disturb companions (empty = fine); logged at startup.
+        static std::string ConfigWarnings();
         static bool IsBot(Player* player);
         static Player* MasterOf(Player* bot);
         static bool IsMyBot(Player* bot, Player* master);

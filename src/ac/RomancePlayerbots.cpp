@@ -11,6 +11,7 @@
 #if __has_include("Playerbots.h") && __has_include("PlayerbotMgr.h")
 #  define ROMANCE_WITH_PLAYERBOTS 1
 #  include "PlayerbotAI.h"
+#  include "PlayerbotAIConfig.h"
 #  include "PlayerbotMgr.h"
 #  include "Playerbots.h"
 #  include "PlayerbotsDatabase.h"
@@ -22,6 +23,21 @@ namespace romance::ac
 {
 #if ROMANCE_WITH_PLAYERBOTS
     bool PlayerbotsBridge::Available() { return true; }
+
+    namespace
+    {
+        // Playerbots ignores commands without its configured prefix (Playerbots.CommandPrefix).
+        std::string Cmd(std::string const& command) { return sPlayerbotAIConfig.CommandPrefix + command; }
+    }
+
+    std::string PlayerbotsBridge::ConfigWarnings()
+    {
+        if (sPlayerbotAIConfig.EnableAutoTradeOnItemMention && sPlayerbotAIConfig.CommandPrefix.empty())
+            return "Playerbots.EnableAutoTradeOnItemMention = 1: Playerbots opens a trade when a party chat line merely mentions "
+                   "an item word, so ordinary roleplay lines (\"how many more to kill?\") can open trade windows. "
+                   "Set Playerbots.EnableAutoTradeOnItemMention = 0 in playerbots.conf.";
+        return "";
+    }
 
     bool PlayerbotsBridge::IsBot(Player* player)
     {
@@ -101,7 +117,7 @@ namespace romance::ac
         if (!ai || !ai->IsBotAI() || ai->GetMaster() != master)
             return false;
         // Same entry point as a whispered command, including Playerbots' security checks.
-        ai->HandleCommand(CHAT_MSG_WHISPER, command, master);
+        ai->HandleCommand(CHAT_MSG_WHISPER, Cmd(command), master);
         return true;
     }
 
@@ -129,7 +145,7 @@ namespace romance::ac
         if (!ai || !ai->IsBotAI() || ai->GetMaster() != master)
             return false;
         // Without follow/stay Playerbots leaves non-combat movement alone; combat stays with Playerbots.
-        ai->HandleCommand(CHAT_MSG_WHISPER, "nc -follow,-stay", master);
+        ai->HandleCommand(CHAT_MSG_WHISPER, Cmd("nc -follow,-stay"), master);
         return true;
     }
 
@@ -138,12 +154,13 @@ namespace romance::ac
         PlayerbotAI* ai = bot ? GET_PLAYERBOT_AI(bot) : nullptr;
         if (!ai || !ai->IsBotAI() || ai->GetMaster() != master)
             return false;
-        ai->HandleCommand(CHAT_MSG_WHISPER, "nc +follow", master);
-        ai->HandleCommand(CHAT_MSG_WHISPER, "follow", master);
+        ai->HandleCommand(CHAT_MSG_WHISPER, Cmd("nc +follow"), master);
+        ai->HandleCommand(CHAT_MSG_WHISPER, Cmd("follow"), master);
         return true;
     }
 #else
     bool PlayerbotsBridge::Available() { return false; }
+    std::string PlayerbotsBridge::ConfigWarnings() { return ""; }
     bool PlayerbotsBridge::IsBot(Player*) { return false; }
     Player* PlayerbotsBridge::MasterOf(Player*) { return nullptr; }
     bool PlayerbotsBridge::IsMyBot(Player*, Player*) { return false; }

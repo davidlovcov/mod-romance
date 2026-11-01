@@ -163,3 +163,13 @@ Chat-command alternatives: `.romance summon Elara`, `.romance dismiss`, `.romanc
 | Two bots answer the same whisper | **mod-ollama-chat** is also installed and answers bot whispers. Disable it, or don't use both on the same character. |
 | Muted for chat flood | Very large imports. The addon paces its traffic below `ChatFlood.AddonMessageCount`; if you lowered that setting, raise it again. |
 | Linking error mentioning `ws2_32` on Windows | Delete the CMake cache and re-run CMake. `mod-romance.cmake` adds `ws2_32` automatically. |
+
+## Recommended Playerbots setting
+
+Set this in `playerbots.conf`:
+
+```
+Playerbots.EnableAutoTradeOnItemMention = 0
+```
+
+Playerbots reads every party chat line as a possible bot command. When a line contains any word it associates with items (slot names, item qualities, trade goods, money...), it opens a trade window. With AI companions you talk to them in party chat all the time, so ordinary sentences like "how many more to kill?" can suddenly open a trade. mod-romance logs a warning at startup while the setting is on. Item trades you ask for ("give me your linen cloth") still work, because mod-romance opens those itself.

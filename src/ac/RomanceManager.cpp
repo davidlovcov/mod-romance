@@ -153,6 +153,8 @@ namespace romance::ac
         LOG_INFO("module", "[mod-romance] {} | Ollama {} at {} | model {} | Playerbots {}",
                  _enabled ? "enabled" : "DISABLED", _cfg.ollamaEnabled ? "on" : "off", _cfg.ollamaUrl, _cfg.model,
                  PlayerbotsBridge::Available() ? "found" : "NOT found (summoning disabled)");
+        if (std::string warn = PlayerbotsBridge::ConfigWarnings(); !warn.empty())
+            LOG_WARN("module", "[mod-romance] {}", warn);
     }
 
     void RomanceManager::Rebuild()

@@ -3,6 +3,8 @@
 ## Unreleased
 
 ### Fixed
+- Party chat lines could open a trade window ("how many more to kill?"): that is Playerbots' `EnableAutoTradeOnItemMention`. mod-romance now warns about it at startup; set `Playerbots.EnableAutoTradeOnItemMention = 0` (see docs/INSTALLATION.md).
+- mod-romance's own bot commands respect `Playerbots.CommandPrefix` when one is set.
 - Lead mode: saying "wait" made her give up leading (the Playerbots stay held her in place and the lead controller took that for being stuck). "Wait" now pauses the lead, and "lead again", "go on" or "keep going" continues it.
 
 ## 1.1.0 — 2026-11-01
