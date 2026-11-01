@@ -194,6 +194,71 @@ TEST(Relationship, SpamDoesNotMaxOutAffection)
     CHECK(st.stage <= Stage::Acquaintances);
 }
 
+TEST(Relationship, EstrangementIsHardToFix)
+{
+    RomanceConfig cfg;
+    RelationshipEngine eng(cfg, 1);
+    RelationshipState st = RelationshipEngine::InitialFor(Stage::Dating, true, kNow);
+    PersonalityProfile p = Elara();
+    // one bad day is not enough to make a partner leave...
+    bool left = false;
+    TimePoint t = kNow;
+    for (int i = 0; i < 3 && !left; ++i)
+        left = eng.ApplyConversation(st, Sentiment::VeryNegative, { Signal::Insult }, p, 30, t += 60).leaving;
+    CHECK(!left);
+    CHECK(st.resentment > 30);
+    // ...but constant insults are
+    for (int i = 0; i < 20 && !left; ++i)
+        left = eng.ApplyConversation(st, Sentiment::VeryNegative, { Signal::Insult, Signal::Rudeness }, p, 30, t += 60).leaving;
+    CHECK(left);
+
+    TimePoint until = eng.Estrange(st, t);
+    CHECK_EQ(until - t, TimePoint(cfg.estrangeCooldownHours) * 3600);
+    CHECK(st.estranged);
+    CHECK(st.stage == Stage::Acquaintances);
+    CHECK(RelationshipEngine::Away(st, t + 3600));
+    CHECK(!RelationshipEngine::Away(st, until + 1));
+    CHECK(eng.EvaluateProposal(st, ProposalKind::Dating, p, t).outcome == ProposalOutcome::Decline);
+
+    // reconciliation is capped per day: a flood of apologies in one day is not enough
+    t = until + 10;
+    bool reconciled = false;
+    for (int i = 0; i < 50 && !reconciled; ++i)
+        reconciled = eng.ApplyConversation(st, Sentiment::VeryPositive, { Signal::Apology, Signal::Kindness }, p, 40, t += 30).reconciled;
+    CHECK(!reconciled);
+    CHECK(st.reconciliation <= cfg.reconcilePerDay + 0.01);
+    // days of sincere effort do it
+    for (int day = 1; day <= 6 && !reconciled; ++day)
+    {
+        t = until + day * 24 * 3600 + 100;
+        for (int i = 0; i < 10 && !reconciled; ++i)
+            reconciled = eng.ApplyConversation(st, Sentiment::VeryPositive, { Signal::Apology, Signal::Kindness }, p, 40, t += 30).reconciled;
+    }
+    CHECK(reconciled);
+    CHECK(!st.estranged);
+    CHECK(st.strained);
+
+    // leaving again doubles the cooldown and costs more
+    TimePoint until2 = eng.Estrange(st, t);
+    CHECK_EQ(until2 - t, TimePoint(cfg.estrangeCooldownHours) * 3600 * 2);
+    CHECK(st.stage == Stage::Strangers);
+    // hurting her while she tries to forgive: she leaves again at once
+    CHECK(eng.ApplyConversation(st, Sentiment::Negative, { Signal::Rudeness }, p, 20, until2 + 100).leaving);
+}
+
+TEST(Relationship, EstrangementCanBeDisabled)
+{
+    RomanceConfig cfg;
+    cfg.estrangementEnabled = false;
+    RelationshipEngine eng(cfg, 1);
+    RelationshipState st = RelationshipEngine::InitialFor(Stage::Friends, true, kNow);
+    PersonalityProfile p = Elara();
+    bool left = false;
+    for (int i = 0; i < 60; ++i)
+        left = left || eng.ApplyConversation(st, Sentiment::VeryNegative, { Signal::Insult, Signal::Rudeness }, p, 30, kNow + i * 60).leaving;
+    CHECK(!left);
+}
+
 TEST(Relationship, ProgressesGraduallyOverDays)
 {
     RomanceConfig cfg;

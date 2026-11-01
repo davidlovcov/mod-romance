@@ -162,6 +162,7 @@ namespace romance::ac
         // Game knowledge + natural-language companion commands for one incoming message.
         void ApplyControl(Player* owner, Player* bot, CompanionKey const& key, std::string const& text, WorldContext& ctx);
         void PollControl();
+        int64 EstrangedHours(Player* owner, uint32 guidLow);
         GiftItem DescribeItem(Item* item, Player* receiver) const;
 
         RomanceConfig _cfg;
@@ -171,6 +172,7 @@ namespace romance::ac
         std::unique_ptr<RomanceService> _service;
         std::unique_ptr<CompanionControl> _control;
         uint32 _controlTimer = 0;
+        std::map<CompanionKey, time_t> _pendingLeaves;   // estranged companions about to leave
 
         std::mutex _inboxMutex;
         std::vector<InboxEvent> _inbox;

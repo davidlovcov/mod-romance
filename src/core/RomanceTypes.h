@@ -96,6 +96,15 @@ namespace romance
         TimePoint lastProposalAt = 0;
         TimePoint lastGiftRingAt = 0;      // last time a ring was received (engagement rings)
         bool strained = false;             // after a serious setback, until reconciled
+        // Estrangement: when the relationship collapses she leaves, refuses to come back until
+        // `estrangedUntil`, and afterwards stays cold until `reconciliation` reaches 100.
+        double resentment = 0;             // 0..100, builds from insults/rudeness, fades slowly
+        bool estranged = false;
+        TimePoint estrangedAt = 0;
+        TimePoint estrangedUntil = 0;
+        double reconciliation = 0;         // 0..100 while estranged
+        double reconcileToday = 0;         // gain inside the current day window
+        uint32_t timesLeft = 0;            // each estrangement doubles the next cooldown
         // Daily gain accounting to keep progression gradual (reset every 24h window)
         TimePoint dayWindowStart = 0;
         double dayPositiveGain = 0;
@@ -363,6 +372,7 @@ namespace romance
         EmoteCheer,
         EmoteBow,
         EmoteCry,
+        Leave,       // she leaves the player (estrangement); never accepted from model output
     };
     char const* ActionId(ActionType a);
     std::optional<ActionType> ActionFromId(std::string const& id);

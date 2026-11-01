@@ -95,6 +95,12 @@ namespace romance
         double progressionSpeed = 1.0;
         double affectionGainMultiplier = 1.0;
         double affectionLossMultiplier = 1.0;
+
+        // estrangement: she leaves when the relationship collapses
+        bool estrangementEnabled = true;
+        double estrangeResentment = 100;          // resentment that makes her leave
+        uint32_t estrangeCooldownHours = 72;      // first time; doubles with each estrangement (max 4x)
+        double reconcilePerDay = 25;              // reconciliation points per day (100 needed)
         double moodSensitivity = 1.0;
         double romanticInitiative = 1.0;
         double dailyGainCap = 12.0;           // max positive points per value per day from chat

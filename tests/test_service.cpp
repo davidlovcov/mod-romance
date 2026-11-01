@@ -825,6 +825,60 @@ TEST(Service, GameKnowledgeAndCommandOutcomeReachThePrompt)
     CHECK_CONTAINS(sys, "put 10 gold in it");
 }
 
+TEST(Service, SheLeavesAfterTooMuchAbuseAndRefusesToComeBack)
+{
+    Harness h;
+    h.Activate(h.Key());
+    h.llm->SetResponder([](LlmRequest const&)
+    {
+        LlmResult res;
+        res.status = LlmResult::Status::Ok;
+        res.content = ReplyJson("How dare you.", "upset", "very_negative", { "insult", "rudeness" });
+        return res;
+    });
+    bool left = false;
+    for (int i = 0; i < 30 && !left; ++i)
+    {
+        h.now += 30;
+        h.svc->OnPlayerMessage(h.Key(), "you are useless and stupid " + std::to_string(i), ChatChannel::Whisper, h.ctx, h.now);
+        h.PumpUntil([&](auto const& out)
+        {
+            for (auto const& a : out)
+                if (a.type == OutgoingAction::Type::Command && a.action == ActionType::Leave)
+                    return true;
+            return h.Spoken(h.Key()).size() >= size_t(i + 1);
+        });
+        left = h.Has(OutgoingAction::Type::Command, ActionType::Leave);
+    }
+    CHECK(left);
+    CHECK(h.Has(OutgoingAction::Type::Notice));
+    auto rec = h.repo.LoadCompanion(h.Key());
+    CHECK(rec->relationship.estranged);
+
+    // the game layer dismisses her; calling her back during the cooldown fails
+    h.svc->Deactivate(h.Key(), h.now);
+    auto r = h.svc->Activate(h.Key(), kAccount, "Elara", "Arthas", h.now + 3600);
+    CHECK(!r.ok);
+    CHECK_EQ(r.error, std::string("estranged"));
+    // after the cooldown she comes back, cold
+    TimePoint later = rec->relationship.estrangedUntil + 60;
+    CHECK(h.svc->Activate(h.Key(), kAccount, "Elara", "Arthas", later).ok);
+    std::string sys;
+    h.llm->SetResponder([&](LlmRequest const& req)
+    {
+        sys = req.messages[0].content;
+        LlmResult res;
+        res.status = LlmResult::Status::Ok;
+        res.content = ReplyJson("...What do you want.", "upset", "neutral");
+        return res;
+    });
+    h.now = later + 120;
+    size_t before = h.Spoken(h.Key()).size();
+    h.svc->OnPlayerMessage(h.Key(), "I'm sorry for everything.", ChatChannel::Whisper, h.ctx, h.now);
+    CHECK(h.WaitSpeak(h.Key(), before + 1));
+    CHECK_CONTAINS(sys, "You left them because of how they treated you");
+}
+
 TEST(Service, SettingsValidation)
 {
     Harness h;

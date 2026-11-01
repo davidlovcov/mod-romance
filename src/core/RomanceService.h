@@ -309,6 +309,8 @@ namespace romance
         void HandleFailure(Session& s, JobResult& r, TimePoint now);
         void ApplyProposalOutcome(Session& s, ProposalDecision const& d, TimePoint now);
         void PushMemoryChanged(CompanionKey const& key, int64_t id);
+        void Leave(Session& s, TimePoint now);
+        void Reconcile(Session& s, TimePoint now);
         void StoreMemory(Session& s, MemoryKind kind, MemorySource src, int importance, std::string const& text, TimePoint now);
         void Deliver(Session& s, std::string const& reply, ChatChannel channel, TimePoint now);
         void PushRelationship(Session& s);

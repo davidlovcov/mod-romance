@@ -115,6 +115,7 @@ namespace romance
         {
             st.dayWindowStart = now;
             st.dayPositiveGain = 0;
+            st.reconcileToday = 0;
         }
     }
 
@@ -175,8 +176,79 @@ namespace romance
         };
 
         // Familiarity grows from substantive conversation only, not from "hi" spam.
-        if (messageLength >= 12)
+        if (messageLength >= 12 && !st.estranged)
             AddPositive(st, st.v.familiarity, 0.35, budget);
+
+        // Resentment fades by about 4 points per day without new offences.
+        if (st.lastInteraction > 0 && now > st.lastInteraction)
+            st.resentment = std::max(0.0, st.resentment - 4.0 * double(now - st.lastInteraction) / double(kDay));
+
+        bool offence = false;
+        for (Signal s : signals)
+        {
+            switch (s)
+            {
+                case Signal::Insult: st.resentment += 14 * sensitivity; offence = true; break;
+                case Signal::BrokenPromise: st.resentment += 10 * sensitivity; offence = true; break;
+                case Signal::Rudeness: st.resentment += 6 * sensitivity; offence = true; break;
+                case Signal::Dismissive: st.resentment += 2 * sensitivity; break;
+                case Signal::Apology: st.resentment -= st.estranged ? 2 : 5; break;
+                case Signal::Kindness:
+                case Signal::Support: st.resentment -= 1; break;
+                default: break;
+            }
+        }
+        if (sentiment == Sentiment::VeryNegative)
+            st.resentment += 4 * sensitivity;
+        else if (sentiment == Sentiment::Negative)
+            st.resentment += 1 * sensitivity;
+        st.resentment = std::max(0.0, std::min(100.0, st.resentment));
+
+        if (st.estranged)
+        {
+            // Cold after coming back: feelings don't grow, only reconciliation does, slowly
+            // (reconcileToday resets with the daily window, see ResetDayWindow).
+            double gain = 0;
+            for (Signal s : signals)
+            {
+                switch (s)
+                {
+                    case Signal::Apology: gain += 8; break;
+                    case Signal::Kindness: gain += 4; break;
+                    case Signal::Support: gain += 4; break;
+                    case Signal::DeepTalk: gain += 3; break;
+                    case Signal::Gratitude: gain += 2; break;
+                    case Signal::Promise: gain += 1; break;
+                    default: break;
+                }
+            }
+            if (sentiment == Sentiment::VeryPositive)
+                gain += 1;
+            double room = std::max(0.0, _cfg.reconcilePerDay - st.reconcileToday);
+            gain = std::min(gain, room);
+            st.reconcileToday += gain;
+            st.reconciliation = std::min(100.0, st.reconciliation + gain);
+            st.lastInteraction = now;
+            st.lastPlayerMessage = now;
+            ++st.messageCount;
+            if (offence && _cfg.estrangementEnabled)
+            {
+                // Hurting her again while she is trying to forgive: she is gone again.
+                d.leaving = true;
+                return d;
+            }
+            if (st.reconciliation >= 100)
+            {
+                st.estranged = false;
+                st.reconciliation = 0;
+                st.resentment = 20;
+                st.strained = true;
+                st.v.trust = std::max(st.v.trust, 30.0);
+                st.v.satisfaction = std::max(st.v.satisfaction, 30.0);
+                d.reconciled = true;
+            }
+            return d;
+        }
 
         for (Signal s : signals)
         {
@@ -274,6 +346,12 @@ namespace romance
 
         if (budget <= 0.0001 || st.dayPositiveGain >= _cfg.dailyGainCap * std::max(0.1, _cfg.progressionSpeed))
             d.capped = true;
+
+        // The last straw: resentment at the limit, or every feeling has collapsed.
+        if (_cfg.estrangementEnabled && st.messageCount >= 5 &&
+            (st.resentment >= _cfg.estrangeResentment ||
+             (st.v.trust <= 8 && st.v.satisfaction <= 5 && st.v.affection <= 10 && st.v.comfort <= 10)))
+            d.leaving = true;
 
         // Strain: serious setback, cleared by apology/reconciliation.
         bool wasStrained = st.strained;
@@ -397,6 +475,13 @@ namespace romance
                 dec.outcome = ProposalOutcome::None;
                 dec.reason = "not_together";
             }
+            return dec;
+        }
+
+        if (st.estranged)
+        {
+            dec.outcome = ProposalOutcome::Decline;
+            dec.reason = "estranged";
             return dec;
         }
 
@@ -548,8 +633,8 @@ namespace romance
     RelationshipDelta RelationshipEngine::CheckAutoProgression(RelationshipState& st, PersonalityProfile const& p, TimePoint now)
     {
         RelationshipDelta d;
-        if (st.stage >= Stage::Dating)
-            return d;   // committed stages change only through proposals/breakups
+        if (st.stage >= Stage::Dating || st.estranged)
+            return d;   // committed stages change only through proposals/breakups; no progress while estranged
 
         RelationshipValues const& v = st.v;
         bool romantic = st.romantic && p.romanceEnabled;
@@ -663,8 +748,43 @@ namespace romance
             case Stage::Engaged: o << "You are engaged to be married and deeply committed.\n"; break;
             case Stage::Married: o << "You are married; your love is settled, warm and comfortable.\n"; break;
         }
-        if (st.strained)
+        if (st.estranged)
+            o << "IMPORTANT: You left them because of how they treated you. You only came back reluctantly. You are cold, "
+                 "distant and hurt; you do not flirt, joke around or act affectionate. Short, guarded answers. You only warm up a "
+                 "little when they apologize sincerely and are kind over several days (reconciliation "
+              << int(st.reconciliation) << "/100).\n";
+        else if (st.strained)
             o << "Things are tense between you after something hurtful; you need sincerity before you fully warm up again.\n";
+        if (!st.estranged && st.resentment >= 50)
+            o << "You are deeply hurt by how they have treated you lately; one more insult and you will leave them.\n";
+        else if (!st.estranged && st.resentment >= 25)
+            o << "Some of the things they said recently still sting.\n";
         return o.str();
+    }
+
+    TimePoint RelationshipEngine::Estrange(RelationshipState& st, TimePoint now) const
+    {
+        uint32_t factor = 1u << std::min<uint32_t>(st.timesLeft, 2);   // 1x, 2x, 4x
+        TimePoint until = now + TimePoint(_cfg.estrangeCooldownHours) * 3600 * factor;
+        bool again = st.timesLeft > 0;
+        st.estranged = true;
+        st.estrangedAt = now;
+        st.estrangedUntil = until;
+        st.reconciliation = 0;
+        st.reconcileToday = 0;
+        ++st.timesLeft;
+        st.resentment = 60;
+        st.strained = true;
+        st.stage = again ? Stage::Strangers : Stage::Acquaintances;
+        st.stageSince = now;
+        st.v.affection = std::min(st.v.affection, 10.0);
+        st.v.attraction = std::min(st.v.attraction, 5.0);
+        st.v.trust = std::min(st.v.trust, 10.0);
+        st.v.comfort = std::min(st.v.comfort, 10.0);
+        st.v.satisfaction = std::min(st.v.satisfaction, 10.0);
+        st.v.friendship = std::min(st.v.friendship, again ? 5.0 : 15.0);
+        st.mood = Mood::Upset;
+        st.moodIntensity = 90;
+        return until;
     }
 }

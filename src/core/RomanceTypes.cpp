@@ -41,7 +41,7 @@ namespace romance
         char const* const kActionIds[] = {
             "none", "follow", "stay", "attack", "flee", "heal",
             "emote_hug", "emote_kiss", "emote_wave", "emote_laugh", "emote_blush",
-            "emote_dance", "emote_cheer", "emote_bow", "emote_cry" };
+            "emote_dance", "emote_cheer", "emote_bow", "emote_cry", "leave" };
 
         int ClampInt(int64_t v, int lo, int hi) { return int(std::max<int64_t>(lo, std::min<int64_t>(hi, v))); }
         double Clamp100(double v) { return std::isfinite(v) ? std::max(0.0, std::min(100.0, v)) : 0.0; }
@@ -90,6 +90,13 @@ namespace romance
         j.Set("lastProposalAt", int64_t(lastProposalAt));
         j.Set("lastGiftRingAt", int64_t(lastGiftRingAt));
         j.Set("strained", strained);
+        j.Set("resentment", resentment);
+        j.Set("estranged", estranged);
+        j.Set("estrangedAt", int64_t(estrangedAt));
+        j.Set("estrangedUntil", int64_t(estrangedUntil));
+        j.Set("reconciliation", reconciliation);
+        j.Set("reconcileToday", reconcileToday);
+        j.Set("timesLeft", int64_t(timesLeft));
         j.Set("dayWindowStart", int64_t(dayWindowStart));
         j.Set("dayPositiveGain", dayPositiveGain);
         j.Set("messageCount", int64_t(messageCount));
@@ -116,6 +123,13 @@ namespace romance
         r.lastProposalAt = j.GetInt("lastProposalAt", 0);
         r.lastGiftRingAt = j.GetInt("lastGiftRingAt", 0);
         r.strained = j.GetBool("strained", false);
+        r.resentment = Clamp100(j.GetNumber("resentment", 0));
+        r.estranged = j.GetBool("estranged", false);
+        r.estrangedAt = j.GetInt("estrangedAt", 0);
+        r.estrangedUntil = j.GetInt("estrangedUntil", 0);
+        r.reconciliation = Clamp100(j.GetNumber("reconciliation", 0));
+        r.reconcileToday = Clamp100(j.GetNumber("reconcileToday", 0));
+        r.timesLeft = uint32_t(std::max<int64_t>(0, std::min<int64_t>(20, j.GetInt("timesLeft", 0))));
         r.dayWindowStart = j.GetInt("dayWindowStart", 0);
         r.dayPositiveGain = std::max(0.0, j.GetNumber("dayPositiveGain", 0));
         r.messageCount = uint32_t(std::max<int64_t>(0, j.GetInt("messageCount", 0)));

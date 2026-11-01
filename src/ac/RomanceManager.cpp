@@ -35,6 +35,7 @@ namespace romance::ac
         constexpr uint32 kTickIntervalMs = 1000;
         constexpr uint32 kPollIntervalMs = 500;
         constexpr uint32 kControlIntervalMs = 5000;
+        constexpr time_t kLeaveDelaySec = 4;
         constexpr time_t kSummonTimeout = 60;
         constexpr time_t kTradeSnapshotTtl = 120;
         constexpr float kNearDeathPct = 25.0f;
@@ -87,8 +88,11 @@ namespace romance::ac
         }
 
         // Player-facing text for error codes (shown by the addon and chat commands).
-        std::string HumanError(std::string const& code, uint32 limit)
+        std::string HumanError(std::string const& code, uint32 limit, int64 hoursLeft = -1)
         {
+            if (code == "estranged")
+                return hoursLeft > 0 ? "They left you and don't want to see you for about " + std::to_string(hoursLeft) + " more hours."
+                                     : "They left you and don't want to see you right now.";
             if (code == "limit_reached")
                 return "You already have the maximum number of AI companions (" + std::to_string(limit) + "). Send one home first.";
             if (code == "server_limit_reached") return "The server has reached its limit of AI companions. Try again later.";
@@ -98,7 +102,6 @@ namespace romance::ac
             if (code == "not_owner") return "That character does not belong to you.";
             if (code == "playerbots_not_installed" || code == "playerbots_unavailable") return "mod-playerbots is not available on this server.";
             if (code == "companion_in_use") return "This companion is already active for another of your characters.";
-            if (code == "estranged") return "She doesn't want to see you right now.";
             if (code == "module_disabled") return "The romance module is disabled.";
             if (code == "unknown_preset") return "That preset does not exist (anymore).";
             if (code == "not_online") return "This companion is not in the world right now. Call them first.";
@@ -181,6 +184,24 @@ namespace romance::ac
         ProcessPendingLogins();
         ProcessTrades();
         _control->Update(Now());
+        for (auto it = _pendingLeaves.begin(); it != _pendingLeaves.end();)
+        {
+            if (Now() < it->second)
+            {
+                ++it;
+                continue;
+            }
+            if (Player* owner = ObjectAccessor::FindConnectedPlayer(PlayerGuid(uint32(it->first.owner))))
+            {
+                Dismiss(owner, uint32(it->first.companion), true);
+                Json p = Json::MakeObject();
+                p.Set("op", "chars_changed");
+                SendAddon(owner, p);
+            }
+            else
+                _service->Deactivate(it->first, Now());
+            it = _pendingLeaves.erase(it);
+        }
         if (_controlTimer >= kControlIntervalMs)
         {
             _controlTimer = 0;
@@ -674,6 +695,8 @@ namespace romance::ac
                     }
                     if (cmd)
                         PlayerbotsBridge::Command(bot, owner, cmd);
+                    if (a.action == ActionType::Leave)
+                        _pendingLeaves[a.key] = Now() + kLeaveDelaySec;   // let the farewell arrive first
                     break;
                 }
                 case OutgoingAction::Type::UiPush:
@@ -768,6 +791,17 @@ namespace romance::ac
                 LOG_INFO("module", "[mod-romance] {} -> {}: command {} '{}' => {}", owner->GetName(), bot->GetName(),
                          CompanionCommandId(cmd->kind), cmd->arg, ctx.commandOutcome);
         }
+    }
+
+    int64 RomanceManager::EstrangedHours(Player* owner, uint32 guidLow)
+    {
+        if (!owner || !guidLow)
+            return -1;
+        CompanionRecord rec = _service->GetOrCreateRecord({ owner->GetGUID().GetCounter(), guidLow },
+                                                          owner->GetSession()->GetAccountId(), "", Now());
+        if (!RelationshipEngine::Away(rec.relationship, Now()))
+            return -1;
+        return std::max<int64>(1, (rec.relationship.estrangedUntil - Now() + 3599) / 3600);
     }
 
     void RomanceManager::PollControl()
@@ -1038,7 +1072,13 @@ namespace romance::ac
                 auto it = configured.find(guid);
                 c.Set("configured", it != configured.end() && it->second.configured);
                 if (it != configured.end())
+                {
                     c.Set("stageLabel", RelationshipEngine::StageLabel(it->second.relationship.stage, it->second.personality));
+                    if (RelationshipEngine::Away(it->second.relationship, Now()))
+                        c.Set("estrangedUntil", int64_t(it->second.relationship.estrangedUntil));
+                    else if (it->second.relationship.estranged)
+                        c.Set("estranged", true);
+                }
                 chars.Push(c);
             } while (r->NextRow());
         }
@@ -1064,7 +1104,8 @@ namespace romance::ac
         auto r = _service->Activate(key, owner->GetSession()->GetAccountId(), bot->GetName(), owner->GetName(), now);
         if (!r.ok)
         {
-            Notice(owner, bot->GetName() + " joined as a regular bot: " + HumanError(r.error, _cfg.maxActiveCompanionsPerPlayer));
+            Notice(owner, bot->GetName() + " joined as a regular bot: " +
+                              HumanError(r.error, _cfg.maxActiveCompanionsPerPlayer, EstrangedHours(owner, bot->GetGUID().GetCounter())));
             return false;
         }
         _trackers.erase(key);
@@ -1094,6 +1135,8 @@ namespace romance::ac
         if (_pendingSummons.count(guidLow))
             return "already_loading";
         CompanionRecord rec = _service->GetOrCreateRecord({ owner->GetGUID().GetCounter(), guidLow }, owner->GetSession()->GetAccountId(), name, Now());
+        if (rec.settings.aiEnabled && RelationshipEngine::Away(rec.relationship, Now()))
+            return "estranged";
         if (rec.settings.aiEnabled && _service->ActiveForOwner(owner->GetGUID().GetCounter()).size() >= _cfg.maxActiveCompanionsPerPlayer)
             return "limit_reached";
         std::string res = PlayerbotsBridge::Summon(owner, PlayerGuid(guidLow));
@@ -1271,7 +1314,7 @@ namespace romance::ac
             if (!code.empty())
             {
                 p.Set("code", code);
-                p.Set("message", HumanError(code, _cfg.maxActiveCompanionsPerPlayer));
+                p.Set("message", HumanError(code, _cfg.maxActiveCompanionsPerPlayer, EstrangedHours(player, guid)));
             }
             Json n = Json::MakeArray();
             for (auto const& s : notes)
@@ -1528,7 +1571,8 @@ namespace romance::ac
             return "No character named " + name + ".";
         std::string res = Summon(player, guid.GetCounter());
         Execute(_service->TakeOutgoing());
-        return res == "ok" ? "Calling " + name + "..." : "Cannot call " + name + ": " + HumanError(res, _cfg.maxActiveCompanionsPerPlayer);
+        return res == "ok" ? "Calling " + name + "..."
+                           : "Cannot call " + name + ": " + HumanError(res, _cfg.maxActiveCompanionsPerPlayer, EstrangedHours(player, guid.GetCounter()));
     }
 
     std::string RomanceManager::CommandDismiss(Player* player)

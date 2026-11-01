@@ -196,6 +196,35 @@ Romance.Control.LeadMode = 1
 #        Default:     50
 Romance.Control.CommandRange = 50
 
+###################################################################################################
+# ESTRANGEMENT
+#
+#    Romance.Estrangement.Enable
+#        Description: A companion who is insulted and mistreated again and again leaves you: she
+#                     says goodbye, leaves the group and logs out. The relationship drops to
+#                     Acquaintances (Strangers if it happens again).
+#        Default:     1
+Romance.Estrangement.Enable = 1
+
+#    Romance.Estrangement.Resentment
+#        Description: Resentment (0-100) at which she leaves. Insults add about 14, rudeness 6,
+#                     broken promises 10; resentment fades by about 4 points per day.
+#        Default:     100
+Romance.Estrangement.Resentment = 100
+
+#    Romance.Estrangement.CooldownHours
+#        Description: Hours she refuses to be called after leaving. Doubles the second time,
+#                     4x from the third time on.
+#        Default:     72
+Romance.Estrangement.CooldownHours = 72
+
+#    Romance.Estrangement.ReconcilePerDay
+#        Description: After the cooldown she comes back cold. Apologies and kindness add
+#                     reconciliation points (100 needed) - at most this many per day, so winning
+#                     her back takes several days. Any new insult makes her leave again.
+#        Default:     25
+Romance.Estrangement.ReconcilePerDay = 25
+
 #    Romance.Chat.PartyOnly
 #        Description: Companions always answer in party chat instead of whispers.
 #        Default:     0

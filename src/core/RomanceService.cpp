@@ -244,6 +244,11 @@ namespace romance
 
         auto s = std::make_unique<Session>(_cfg);
         s->rec = LoadOrDefault(key, ownerAccount, companionName, now);
+        if (RelationshipEngine::Away(s->rec.relationship, now))
+        {
+            r.error = "estranged";
+            return r;
+        }
         s->ownerName = ownerName;
         s->memories.Load(_repo.LoadMemories(key));
         for (auto const& t : _repo.LoadRecentChat(key, std::min<uint32_t>(_cfg.storedChatTurns, 60)))
@@ -1442,10 +1447,13 @@ namespace romance
             return;
 
         // ---- relationship values (only player messages carry social signals)
+        bool leaving = false, reconciled = false;
         if (r.ctx.trigger == TriggerKind::PlayerMessage)
         {
             RelationshipDelta d = _engine.ApplyConversation(s.rec.relationship, reply.sentiment, reply.signals, s.rec.personality,
                                                             r.ctx.playerTextLen, now);
+            leaving = d.leaving;
+            reconciled = d.reconciled;
             if (d.stageChangedTo)
             {
                 _repo.LogRelationshipEvent(s.rec.key, "stage_change",
@@ -1509,6 +1517,10 @@ namespace romance
         }
 
         Deliver(s, reply.reply, r.ctx.channel, now);
+        if (leaving)
+            Leave(s, now);
+        else if (reconciled)
+            Reconcile(s, now);
         if (r.ctx.trigger == TriggerKind::Proactive)
         {
             ++s.unansweredProactive;
@@ -1611,6 +1623,57 @@ namespace romance
         _out.push_back({ OutgoingAction::Type::UiPush, s.rec.key, "", ChatChannel::Addon, ActionType::None, p });
     }
 
+    void RomanceService::Leave(Session& s, TimePoint now)
+    {
+        std::string cname = s.rec.personality.name.empty() ? s.rec.companionName : s.rec.personality.name;
+        std::string pname = PlayerName(s);
+        bool again = s.rec.relationship.timesLeft > 0;
+        TimePoint until = _engine.Estrange(s.rec.relationship, now);
+        int hours = int((until - now + 1800) / 3600);
+
+        static char const* const en[] = {
+            "I can't do this anymore. I'm leaving. Don't come looking for me.",
+            "That's enough. I won't let you treat me like this. Goodbye.",
+            "I'm done. I need to get away from you.",
+            "No. I'm not staying with someone who treats me like this. Farewell.",
+        };
+        static char const* const de[] = {
+            "Ich kann das nicht mehr. Ich gehe. Such nicht nach mir.",
+            "Es reicht. So lasse ich mich nicht behandeln. Leb wohl.",
+            "Ich bin fertig mit dir. Ich brauche Abstand.",
+        };
+        std::string farewell = s.language == "de" ? de[std::uniform_int_distribution<size_t>(0, 2)(_rng)]
+                                                  : en[std::uniform_int_distribution<size_t>(0, 3)(_rng)];
+        if (again)
+            farewell = s.language == "de" ? "Schon wieder? Nein. Diesmal bin ich wirklich weg." : "Again? No. This time I'm really gone.";
+        Deliver(s, farewell, ChatChannel::Whisper, now);
+
+        StoreMemory(s, MemoryKind::Relationship, MemorySource::Observed, 95,
+                    cname + " left " + pname + (again ? " again" : "") + " after being hurt too many times.", now);
+        _repo.LogRelationshipEvent(s.rec.key, "estranged", "for " + std::to_string(hours) + "h", now);
+        _out.push_back({ OutgoingAction::Type::Notice, s.rec.key,
+                         cname + " has left you. " + cname + " will not answer your calls for about " + std::to_string(hours) +
+                             " hours, and winning " + cname + " back will take sincere apologies and kindness over several days.",
+                         ChatChannel::Whisper, ActionType::None, Json() });
+        _out.push_back({ OutgoingAction::Type::Command, s.rec.key, "", ChatChannel::Whisper, ActionType::Leave, Json() });
+        s.dirty = true;
+        SaveRecord(s, now, true);
+        PushRelationship(s);
+    }
+
+    void RomanceService::Reconcile(Session& s, TimePoint now)
+    {
+        std::string cname = s.rec.personality.name.empty() ? s.rec.companionName : s.rec.personality.name;
+        std::string pname = PlayerName(s);
+        StoreMemory(s, MemoryKind::Relationship, MemorySource::Observed, 85,
+                    cname + " forgave " + pname + " after a long estrangement; trust is fragile but returning.", now);
+        _repo.LogRelationshipEvent(s.rec.key, "reconciled", "", now);
+        _out.push_back({ OutgoingAction::Type::Notice, s.rec.key, cname + " has forgiven you. Be careful with that trust.",
+                         ChatChannel::Whisper, ActionType::None, Json() });
+        s.dirty = true;
+        SaveRecord(s, now, true);
+    }
+
     void RomanceService::Deliver(Session& s, std::string const& reply, ChatChannel channel, TimePoint now)
     {
         ChatChannel out = channel == ChatChannel::Addon ? ChatChannel::Whisper : channel;
@@ -1660,6 +1723,10 @@ namespace romance
         j.Set("mood", MoodId(st.mood));
         j.Set("moodIntensity", Round1(st.moodIntensity));
         j.Set("strained", st.strained);
+        j.Set("estranged", st.estranged);
+        j.Set("estrangedUntil", int64_t(st.estrangedUntil));
+        j.Set("reconciliation", int64_t(st.reconciliation));
+        j.Set("resentment", int64_t(st.resentment));
         j.Set("stageSince", int64_t(st.stageSince));
         j.Set("messages", int64_t(st.messageCount));
         Json labels = Json::MakeArray();
@@ -1710,6 +1777,8 @@ namespace romance
     {
         if (!_cfg.proactiveEnabled || !s.rec.settings.proactiveEnabled || !s.rec.settings.aiEnabled || !_cfg.ollamaEnabled)
             return;
+        if (s.rec.relationship.estranged)
+            return;   // cold after an estrangement: she does not start conversations
         if (now < s.nextProactiveAt)
             return;
         if (s.pending > 0 || s.reaction || ctx.BusyForChat(_cfg.blockChatInInstances) || !ctx.sameGroup || ctx.playerAfk)

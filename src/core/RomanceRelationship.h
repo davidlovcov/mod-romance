@@ -54,6 +54,8 @@ namespace romance
         std::optional<Stage> stageChangedFrom;
         std::optional<Stage> stageChangedTo;
         bool strainedChanged = false;
+        bool leaving = false;      // this message was the last straw: she leaves (see Estrange)
+        bool reconciled = false;   // an estrangement ended
         bool capped = false;  // per-message or daily cap applied
 
         bool Any() const;
@@ -85,6 +87,12 @@ namespace romance
 
         // Long absence: slow decay of satisfaction/comfort, never of memories.
         RelationshipDelta ApplyNeglect(RelationshipState& st, TimePoint now);
+
+        // She leaves: stage drops to Acquaintances (or Strangers if it happens again), feelings cool down,
+        // she refuses to come back until the cooldown ends. Returns the cooldown end.
+        TimePoint Estrange(RelationshipState& st, TimePoint now) const;
+        // True during the cooldown in which she refuses to be called.
+        static bool Away(RelationshipState const& st, TimePoint now) { return st.estranged && now < st.estrangedUntil; }
 
         void SetMood(RelationshipState& st, Mood m, double intensity);
         void DecayMood(RelationshipState& st, double seconds);

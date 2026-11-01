@@ -72,6 +72,10 @@ namespace romance::ac
         c.maxProfileFieldChars = Opt<uint32>("Romance.Chat.MaxProfileFieldChars", c.maxProfileFieldChars);
         c.maxCustomPresets = Opt<uint32>("Romance.Presets.MaxCustomPerAccount", c.maxCustomPresets);
         c.controlEnabled = Opt<bool>("Romance.Control.Enable", c.controlEnabled);
+        c.estrangementEnabled = Opt<bool>("Romance.Estrangement.Enable", c.estrangementEnabled);
+        c.estrangeResentment = std::max(20.0f, std::min(100.0f, Opt<float>("Romance.Estrangement.Resentment", float(c.estrangeResentment))));
+        c.estrangeCooldownHours = std::max<uint32>(1, Opt<uint32>("Romance.Estrangement.CooldownHours", c.estrangeCooldownHours));
+        c.reconcilePerDay = std::max(1.0f, std::min(100.0f, Opt<float>("Romance.Estrangement.ReconcilePerDay", float(c.reconcilePerDay))));
         c.giveMinStage = std::min<uint32>(7, Opt<uint32>("Romance.Control.GiveMinStage", c.giveMinStage));
         c.maxGoldPerRequest = uint64_t(Opt<uint32>("Romance.Control.MaxGoldPerRequest", uint32(c.maxGoldPerRequest / 10000))) * 10000;
         c.autoSellJunk = Opt<bool>("Romance.Control.AutoSellJunk", c.autoSellJunk);
