@@ -39,13 +39,10 @@ namespace romance::ac
         // follow | stay | lead | unknown
         static std::string FollowState(Player* bot);
 
-        // Lead mode (experimental): the companion walks to `questId` with the Playerbots "new rpg"
-        // strategy instead of following; StopLead switches back to following.
-        static bool StartLead(Player* bot, Player* master, uint32 questId);
+        // Lead mode: Playerbots stops following so mod-romance can walk the companion itself
+        // (see CompanionControl); StopLead switches back to following.
+        static bool StartLead(Player* bot, Player* master);
         static bool StopLead(Player* bot, Player* master);
-        static bool IsLeading(Player* bot);
-        // Quest the leading companion is working on (0 = none / finished / switched to something else).
-        static uint32 LeadQuest(Player* bot);
     };
 }
 

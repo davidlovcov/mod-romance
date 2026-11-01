@@ -243,10 +243,16 @@ namespace romance::ac
         _inbox.push_back({ InboxEvent::Kind::Kill, killer.GetCounter(), creatureName, notable });
     }
 
-    void RomanceManager::QueueQuestComplete(ObjectGuid player, std::string const& questTitle)
+    void RomanceManager::QueueQuestComplete(ObjectGuid player, std::string const& questTitle, uint32 questId)
     {
         std::lock_guard<std::mutex> g(_inboxMutex);
-        _inbox.push_back({ InboxEvent::Kind::Quest, player.GetCounter(), questTitle, false });
+        _inbox.push_back({ InboxEvent::Kind::Quest, player.GetCounter(), questTitle, false, questId });
+    }
+
+    void RomanceManager::QueueQuestAccept(ObjectGuid player, uint32 questId)
+    {
+        std::lock_guard<std::mutex> g(_inboxMutex);
+        _inbox.push_back({ InboxEvent::Kind::QuestAccept, player.GetCounter(), "", false, questId });
     }
 
     void RomanceManager::QueueLoot(ObjectGuid player, std::string const& itemName)
@@ -310,7 +316,29 @@ namespace romance::ac
                 }
                 case InboxEvent::Kind::Quest:
                     for (auto const& k : _service->ActiveForOwner(e.guid))
+                    {
+                        // turn it in too when she is done with it and the quest ender is near
+                        if (e.id)
+                        {
+                            Player* owner = ObjectAccessor::FindConnectedPlayer(PlayerGuid(e.guid));
+                            Player* bot = ObjectAccessor::FindConnectedPlayer(PlayerGuid(uint32(k.companion)));
+                            if (owner && bot)
+                                _control->SyncQuestReward(owner, bot, e.id);
+                        }
                         _service->OnGameEvent(k, { GameEventType::QuestComplete, e.text, 0, now }, now);
+                    }
+                    break;
+                case InboxEvent::Kind::QuestAccept:
+                    for (auto const& k : _service->ActiveForOwner(e.guid))
+                    {
+                        Player* owner = ObjectAccessor::FindConnectedPlayer(PlayerGuid(e.guid));
+                        Player* bot = ObjectAccessor::FindConnectedPlayer(PlayerGuid(uint32(k.companion)));
+                        if (!owner || !bot)
+                            continue;
+                        std::string note = _control->SyncQuestAccept(owner, bot, e.id);
+                        if (!note.empty())
+                            _service->OnGameEvent(k, { GameEventType::CompanionNotice, note, 1, now }, now);
+                    }
                     break;
                 case InboxEvent::Kind::Loot:
                     for (auto const& k : _service->ActiveForOwner(e.guid))
@@ -559,7 +587,12 @@ namespace romance::ac
             Group* group = owner->GetGroup();
             c.sameGroup = group && group->IsMember(bot->GetGUID());
             c.partySize = group ? int(group->GetMembersCount()) : 1;
-            c.followState = PlayerbotsBridge::FollowState(bot);
+            c.followState = _control && _control->IsLeading(bot->GetGUID()) ? std::string("lead") : PlayerbotsBridge::FollowState(bot);
+            // other AI companions in the same group (so she knows who else may answer)
+            if (Group* g = owner->GetGroup())
+                for (CompanionKey const& other : _service->ActiveForOwner(key.owner))
+                    if (other.companion != key.companion && g->IsMember(PlayerGuid(uint32(other.companion))))
+                        c.partyCompanions.push_back(_service->DisplayName(other));
             uint32 total = 0, count = 0;
             for (uint8 slot = EQUIPMENT_SLOT_START; slot < EQUIPMENT_SLOT_END; ++slot)
                 if (Item* it = bot->GetItemByPos(INVENTORY_SLOT_BAG_0, slot))
@@ -817,6 +850,10 @@ namespace romance::ac
             if (!notice.empty())
                 _service->OnGameEvent(key, { GameEventType::CompanionNotice, notice, 2, now }, now);
         }
+        for (auto const& [botGuid, text] : _control->TakeNotices())
+            for (CompanionKey const& key : _service->ActiveKeys())
+                if (key.companion == botGuid.GetCounter())
+                    _service->OnGameEvent(key, { GameEventType::CompanionNotice, text, 2, now }, now);
     }
 
     bool RomanceManager::OnGroupChat(Player* sender, uint32 type, uint32 lang, std::string& msg)
@@ -839,25 +876,33 @@ namespace romance::ac
         if (inGroup.empty())
             return true;
 
-        // Named companions answer. Without a name, the companion talked to last answers, but only
-        // if no other real player is in the group (no AI replies to everyday group chatter).
+        // Who answers: the companions named in the line; everyone for "everyone, ..." / "guys, ...";
+        // without a name, every companion (or the one talked to last, Romance.Party.UnaddressedReplies = last)
+        // - but only if no other real player is in the group (no AI replies to everyday group chatter).
         std::vector<CompanionKey> addressed;
+        bool everyone = AddressesEveryone(msg);
         for (auto const& k : inGroup)
-            if (_service->IsAddressed(k, msg))
+            if (everyone || _service->IsAddressed(k, msg))
                 addressed.push_back(k);
         bool otherHumans = false;
         for (GroupReference* ref = group->GetFirstMember(); ref; ref = ref->next())
             if (Player* m = ref->GetSource())
                 if (m != sender && !PlayerbotsBridge::IsBot(m))
                     otherHumans = true;
-        std::optional<CompanionKey> fallback;
+        bool picked = everyone;
         if (addressed.empty() && !otherHumans)
         {
-            fallback = inGroup.front();
-            for (auto const& k : inGroup)
-                if (_service->LastActivity(k) > _service->LastActivity(*fallback))
-                    fallback = k;
-            addressed.push_back(*fallback);
+            picked = true;
+            if (_cfg.partyAllAnswer)
+                addressed = inGroup;
+            else
+            {
+                CompanionKey last = inGroup.front();
+                for (auto const& k : inGroup)
+                    if (_service->LastActivity(k) > _service->LastActivity(last))
+                        last = k;
+                addressed.push_back(last);
+            }
         }
 
         for (CompanionKey const& key : addressed)
@@ -865,7 +910,7 @@ namespace romance::ac
             auto ctx = BuildContext(key).value_or(WorldContext{});
             if (Player* bot = ObjectAccessor::FindConnectedPlayer(PlayerGuid(uint32(key.companion))))
                 ApplyControl(sender, bot, key, msg, ctx);
-            auto res = _service->OnPlayerMessage(key, msg, ChatChannel::Party, ctx, Now(), fallback.has_value());
+            auto res = _service->OnPlayerMessage(key, msg, ChatChannel::Party, ctx, Now(), picked);
             if (res.result == RomanceService::MessageResult::Accepted && res.command)
             {
                 Player* bot = ObjectAccessor::FindConnectedPlayer(PlayerGuid(uint32(key.companion)));

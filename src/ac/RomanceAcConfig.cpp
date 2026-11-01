@@ -82,6 +82,9 @@ namespace romance::ac
         c.autoSellFreeSlots = Opt<uint32>("Romance.Control.AutoSellFreeSlots", c.autoSellFreeSlots);
         c.leadMode = Opt<bool>("Romance.Control.LeadMode", c.leadMode);
         c.commandRange = std::max(5.0f, std::min(100.0f, Opt<float>("Romance.Control.CommandRange", c.commandRange)));
+        c.interactRange = std::max(5.0f, std::min(60.0f, Opt<float>("Romance.Control.InteractRange", c.interactRange)));
+        c.questSync = Opt<bool>("Romance.Control.QuestSync", c.questSync);
+        c.partyAllAnswer = Opt<std::string>("Romance.Party.UnaddressedReplies", c.partyAllAnswer ? "all" : "last") != "last";
         c.maxInstructionChars = Opt<uint32>("Romance.Chat.MaxInstructionChars", c.maxInstructionChars);
         c.partyOnlyChat = Opt<bool>("Romance.Chat.PartyOnly", c.partyOnlyChat);
         c.allowedLanguages = Opt<std::string>("Romance.Chat.Language", c.allowedLanguages);

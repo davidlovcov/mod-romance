@@ -680,6 +680,25 @@ TEST(Prompt, ChosenNameBeatsWorldNameAndSecondPerson)
     CHECK_NOT_CONTAINS(DialogueContextBuilder::BuildSystemPrompt(in), "above your head");
 }
 
+TEST(Prompt, KnowsOtherCompanionsInTheParty)
+{
+    PersonalityProfile p;
+    p.name = "Jina";
+    RelationshipState st = RelationshipEngine::InitialFor(Stage::Friends, true, kNow);
+    PromptInput in;
+    in.personality = &p;
+    in.relationship = &st;
+    in.companionName = "Jina";
+    in.playerName = "Madox";
+    in.world.zone = "Elwynn Forest";
+    in.world.partyCompanions = { "Tristi", "Test" };
+    in.world.followState = "lead";
+    std::string sys = DialogueContextBuilder::BuildSystemPrompt(in);
+    CHECK_CONTAINS(sys, "Also travelling with you: Tristi, Test");
+    CHECK_CONTAINS(sys, "speak only for yourself");
+    CHECK_CONTAINS(sys, "leading the way");
+}
+
 TEST(Prompt, SystemPromptContainsPersonaMemoriesAndRules)
 {
     PersonalityProfile p = Elara();

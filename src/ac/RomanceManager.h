@@ -59,7 +59,8 @@ namespace romance::ac
         void QueueLogin(ObjectGuid guid);
         void QueueLogout(ObjectGuid guid);
         void QueueKill(ObjectGuid killer, std::string const& creatureName, bool notable);
-        void QueueQuestComplete(ObjectGuid player, std::string const& questTitle);
+        void QueueQuestComplete(ObjectGuid player, std::string const& questTitle, uint32 questId = 0);
+        void QueueQuestAccept(ObjectGuid player, uint32 questId);
         void QueueLoot(ObjectGuid player, std::string const& itemName);
 
         // trade detection
@@ -75,11 +76,12 @@ namespace romance::ac
     private:
         struct InboxEvent
         {
-            enum class Kind : uint8 { Login, Logout, Kill, Quest, Loot, TradeDone };
+            enum class Kind : uint8 { Login, Logout, Kill, Quest, Loot, TradeDone, QuestAccept };
             Kind kind = Kind::Login;
             uint32 guid = 0;
             std::string text;
             bool flag = false;
+            uint32 id = 0;
         };
 
         struct TradeItemSnapshot

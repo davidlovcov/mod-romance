@@ -297,6 +297,8 @@ namespace romance
         // Game knowledge requested by the player's message (bags, quests, spells, gold, xp, target),
         // formatted by the game layer. Only filled when asked, to keep prompts short.
         std::vector<std::string> knowledge;
+        // Other AI companions in the same group (they may answer the same party line).
+        std::vector<std::string> partyCompanions;
         // A command from the player's message the game layer already carried out (or refused), e.g.
         // "You opened a trade and put 10 gold in it." Empty if the message contained none.
         std::string commandOutcome;

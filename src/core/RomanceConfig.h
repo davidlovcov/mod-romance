@@ -65,6 +65,9 @@ namespace romance
         uint32_t autoSellFreeSlots = 2;           // "nearly full" = this many free slots or fewer
         bool leadMode = true;                     // experimental: she leads to a quest (Playerbots "new rpg")
         float commandRange = 50.0f;               // yards to search for enemies named in commands
+        float interactRange = 30.0f;              // vendors / quest givers this close count as "here" (no targeting)
+        bool questSync = true;                    // companions take and turn in quests together with you
+        bool partyAllAnswer = true;               // unaddressed party lines (bots-only group): every companion may answer
         uint32_t maxInstructionChars = 1200;
         bool partyOnlyChat = false;           // force replies to party chat
         std::string allowedLanguages = "auto"; // auto | en | de | en,de

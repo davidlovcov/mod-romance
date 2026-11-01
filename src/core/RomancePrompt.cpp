@@ -335,6 +335,13 @@ namespace romance
                   << ", health " << w.playerHealthPct << "%" << (w.playerInCombat ? ", fighting" : "") << "\n";
             if (w.sameGroup)
                 o << "- You are in the same party" << (w.partySize > 2 ? " with " + std::to_string(w.partySize - 2) + " others" : "") << ".\n";
+            if (!w.partyCompanions.empty())
+            {
+                o << "- Also travelling with you: ";
+                for (size_t i = 0; i < w.partyCompanions.size(); ++i)
+                    o << (i ? ", " : "") << w.partyCompanions[i];
+                o << ". They may answer in party chat too; speak only for yourself and don't repeat what they would say.\n";
+            }
             if (w.inDungeon || w.inRaid)
                 o << "- You are inside a " << (w.inRaid ? "raid" : "dungeon") << ".\n";
             if (!w.followState.empty() && w.followState != "unknown")

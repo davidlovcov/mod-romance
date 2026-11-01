@@ -45,7 +45,10 @@ There are two layers:
 | `Romance.Control.GiveMinStage` | 2 | Relationship stage before she hands over items or gold (2 = friends) |
 | `Romance.Control.MaxGoldPerRequest` | 50 | Most gold per request (0 = no limit) |
 | `Romance.Control.AutoSellJunk` / `AutoSellFreeSlots` | 1 / 2 | Sell gray items at a vendor when bags are nearly full |
-| `Romance.Control.LeadMode` | 1 | Experimental: "lead the way" walks her to one of her quests |
+| `Romance.Control.LeadMode` | 1 | "lead the way" walks her to one of her quests, then she fights the quest creatures |
+| `Romance.Control.InteractRange` | 30 | Merchants and quest givers this close work without targeting them |
+| `Romance.Control.QuestSync` | 1 | Companions take and turn in quests together with you |
+| `Romance.Party.UnaddressedReplies` | all | Party lines without a name (bots-only group): `all` companions or the `last` one you talked to |
 | `Romance.Control.CommandRange` | 50 | Yards to search for an enemy named in a command |
 | `Romance.Estrangement.Enable` | 1 | She leaves when mistreated again and again |
 | `Romance.Estrangement.Resentment` | 100 | Resentment at which she leaves |

@@ -22,6 +22,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cmath>
 #include <cstdio>
 #include <set>
 
@@ -31,7 +32,6 @@ namespace romance::ac
     {
         constexpr uint8 kSkullIcon = 7;
         constexpr float kTradeDistance = 10.0f;
-        constexpr float kVendorDistance = 6.0f;
         constexpr time_t kAutoSellCooldown = 60;
         constexpr time_t kBagsFullCooldown = 900;
         constexpr size_t kMaxKnowledgeItems = 30;
@@ -304,35 +304,139 @@ namespace romance::ac
             return out + ")";
         }
 
-        Creature* NearbyVendor(Player* bot)
+        std::vector<Creature*> NearbyCreatures(WorldObject* center, float range)
         {
             std::list<Unit*> units;
-            Acore::AnyUnitInObjectRangeCheck check(bot, kVendorDistance);
-            Acore::UnitListSearcher<Acore::AnyUnitInObjectRangeCheck> searcher(bot, units, check);
-            Cell::VisitObjects(bot, searcher, kVendorDistance);
+            Acore::AnyUnitInObjectRangeCheck check(center, range);
+            Acore::UnitListSearcher<Acore::AnyUnitInObjectRangeCheck> searcher(center, units, check);
+            Cell::VisitObjects(center, searcher, range);
+            std::vector<Creature*> out;
             for (Unit* u : units)
                 if (Creature* c = u->ToCreature())
-                    if (c->IsVendor() && c->IsAlive() && !c->IsHostileTo(bot))
-                        return c;
+                    out.push_back(c);
+            std::sort(out.begin(), out.end(), [center](Creature* a, Creature* b) { return center->GetDistance(a) < center->GetDistance(b); });
+            return out;
+        }
+
+        // A merchant within `range` of the companion (no need to target or walk up to him).
+        Creature* NearbyVendor(Player* bot, float range)
+        {
+            for (Creature* c : NearbyCreatures(bot, range))
+                if (c->IsVendor() && c->IsAlive() && !c->IsHostileTo(bot))
+                    return c;
             return nullptr;
         }
 
-        uint32 JunkCount(Player* bot, uint64* value)
+        // Sells items directly (like the vendor window would): money in, items gone.
+        uint64 SellItems(Player* bot, std::vector<Item*> const& items, uint32* sold)
         {
+            uint64 total = 0;
             uint32 n = 0;
-            uint64 v = 0;
+            for (Item* item : items)
+            {
+                ItemTemplate const* proto = item ? item->GetTemplate() : nullptr;
+                if (!proto || !proto->SellPrice || item->IsInTrade())
+                    continue;
+                total += uint64(proto->SellPrice) * item->GetCount();
+                ++n;
+                bot->DestroyItem(item->GetBagSlot(), item->GetSlot(), true);
+            }
+            if (total)
+                bot->ModifyMoney(int32(std::min<uint64>(total, 0x7FFFFFFF)));
+            if (sold)
+                *sold = n;
+            return total;
+        }
+
+        std::vector<Item*> JunkItems(Player* bot)
+        {
+            std::vector<Item*> out;
             ForEachBagItem(bot, [&](Item* item)
             {
                 ItemTemplate const* proto = item->GetTemplate();
                 if (proto && proto->Quality == ITEM_QUALITY_POOR && proto->SellPrice > 0)
-                {
-                    ++n;
-                    v += uint64(proto->SellPrice) * item->GetCount();
-                }
+                    out.push_back(item);
             });
-            if (value)
-                *value = v;
-            return n;
+            return out;
+        }
+
+        // Quests offered (or finished) by creatures within `range` of `center`: quest id -> creature.
+        std::map<uint32, Creature*> QuestNpcs(WorldObject* center, float range, bool enders)
+        {
+            std::map<uint32, Creature*> out;
+            for (Creature* c : NearbyCreatures(center, range))
+            {
+                if (!c->IsAlive() || !c->IsQuestGiver())
+                    continue;
+                QuestRelationBounds b = enders ? sObjectMgr->GetCreatureQuestInvolvedRelationBounds(c->GetEntry())
+                                               : sObjectMgr->GetCreatureQuestRelationBounds(c->GetEntry());
+                for (auto it = b.first; it != b.second; ++it)
+                    out.emplace(it->second, c);
+            }
+            return out;
+        }
+
+        bool Near(Player* a, Player* b, float range)
+        {
+            return a && b && a->IsInWorld() && b->IsInWorld() && a->GetMapId() == b->GetMapId() && a->GetDistance(b) <= range;
+        }
+
+        // Unfinished kill objectives of `q` for `p`.
+        std::set<uint32> KillEntries(Player* p, Quest const* q)
+        {
+            std::set<uint32> out;
+            uint16 slot = p->FindQuestSlot(q->GetQuestId());
+            for (uint8 i = 0; i < QUEST_OBJECTIVES_COUNT; ++i)
+                if (q->RequiredNpcOrGo[i] > 0 && q->RequiredNpcOrGoCount[i] &&
+                    (slot >= MAX_QUEST_LOG_SIZE || p->GetQuestSlotCounter(slot, i) < q->RequiredNpcOrGoCount[i]))
+                    out.insert(uint32(q->RequiredNpcOrGo[i]));
+            return out;
+        }
+
+        // Where to go for `q`: nearest spawn of an unfinished kill target, else the quest map marker (POI).
+        bool QuestDestination(Player* bot, Quest const* q, uint32& map, float& x, float& y, float& z, bool& haveZ)
+        {
+            std::set<uint32> entries = KillEntries(bot, q);
+            float best = -1;
+            if (!entries.empty())
+                for (auto const& [spawnId, data] : sObjectMgr->GetAllCreatureData())
+                {
+                    if (data.mapid != bot->GetMapId() || !entries.count(data.id))
+                        continue;
+                    float d = bot->GetDistance(data.posX, data.posY, data.posZ);
+                    if (best < 0 || d < best)
+                    {
+                        best = d;
+                        x = data.posX;
+                        y = data.posY;
+                        z = data.posZ;
+                    }
+                }
+            if (best >= 0)
+            {
+                map = bot->GetMapId();
+                haveZ = true;
+                return true;
+            }
+            if (QuestPOIVector const* pois = sObjectMgr->GetQuestPOIVector(q->GetQuestId()))
+                for (QuestPOI const& poi : *pois)
+                {
+                    if (poi.MapId != bot->GetMapId() || poi.points.empty())
+                        continue;
+                    double sx = 0, sy = 0;
+                    for (auto const& pt : poi.points)
+                    {
+                        sx += pt.x;
+                        sy += pt.y;
+                    }
+                    map = poi.MapId;
+                    x = float(sx / poi.points.size());
+                    y = float(sy / poi.points.size());
+                    z = bot->GetPositionZ();
+                    haveZ = false;
+                    return true;
+                }
+            return false;
         }
     }
 
@@ -450,6 +554,10 @@ namespace romance::ac
             case CompanionCommandKind::Cast: return Cast(owner, bot, cmd);
             case CompanionCommandKind::AttackNamed:
             case CompanionCommandKind::AttackTarget: return Attack(owner, bot, cmd);
+            case CompanionCommandKind::AttackAll: return AttackAll(owner, bot, cmd, now);
+            case CompanionCommandKind::StopAttack: return StopAttack(owner, bot);
+            case CompanionCommandKind::AcceptQuests: return AcceptQuests(owner, bot, cmd);
+            case CompanionCommandKind::TurnInQuests: return TurnInQuests(owner, bot, cmd);
             case CompanionCommandKind::SellJunk:
             case CompanionCommandKind::SellItem: return Sell(owner, bot, cmd);
             case CompanionCommandKind::ShareQuests:
@@ -564,10 +672,12 @@ namespace romance::ac
         {
             ObjectGuid tg = owner->GetTarget();
             Unit* u = tg ? ObjectAccessor::GetUnit(*owner, tg) : nullptr;
-            if (!u || !bot->IsValidAttackTarget(u))
-                return "Nothing. They told you to attack, but they have no enemy targeted; tell them.";
-            PlayerbotsBridge::Command(bot, owner, "attack");
-            return "You attack " + u->GetName() + ".";
+            if (u && bot->IsValidAttackTarget(u))
+            {
+                PlayerbotsBridge::Command(bot, owner, "attack");
+                return "You attack " + u->GetName() + ".";
+            }
+            // nothing targeted: the nearest enemy
         }
 
         uint32 type = CreatureTypeFromWord(cmd.arg);
@@ -583,7 +693,8 @@ namespace romance::ac
             if (!u->IsAlive() || !bot->IsValidAttackTarget(u) || u->ToPlayer())
                 continue;
             Creature* c = u->ToCreature();
-            bool match = type ? (c && c->GetCreatureType() == type) : MatchScore(u->GetName(), cmd.arg) > 0;
+            bool match = cmd.arg.empty() ? (!c || c->GetCreatureType() != CREATURE_TYPE_CRITTER)
+                         : type ? (c && c->GetCreatureType() == type) : MatchScore(u->GetName(), cmd.arg) > 0;
             if (!match)
                 continue;
             float d = bot->GetDistance(u);
@@ -594,7 +705,8 @@ namespace romance::ac
             }
         }
         if (!best)
-            return "Nothing. They told you to attack \"" + cmd.arg + "\", but there is no such enemy nearby; tell them.";
+            return cmd.arg.empty() ? "Nothing. There is no enemy nearby to attack; tell them."
+                                   : "Nothing. They told you to attack \"" + cmd.arg + "\", but there is no such enemy nearby; tell them.";
         Group* group = bot->GetGroup();
         if (group && group->IsMember(owner->GetGUID()))
         {
@@ -609,17 +721,16 @@ namespace romance::ac
 
     std::string CompanionControl::Sell(Player* owner, Player* bot, CompanionCommand const& cmd)
     {
-        Creature* vendor = NearbyVendor(bot);
+        Creature* vendor = NearbyVendor(bot, _cfg.interactRange);
         if (!vendor)
-            return "Nothing yet. There is no merchant right next to you; you can only sell when you stand at a vendor. Tell them.";
+            return "Nothing yet. There is no merchant nearby; you can sell as soon as you are close to one. Tell them.";
         if (cmd.kind == CompanionCommandKind::SellJunk)
         {
-            uint64 value = 0;
-            uint32 n = JunkCount(bot, &value);
+            uint32 n = 0;
+            uint64 value = SellItems(bot, JunkItems(bot), &n);
             if (!n)
                 return "Nothing. You have no junk to sell; tell them.";
-            PlayerbotsBridge::Command(bot, owner, "s gray");
-            return "You sold " + std::to_string(n) + " junk items to " + vendor->GetName() + " for about " + Money(value) + ".";
+            return "You sold " + std::to_string(n) + " junk items to " + vendor->GetName() + " for " + Money(value) + ".";
         }
         ItemGroup const* best = nullptr;
         int bestScore = 0;
@@ -637,8 +748,13 @@ namespace romance::ac
             return "Nothing. They asked you to sell \"" + cmd.arg + "\", but you have no such item; tell them.";
         if (!best->proto->SellPrice)
             return "Nothing. Merchants don't buy " + best->proto->Name1 + "; tell them.";
-        PlayerbotsBridge::Command(bot, owner, "s " + ItemLink(best->proto));
-        return "You sold your " + best->proto->Name1 + " to " + vendor->GetName() + ".";
+        std::vector<Item*> items;
+        uint32 entry = best->proto->ItemId;
+        ForEachBagItem(bot, [&](Item* item) { if (item->GetEntry() == entry) items.push_back(item); });
+        uint32 n = 0;
+        uint64 value = SellItems(bot, items, &n);
+        return "You sold your " + best->proto->Name1 + (best->count > 1 ? " (" + std::to_string(best->count) + ")" : "") + " to " +
+               vendor->GetName() + " for " + Money(value) + ".";
     }
 
     std::string CompanionControl::Share(Player* owner, Player* bot, CompanionCommand const& cmd, time_t now)
@@ -678,6 +794,224 @@ namespace romance::ac
         return "You shared " + std::to_string(toShare.size()) + (toShare.size() == 1 ? " quest" : " quests") + " with them: " + names + ".";
     }
 
+    std::string CompanionControl::AttackAll(Player* owner, Player* bot, CompanionCommand const& cmd, time_t now)
+    {
+        Group* group = bot->GetGroup();
+        if (!group || !group->IsMember(owner->GetGUID()))
+            return "Nothing. You can only pick fights together when you are in the same group; tell them.";
+        Hunt& h = _hunts[owner->GetGUID()];
+        bool fresh = h.bots.empty() || h.forLead || now > h.until;
+        if (fresh)
+        {
+            h = Hunt();
+            h.owner = owner->GetGUID();
+            h.filter = cmd.arg;
+            h.creatureType = CreatureTypeFromWord(cmd.arg);
+            h.radius = std::min(_cfg.commandRange, 45.0f);
+            h.until = now + 300;
+        }
+        if (std::find(h.bots.begin(), h.bots.end(), bot->GetGUID()) == h.bots.end())
+            h.bots.push_back(bot->GetGUID());
+        if (!HuntStep(h, now))
+        {
+            _hunts.erase(owner->GetGUID());
+            return cmd.arg.empty() ? "Nothing. There are no enemies around here; tell them."
+                                   : "Nothing. There are no \"" + cmd.arg + "\" around here; tell them.";
+        }
+        return "You are clearing the area" + (cmd.arg.empty() ? std::string() : " of " + cmd.arg) +
+               ": you mark one enemy after another with a skull and attack it, until none are left.";
+    }
+
+    std::string CompanionControl::StopAttack(Player* owner, Player* bot)
+    {
+        auto it = _hunts.find(owner->GetGUID());
+        if (it == _hunts.end() || it->second.forLead)
+            return "You stop attacking new enemies (you were not clearing an area).";
+        if (Group* group = bot->GetGroup())
+            group->SetTargetIcon(kSkullIcon, owner->GetGUID(), ObjectGuid::Empty);
+        _hunts.erase(it);
+        return "You stop clearing the area and don't pick new fights.";
+    }
+
+    bool CompanionControl::HuntStep(Hunt& h, time_t now)
+    {
+        Player* owner = ObjectAccessor::FindConnectedPlayer(h.owner);
+        if (!owner || now > h.until)
+            return false;
+        std::vector<Player*> bots;
+        for (ObjectGuid g : h.bots)
+            if (Player* b = ObjectAccessor::FindConnectedPlayer(g))
+                if (b->IsInWorld() && b->IsAlive() && b->GetMapId() == owner->GetMapId())
+                    bots.push_back(b);
+        if (bots.empty())
+            return false;
+        Group* group = bots.front()->GetGroup();
+        if (!group)
+            return false;
+
+        Unit* current = h.current ? ObjectAccessor::GetUnit(*bots.front(), h.current) : nullptr;
+        if (current && current->IsAlive() && bots.front()->IsValidAttackTarget(current))
+        {
+            // keep everyone on the marked enemy
+            for (Player* b : bots)
+                if (!b->IsInCombat() || b->GetVictim() != current)
+                    PlayerbotsBridge::Command(b, owner, "d attack rti target");
+            return true;
+        }
+        if (h.current)
+            ++h.kills;
+
+        Player* anchor = bots.front();
+        std::list<Unit*> units;
+        Acore::AnyUnfriendlyUnitInObjectRangeCheck check(anchor, anchor, h.radius);
+        Acore::UnitListSearcher<Acore::AnyUnfriendlyUnitInObjectRangeCheck> searcher(anchor, units, check);
+        Cell::VisitObjects(anchor, searcher, h.radius);
+        Unit* next = nullptr;
+        float bestDist = 0;
+        for (Unit* u : units)
+        {
+            Creature* c = u->ToCreature();
+            if (!c || !c->IsAlive() || !anchor->IsValidAttackTarget(c) || c->IsCivilian())
+                continue;
+            if (c->hasLootRecipient() && !c->isTappedBy(owner))
+                continue;   // someone else's fight
+            if (!h.entries.empty())
+            {
+                if (!h.entries.count(c->GetEntry()))
+                    continue;
+            }
+            else if (h.creatureType)
+            {
+                if (c->GetCreatureType() != h.creatureType)
+                    continue;
+            }
+            else if (!h.filter.empty())
+            {
+                if (MatchScore(c->GetName(), h.filter) == 0)
+                    continue;
+            }
+            else if (c->GetCreatureType() == CREATURE_TYPE_CRITTER)
+                continue;
+            float d = anchor->GetDistance(c);
+            if (!next || d < bestDist)
+            {
+                next = c;
+                bestDist = d;
+            }
+        }
+        if (!next)
+        {
+            h.current = ObjectGuid::Empty;
+            return false;
+        }
+        h.current = next->GetGUID();
+        group->SetTargetIcon(kSkullIcon, owner->GetGUID(), next->GetGUID());
+        for (Player* b : bots)
+        {
+            PlayerbotsBridge::Command(b, owner, "rti skull");
+            PlayerbotsBridge::Command(b, owner, "d attack rti target");
+        }
+        return true;
+    }
+
+    std::string CompanionControl::AcceptQuests(Player* owner, Player* bot, CompanionCommand const& cmd)
+    {
+        if (!Near(owner, bot, _cfg.interactRange + 10))
+            return "Nothing yet. You are too far away from them to see the quest giver; ask them to wait for you.";
+        auto offered = QuestNpcs(owner, _cfg.interactRange, false);
+        if (offered.empty())
+            return "Nothing. There is no quest giver nearby; tell them.";
+        std::vector<Quest const*> take;
+        std::vector<std::string> cannot;
+        for (int pass = 0; pass < 2 && take.empty(); ++pass)
+            for (auto const& [id, npc] : offered)
+            {
+                Quest const* q = sObjectMgr->GetQuestTemplate(id);
+                if (!q || bot->FindQuestSlot(id) < MAX_QUEST_LOG_SIZE || bot->GetQuestRewardStatus(id))
+                    continue;
+                if (!cmd.arg.empty() && MatchScore(q->GetTitle(), cmd.arg) == 0)
+                    continue;
+                // first the quests they have taken themselves, then (if none) everything offered here
+                if (cmd.arg.empty() && pass == 0 && owner->FindQuestSlot(id) >= MAX_QUEST_LOG_SIZE)
+                    continue;
+                if (!bot->CanTakeQuest(q, false) || !bot->CanAddQuest(q, false))
+                {
+                    if (pass == 0 || !cmd.arg.empty())
+                        cannot.push_back(q->GetTitle());
+                    continue;
+                }
+                take.push_back(q);
+                if (take.size() >= 8)
+                    break;
+            }
+        std::string names;
+        for (Quest const* q : take)
+        {
+            bot->AddQuestAndCheckCompletion(q, nullptr);
+            names += (names.empty() ? "\"" : ", \"") + q->GetTitle() + "\"";
+        }
+        std::string refused;
+        for (auto const& t : cannot)
+            refused += (refused.empty() ? "\"" : ", \"") + t + "\"";
+        if (take.empty())
+            return refused.empty() ? "Nothing. There is no quest here you could take; tell them."
+                                   : "Nothing. You cannot take " + refused + " (level, class or an earlier quest missing); tell them.";
+        return "You took " + names + " from the quest giver." + (refused.empty() ? "" : " You could not take " + refused + ".");
+    }
+
+    std::string CompanionControl::TurnInQuests(Player* owner, Player* bot, CompanionCommand const& cmd)
+    {
+        auto enders = QuestNpcs(bot, _cfg.interactRange, true);
+        std::string done, notReady;
+        for (auto const& [q, slot] : QuestLog(bot))
+        {
+            if (!cmd.arg.empty() && MatchScore(q->GetTitle(), cmd.arg) == 0)
+                continue;
+            auto it = enders.find(q->GetQuestId());
+            if (it == enders.end())
+                continue;
+            if (bot->GetQuestStatus(q->GetQuestId()) != QUEST_STATUS_COMPLETE || !bot->CanRewardQuest(q, false))
+            {
+                notReady += (notReady.empty() ? "\"" : ", \"") + q->GetTitle() + "\"";
+                continue;
+            }
+            bot->RewardQuest(q, 0, it->second, false);
+            done += (done.empty() ? "\"" : ", \"") + q->GetTitle() + "\"";
+        }
+        if (done.empty())
+            return notReady.empty() ? "Nothing. None of your quests can be turned in to anyone nearby; tell them."
+                                    : "Nothing. " + notReady + " is not finished yet; tell them what is still missing.";
+        return "You turned in " + done + "." + (notReady.empty() ? "" : " Not finished yet: " + notReady + ".");
+    }
+
+    std::string CompanionControl::SyncQuestAccept(Player* owner, Player* bot, uint32 questId)
+    {
+        if (!_cfg.controlEnabled || !_cfg.questSync || !Near(owner, bot, _cfg.interactRange + 10) || !bot->IsAlive())
+            return "";
+        Quest const* q = sObjectMgr->GetQuestTemplate(questId);
+        if (!q || bot->FindQuestSlot(questId) < MAX_QUEST_LOG_SIZE || bot->GetQuestRewardStatus(questId))
+            return "";
+        if (!bot->CanTakeQuest(q, false) || !bot->CanAddQuest(q, false))
+            return "";
+        bot->AddQuestAndCheckCompletion(q, nullptr);
+        return "You took the quest \"" + q->GetTitle() + "\" too, together with them.";
+    }
+
+    std::string CompanionControl::SyncQuestReward(Player* owner, Player* bot, uint32 questId)
+    {
+        if (!_cfg.controlEnabled || !_cfg.questSync || !Near(owner, bot, _cfg.interactRange + 10) || !bot->IsAlive())
+            return "";
+        Quest const* q = sObjectMgr->GetQuestTemplate(questId);
+        if (!q || bot->GetQuestStatus(questId) != QUEST_STATUS_COMPLETE || !bot->CanRewardQuest(q, false))
+            return "";
+        auto enders = QuestNpcs(bot, _cfg.interactRange, true);
+        auto it = enders.find(questId);
+        if (it == enders.end())
+            return "";
+        bot->RewardQuest(q, 0, it->second, false);
+        return "";   // the quest-complete event already makes her comment
+    }
+
     std::string CompanionControl::StartLead(Player* owner, Player* bot, CompanionCommand const& cmd, time_t now)
     {
         if (!_cfg.leadMode || !PlayerbotsBridge::Available())
@@ -689,11 +1023,11 @@ namespace romance::ac
             int bestScore = 0;
             for (auto const& [q, slot] : log)
             {
-                int s = MatchScore(q->GetTitle(), cmd.arg);
-                if (s > bestScore)
+                int sc = MatchScore(q->GetTitle(), cmd.arg);
+                if (sc > bestScore)
                 {
                     pick = q;
-                    bestScore = s;
+                    bestScore = sc;
                 }
             }
             if (!pick)
@@ -723,18 +1057,159 @@ namespace romance::ac
         }
         if (bot->GetQuestStatus(pick->GetQuestId()) == QUEST_STATUS_COMPLETE)
             return "Nothing. \"" + pick->GetTitle() + "\" is already finished and only needs to be turned in; tell them.";
-        if (!PlayerbotsBridge::StartLead(bot, owner, pick->GetQuestId()))
+
+        Lead lead;
+        lead.owner = owner->GetGUID();
+        lead.quest = pick->GetQuestId();
+        lead.title = pick->GetTitle();
+        lead.since = now;
+        if (!QuestDestination(bot, pick, lead.map, lead.x, lead.y, lead.z, lead.haveZ))
+            return "Nothing. You don't know where \"" + pick->GetTitle() + "\" takes place (it is not on this continent or has no "
+                   "known location); tell them and suggest they lead.";
+        if (!PlayerbotsBridge::StartLead(bot, owner))
             return "Nothing. You could not take the lead right now; tell them.";
-        _leads[bot->GetGUID()] = { pick->GetQuestId(), pick->GetTitle(), now };
-        return "You took the lead and are now walking to your quest \"" + pick->GetTitle() + "\"; they follow you. "
-               "Tell them where you are going.";
+        lead.lastX = bot->GetPositionX();
+        lead.lastY = bot->GetPositionY();
+        float dist = bot->GetDistance2d(lead.x, lead.y);
+        _leads[bot->GetGUID()] = lead;
+        LeadStep(owner, bot, _leads[bot->GetGUID()], now);
+        std::string where = KillEntries(bot, pick).empty() ? "the area of" : "where the targets of";
+        return "You took the lead and are walking to " + where + " your quest \"" + pick->GetTitle() + "\" (about " +
+               std::to_string(int(dist)) + " yards away); they follow you. You wait if they fall behind. Tell them where you are going.";
     }
 
     std::string CompanionControl::StopLead(Player* owner, Player* bot)
     {
-        bool was = _leads.erase(bot->GetGUID()) > 0 || PlayerbotsBridge::IsLeading(bot);
+        bool was = _leads.erase(bot->GetGUID()) > 0;
+        auto h = _hunts.find(owner->GetGUID());
+        if (h != _hunts.end() && h->second.forLead)
+            _hunts.erase(h);
+        bot->GetMotionMaster()->Clear();
         PlayerbotsBridge::StopLead(bot, owner);
         return was ? "You stopped leading and follow them again." : "You follow them (you were not leading).";
+    }
+
+    void CompanionControl::FinishLead(Player* owner, Player* bot, std::string const& notice)
+    {
+        _leads.erase(bot->GetGUID());
+        auto h = _hunts.find(owner->GetGUID());
+        if (h != _hunts.end() && h->second.forLead)
+            _hunts.erase(h);
+        bot->GetMotionMaster()->Clear();
+        PlayerbotsBridge::StopLead(bot, owner);
+        if (!notice.empty())
+            _notices.push_back({ bot->GetGUID(), notice });
+    }
+
+    void CompanionControl::LeadStep(Player* owner, Player* bot, Lead& lead, time_t now)
+    {
+        Quest const* q = sObjectMgr->GetQuestTemplate(lead.quest);
+        if (!q || bot->FindQuestSlot(lead.quest) >= MAX_QUEST_LOG_SIZE)
+        {
+            FinishLead(owner, bot, "");
+            return;
+        }
+        if (bot->GetQuestStatus(lead.quest) == QUEST_STATUS_COMPLETE)
+        {
+            FinishLead(owner, bot, "You finished the objectives of \"" + lead.title + "\" while leading. You follow them again now; "
+                                   "tell them it is done and suggest turning it in.");
+            return;
+        }
+        if (bot->IsInCombat() || !bot->IsAlive())
+            return;   // fighting is Playerbots' job
+
+        // never run away from them: wait when they fall behind
+        bool ownerNear = owner->GetMapId() == bot->GetMapId() && bot->GetDistance(owner) < 40.0f;
+        if (!ownerNear)
+        {
+            if (!lead.waiting)
+            {
+                lead.waiting = true;
+                bot->GetMotionMaster()->Clear();
+                bot->StopMoving();
+            }
+            return;
+        }
+        if (lead.waiting)
+        {
+            if (bot->GetDistance(owner) > 20.0f)
+                return;
+            lead.waiting = false;
+            lead.lastMove = 0;
+        }
+
+        if (lead.hunting)
+        {
+            auto h = _hunts.find(owner->GetGUID());
+            if (h == _hunts.end() || !h->second.forLead)
+                FinishLead(owner, bot, "You reached the area of \"" + lead.title + "\" but found no more of the creatures you need "
+                                       "right now. You follow them again; tell them and suggest waiting for them to come back.");
+            return;
+        }
+
+        float dist = bot->GetDistance2d(lead.x, lead.y);
+        if (dist < 25.0f)
+        {
+            std::set<uint32> entries = KillEntries(bot, q);
+            if (entries.empty())
+            {
+                std::string what;
+                for (uint8 i = 0; i < QUEST_OBJECTIVES_COUNT; ++i)
+                    if (!q->ObjectiveText[i].empty())
+                        what += (what.empty() ? "" : "; ") + q->ObjectiveText[i];
+                FinishLead(owner, bot, "You arrived at the area of \"" + lead.title + "\". " +
+                                           (what.empty() ? std::string("") : "What still needs doing: " + what + ". ") +
+                                           "You follow them again; tell them you are there and what to look for.");
+                return;
+            }
+            Hunt h;
+            h.owner = owner->GetGUID();
+            h.bots = { bot->GetGUID() };
+            h.entries = entries;
+            h.radius = 60.0f;
+            h.until = now + 900;
+            h.forLead = true;
+            _hunts[owner->GetGUID()] = h;
+            lead.hunting = true;
+            _notices.push_back({ bot->GetGUID(), "You arrived where the creatures for \"" + lead.title +
+                                                     "\" are and start fighting them. Say it in a few words." });
+            return;
+        }
+
+        // walk in steps of up to 60 yards (path finding works best on short legs)
+        float moved = std::hypot(bot->GetPositionX() - lead.lastX, bot->GetPositionY() - lead.lastY);
+        bool moving = bot->GetMotionMaster()->GetCurrentMovementGeneratorType() == POINT_MOTION_TYPE && moved > 0.5f;
+        if (moving && now - lead.lastMove < 8)
+        {
+            lead.lastX = bot->GetPositionX();
+            lead.lastY = bot->GetPositionY();
+            return;
+        }
+        if (now - lead.lastMove < 2)
+            return;
+        lead.stuck = moved < 1.0f && lead.lastMove ? lead.stuck + 1 : 0;
+        if (lead.stuck >= 8)
+        {
+            FinishLead(owner, bot, "You could not find a way to the area of \"" + lead.title +
+                                       "\". You follow them again; tell them and ask them to lead instead.");
+            return;
+        }
+        float step = std::min(dist, lead.stuck >= 3 ? 25.0f : 60.0f);
+        float dx = (lead.x - bot->GetPositionX()) / dist, dy = (lead.y - bot->GetPositionY()) / dist;
+        float nx = bot->GetPositionX() + dx * step, ny = bot->GetPositionY() + dy * step;
+        float nz;
+        if (lead.haveZ && step >= dist - 0.1f)
+            nz = lead.z;
+        else
+        {
+            nz = bot->GetMapHeight(nx, ny, bot->GetPositionZ() + 30.0f, true, 80.0f);
+            if (nz <= INVALID_HEIGHT + 1.0f)
+                nz = bot->GetPositionZ();
+        }
+        bot->GetMotionMaster()->MovePoint(0, nx, ny, nz);
+        lead.lastMove = now;
+        lead.lastX = bot->GetPositionX();
+        lead.lastY = bot->GetPositionY();
     }
 
     // ------------------------------------------------------------------ background
@@ -758,6 +1233,49 @@ namespace romance::ac
             PlayerbotsBridge::Command(bot, owner, it->command);
             it = _pending.erase(it);
         }
+
+        if (now == _lastStep)
+            return;   // area clearing and lead mode step once per second
+        _lastStep = now;
+        for (auto it = _hunts.begin(); it != _hunts.end();)
+        {
+            if (HuntStep(it->second, now))
+            {
+                ++it;
+                continue;
+            }
+            Hunt const& h = it->second;
+            if (!h.forLead && !h.bots.empty())
+                _notices.push_back({ h.bots.front(), h.kills
+                    ? "You cleared the area (" + std::to_string(h.kills) + (h.kills == 1 ? " enemy" : " enemies") + "). Say it briefly."
+                    : "" });
+            if (Player* owner = ObjectAccessor::FindConnectedPlayer(h.owner))
+                if (Group* g = owner->GetGroup())
+                    g->SetTargetIcon(kSkullIcon, owner->GetGUID(), ObjectGuid::Empty);
+            it = _hunts.erase(it);
+        }
+        for (auto it = _leads.begin(); it != _leads.end();)
+        {
+            ObjectGuid botGuid = it->first;
+            Player* bot = ObjectAccessor::FindConnectedPlayer(botGuid);
+            Player* owner = ObjectAccessor::FindConnectedPlayer(it->second.owner);
+            if (!bot || !owner || !bot->IsInWorld())
+            {
+                it = _leads.erase(it);
+                continue;
+            }
+            ++it;   // LeadStep may erase this lead
+            auto cur = _leads.find(botGuid);
+            LeadStep(owner, bot, cur->second, now);
+        }
+        _notices.erase(std::remove_if(_notices.begin(), _notices.end(), [](auto const& n) { return n.second.empty(); }), _notices.end());
+    }
+
+    std::vector<std::pair<ObjectGuid, std::string>> CompanionControl::TakeNotices()
+    {
+        std::vector<std::pair<ObjectGuid, std::string>> out;
+        out.swap(_notices);
+        return out;
     }
 
     std::string CompanionControl::Poll(Player* owner, Player* bot, time_t now)
@@ -766,36 +1284,19 @@ namespace romance::ac
             return "";
         ObjectGuid g = bot->GetGUID();
 
-        // lead mode: finished or interrupted -> follow again and ask what's next
-        auto lead = _leads.find(g);
-        if (lead != _leads.end() && now - lead->second.since > 5)
-        {
-            bool done = bot->GetQuestStatus(lead->second.quest) == QUEST_STATUS_COMPLETE;
-            bool stopped = PlayerbotsBridge::LeadQuest(bot) != lead->second.quest;
-            if (done || stopped)
-            {
-                std::string title = lead->second.title;
-                _leads.erase(lead);
-                PlayerbotsBridge::StopLead(bot, owner);
-                return done ? "You finished the objectives of \"" + title + "\" while leading. You follow them again now; "
-                              "tell them and ask what they want to do next."
-                            : "You stopped leading the way to \"" + title + "\" and follow them again; ask what they want to do next.";
-            }
-        }
-
         // bags nearly full
         uint32 freeSlots = bot->GetFreeInventorySpace();
         if (freeSlots <= _cfg.autoSellFreeSlots && !bot->IsInCombat())
         {
-            Creature* vendor = _cfg.autoSellJunk ? NearbyVendor(bot) : nullptr;
-            uint64 value = 0;
-            uint32 junk = vendor ? JunkCount(bot, &value) : 0;
-            if (vendor && junk && now - _lastAutoSell[g] > kAutoSellCooldown)
+            Creature* vendor = _cfg.autoSellJunk ? NearbyVendor(bot, _cfg.interactRange) : nullptr;
+            std::vector<Item*> junk = vendor ? JunkItems(bot) : std::vector<Item*>();
+            if (vendor && !junk.empty() && now - _lastAutoSell[g] > kAutoSellCooldown)
             {
                 _lastAutoSell[g] = now;
-                PlayerbotsBridge::Command(bot, owner, "s gray");
-                return "Your bags were almost full, so you sold " + std::to_string(junk) + " junk items to " + vendor->GetName() +
-                       " for about " + Money(value) + ". Mention it briefly.";
+                uint32 n = 0;
+                uint64 value = SellItems(bot, junk, &n);
+                return "Your bags were almost full, so you sold " + std::to_string(n) + " junk items to " + vendor->GetName() +
+                       " for " + Money(value) + ". Mention it briefly.";
             }
             if (now - _lastBagsFull[g] > kBagsFullCooldown)
             {
@@ -812,6 +1313,8 @@ namespace romance::ac
         _leads.erase(bot);
         _lastAutoSell.erase(bot);
         _lastBagsFull.erase(bot);
+        for (auto& [owner, h] : _hunts)
+            h.bots.erase(std::remove(h.bots.begin(), h.bots.end(), bot), h.bots.end());
         _pending.erase(std::remove_if(_pending.begin(), _pending.end(), [&](Pending const& p) { return p.bot == bot; }), _pending.end());
     }
 
@@ -834,6 +1337,8 @@ namespace romance::ac
         auto lead = _leads.find(bot->GetGUID());
         if (lead != _leads.end())
             j.Set("leadQuest", lead->second.title);
+        if (lead != _leads.end())
+            j.Set("follow", std::string("lead"));
 
         Json items = Json::MakeArray();
         for (ItemGroup const& g : GroupedBagItems(bot))

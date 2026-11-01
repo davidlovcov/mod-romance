@@ -769,6 +769,14 @@ namespace romance
                (!s->rec.personality.nickname.empty() && CountName(text, s->rec.personality.nickname) > 0);
     }
 
+    std::string RomanceService::DisplayName(CompanionKey const& key) const
+    {
+        Session const* s = Find(key);
+        if (!s)
+            return "";
+        return s->rec.personality.name.empty() ? s->rec.companionName : s->rec.personality.name;
+    }
+
     TimePoint RomanceService::LastActivity(CompanionKey const& key) const
     {
         Session const* s = Find(key);

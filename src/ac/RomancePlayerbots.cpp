@@ -118,21 +118,18 @@ namespace romance::ac
             return "unknown";
         if (ai->HasStrategy("stay", BOT_STATE_NON_COMBAT))
             return "stay";
-        if (ai->HasStrategy("new rpg", BOT_STATE_NON_COMBAT) && !ai->HasStrategy("follow", BOT_STATE_NON_COMBAT))
-            return "lead";
         if (ai->HasStrategy("follow", BOT_STATE_NON_COMBAT))
             return "follow";
         return "unknown";
     }
 
-    bool PlayerbotsBridge::StartLead(Player* bot, Player* master, uint32 questId)
+    bool PlayerbotsBridge::StartLead(Player* bot, Player* master)
     {
         PlayerbotAI* ai = bot ? GET_PLAYERBOT_AI(bot) : nullptr;
-        if (!ai || !ai->IsBotAI() || ai->GetMaster() != master || !questId)
+        if (!ai || !ai->IsBotAI() || ai->GetMaster() != master)
             return false;
-        // "new rpg" drives the bot on its own; "rpg do quest" points it at one quest.
-        ai->HandleCommand(CHAT_MSG_WHISPER, "nc -follow,-stay,+new rpg", master);
-        ai->HandleCommand(CHAT_MSG_WHISPER, "rpg do quest " + std::to_string(questId), master);
+        // Without follow/stay Playerbots leaves non-combat movement alone; combat stays with Playerbots.
+        ai->HandleCommand(CHAT_MSG_WHISPER, "nc -follow,-stay", master);
         return true;
     }
 
@@ -141,24 +138,9 @@ namespace romance::ac
         PlayerbotAI* ai = bot ? GET_PLAYERBOT_AI(bot) : nullptr;
         if (!ai || !ai->IsBotAI() || ai->GetMaster() != master)
             return false;
-        ai->HandleCommand(CHAT_MSG_WHISPER, "nc -new rpg,+follow", master);
+        ai->HandleCommand(CHAT_MSG_WHISPER, "nc +follow", master);
         ai->HandleCommand(CHAT_MSG_WHISPER, "follow", master);
         return true;
-    }
-
-    bool PlayerbotsBridge::IsLeading(Player* bot)
-    {
-        return FollowState(bot) == "lead";
-    }
-
-    uint32 PlayerbotsBridge::LeadQuest(Player* bot)
-    {
-        PlayerbotAI* ai = bot ? GET_PLAYERBOT_AI(bot) : nullptr;
-        if (!ai || ai->rpgInfo.GetStatus() != RPG_DO_QUEST)
-            return 0;
-        if (auto const* q = std::get_if<NewRpgInfo::DoQuest>(&ai->rpgInfo.data))
-            return q->questId;
-        return 0;
     }
 #else
     bool PlayerbotsBridge::Available() { return false; }
@@ -172,9 +154,7 @@ namespace romance::ac
     bool PlayerbotsBridge::Command(Player*, Player*, std::string const&) { return false; }
     bool PlayerbotsBridge::SayToParty(Player*, std::string const&) { return false; }
     std::string PlayerbotsBridge::FollowState(Player*) { return "unknown"; }
-    bool PlayerbotsBridge::StartLead(Player*, Player*, uint32) { return false; }
+    bool PlayerbotsBridge::StartLead(Player*, Player*) { return false; }
     bool PlayerbotsBridge::StopLead(Player*, Player*) { return false; }
-    bool PlayerbotsBridge::IsLeading(Player*) { return false; }
-    uint32 PlayerbotsBridge::LeadQuest(Player*) { return 0; }
 #endif
 }

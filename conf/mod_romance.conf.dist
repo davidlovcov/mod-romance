@@ -185,9 +185,9 @@ Romance.Control.AutoSellJunk = 1
 Romance.Control.AutoSellFreeSlots = 2
 
 #    Romance.Control.LeadMode
-#        Description: (Experimental) "lead the way" makes her walk to one of her quests using the
-#                     Playerbots "new rpg" strategy; she follows you again when the quest is done
-#                     or when you say "I'll lead".
+#        Description: "lead the way" makes her walk to one of her quests (you follow). She waits when
+#                     you fall behind, fights the quest creatures when she arrives and follows you again
+#                     when the objectives are done or when you say "I'll lead".
 #        Default:     1
 Romance.Control.LeadMode = 1
 
@@ -195,6 +195,27 @@ Romance.Control.LeadMode = 1
 #        Description: Yards to search for an enemy named in a command ("attack the wolf").
 #        Default:     50
 Romance.Control.CommandRange = 50
+
+#    Romance.Control.InteractRange
+#        Description: Merchants and quest givers this close (yards) count as "here": "sell your junk",
+#                     "accept the quest" and "turn in your quests" work without targeting them.
+#        Default:     30
+Romance.Control.InteractRange = 30
+
+#    Romance.Control.QuestSync
+#        Description: Companions near you take a quest when you take it and turn it in when you do
+#                     (if they can: level, class, earlier quests).
+#        Default:     1
+Romance.Control.QuestSync = 1
+
+#    Romance.Party.UnaddressedReplies
+#        Description: Party lines without a name, when only bots share your group:
+#                     all  - every companion may answer
+#                     last - only the companion you talked to last
+#                     Lines with names ("Jina, Tristi, ...") or "everyone/all of you/guys" always reach
+#                     exactly those companions.
+#        Default:     all
+Romance.Party.UnaddressedReplies = all
 
 ###################################################################################################
 # ESTRANGEMENT

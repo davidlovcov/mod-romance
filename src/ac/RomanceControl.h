@@ -24,6 +24,7 @@
 
 #include <ctime>
 #include <map>
+#include <set>
 #include <optional>
 #include <string>
 #include <vector>
@@ -52,6 +53,16 @@ namespace romance::ac
 
         Json CharacterSheet(Player* owner, Player* bot) const;
 
+        // Quest sync: the owner took / turned in a quest; a companion nearby does the same if she can.
+        // Returns a short situation text (empty = nothing happened).
+        std::string SyncQuestAccept(Player* owner, Player* bot, uint32 questId);
+        std::string SyncQuestReward(Player* owner, Player* bot, uint32 questId);
+
+        // Notices produced by background jobs (area cleared, lead finished): (companion, situation text).
+        std::vector<std::pair<ObjectGuid, std::string>> TakeNotices();
+
+        bool IsLeading(ObjectGuid bot) const { return _leads.count(bot) > 0; }
+
         void Forget(ObjectGuid bot);
 
     private:
@@ -64,11 +75,35 @@ namespace romance::ac
             time_t deadline = 0;
             bool needsTrade = false;   // wait until the trade window with the owner is open
         };
+        // Clearing an area (or the quest mobs at a lead destination): one marked enemy after another.
+        struct Hunt
+        {
+            ObjectGuid owner;
+            std::vector<ObjectGuid> bots;
+            std::string filter;            // name filter (empty = any enemy)
+            uint32 creatureType = 0;       // creature type filter
+            std::set<uint32> entries;      // creature entries (lead mode: quest mobs)
+            float radius = 40.0f;
+            time_t until = 0;
+            ObjectGuid current;
+            uint32 kills = 0;
+            bool forLead = false;
+        };
+        // Lead mode: she walks to the quest area (you follow), then hunts the quest mobs there.
         struct Lead
         {
+            ObjectGuid owner;
             uint32 quest = 0;
             std::string title;
             time_t since = 0;
+            uint32 map = 0;
+            float x = 0, y = 0, z = 0;
+            bool haveZ = false;
+            bool hunting = false;
+            bool waiting = false;
+            time_t lastMove = 0;
+            float lastX = 0, lastY = 0;
+            uint32 stuck = 0;
         };
 
         std::string GiveItem(Player* owner, Player* bot, CompanionCommand const& cmd, time_t now);
@@ -77,13 +112,23 @@ namespace romance::ac
         std::string Attack(Player* owner, Player* bot, CompanionCommand const& cmd);
         std::string Sell(Player* owner, Player* bot, CompanionCommand const& cmd);
         std::string Share(Player* owner, Player* bot, CompanionCommand const& cmd, time_t now);
+        std::string AttackAll(Player* owner, Player* bot, CompanionCommand const& cmd, time_t now);
+        std::string StopAttack(Player* owner, Player* bot);
+        std::string AcceptQuests(Player* owner, Player* bot, CompanionCommand const& cmd);
+        std::string TurnInQuests(Player* owner, Player* bot, CompanionCommand const& cmd);
+        bool HuntStep(Hunt& h, time_t now);           // false = finished
+        void LeadStep(Player* owner, Player* bot, Lead& lead, time_t now);
+        void FinishLead(Player* owner, Player* bot, std::string const& notice);
         std::string StartLead(Player* owner, Player* bot, CompanionCommand const& cmd, time_t now);
         std::string StopLead(Player* owner, Player* bot);
         void Trade(Player* owner, Player* bot, std::string const& command, time_t now);
 
         RomanceConfig const& _cfg;
         std::vector<Pending> _pending;
-        std::map<ObjectGuid, Lead> _leads;
+        std::map<ObjectGuid, Lead> _leads;               // by companion
+        std::map<ObjectGuid, Hunt> _hunts;               // by owner
+        std::vector<std::pair<ObjectGuid, std::string>> _notices;
+        time_t _lastStep = 0;
         std::map<ObjectGuid, time_t> _lastAutoSell;
         std::map<ObjectGuid, time_t> _lastBagsFull;
     };

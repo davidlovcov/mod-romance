@@ -41,7 +41,8 @@ namespace
         RomancePlayerScript()
             : PlayerScript("mod_romance_player", { PLAYERHOOK_CAN_PLAYER_USE_PRIVATE_CHAT, PLAYERHOOK_CAN_PLAYER_USE_GROUP_CHAT,
                                                    PLAYERHOOK_ON_LOGIN, PLAYERHOOK_ON_LOGOUT, PLAYERHOOK_ON_CREATURE_KILL,
-                                                   PLAYERHOOK_ON_PLAYER_COMPLETE_QUEST, PLAYERHOOK_ON_STORE_NEW_ITEM }) { }
+                                                   PLAYERHOOK_ON_PLAYER_COMPLETE_QUEST, PLAYERHOOK_ON_STORE_NEW_ITEM,
+                                                   PLAYERHOOK_ON_PLAYER_QUEST_ACCEPT }) { }
 
         // Whispers (and our addon messages, which are whispers to oneself in LANG_ADDON).
         bool OnPlayerCanUseChat(Player* player, uint32 type, uint32 language, std::string& msg, Player* receiver) override
@@ -70,7 +71,13 @@ namespace
         void OnPlayerCompleteQuest(Player* player, Quest const* quest) override
         {
             if (sRomanceMgr.Enabled() && player && quest)
-                sRomanceMgr.QueueQuestComplete(player->GetGUID(), quest->GetTitle());
+                sRomanceMgr.QueueQuestComplete(player->GetGUID(), quest->GetTitle(), quest->GetQuestId());
+        }
+
+        void OnPlayerQuestAccept(Player* player, Quest const* quest) override
+        {
+            if (sRomanceMgr.Enabled() && player && quest)
+                sRomanceMgr.QueueQuestAccept(player->GetGUID(), quest->GetQuestId());
         }
 
         void OnPlayerStoreNewItem(Player* player, Item* item, uint32 /*count*/) override
