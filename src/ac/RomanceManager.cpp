@@ -85,6 +85,24 @@ namespace romance::ac
             return (g > 0 && g <= int64_t(0xFFFFFFFF)) ? uint32(g) : 0;
         }
 
+        // Player-facing text for error codes (shown by the addon and chat commands).
+        std::string HumanError(std::string const& code, uint32 limit)
+        {
+            if (code == "limit_reached")
+                return "You already have the maximum number of AI companions (" + std::to_string(limit) + "). Send one home first.";
+            if (code == "server_limit_reached") return "The server has reached its limit of AI companions. Try again later.";
+            if (code == "online_as_player") return "This character is logged in by a player.";
+            if (code == "controlled_elsewhere") return "This character is controlled by someone else.";
+            if (code == "already_loading") return "This companion is already on the way.";
+            if (code == "not_owner") return "That character does not belong to you.";
+            if (code == "playerbots_not_installed" || code == "playerbots_unavailable") return "mod-playerbots is not available on this server.";
+            if (code == "companion_in_use") return "This companion is already active for another of your characters.";
+            if (code == "estranged") return "She doesn't want to see you right now.";
+            if (code == "module_disabled") return "The romance module is disabled.";
+            if (code == "activation_failed") return "The companion joined, but the AI could not be activated.";
+            return code;
+        }
+
         void Notice(Player* player, std::string const& text)
         {
             if (player && player->GetSession())
@@ -722,12 +740,43 @@ namespace romance::ac
             return true;
         if (PlayerbotsBridge::IsBot(sender))
             return true;
+        Group* group = sender->GetGroup();
+        if (!group)
+            return true;
+
+        // Companions of the sender that are in this group.
+        std::vector<CompanionKey> inGroup;
         for (CompanionKey const& key : _service->ActiveForOwner(sender->GetGUID().GetCounter()))
+            if (group->IsMember(PlayerGuid(uint32(key.companion))))
+                inGroup.push_back(key);
+        if (inGroup.empty())
+            return true;
+
+        // Named companions answer. Without a name, the companion talked to last answers, but only
+        // if no other real player is in the group (no AI replies to everyday group chatter).
+        std::vector<CompanionKey> addressed;
+        for (auto const& k : inGroup)
+            if (_service->IsAddressed(k, msg))
+                addressed.push_back(k);
+        bool otherHumans = false;
+        for (GroupReference* ref = group->GetFirstMember(); ref; ref = ref->next())
+            if (Player* m = ref->GetSource())
+                if (m != sender && !PlayerbotsBridge::IsBot(m))
+                    otherHumans = true;
+        std::optional<CompanionKey> fallback;
+        if (addressed.empty() && !otherHumans)
+        {
+            fallback = inGroup.front();
+            for (auto const& k : inGroup)
+                if (_service->LastActivity(k) > _service->LastActivity(*fallback))
+                    fallback = k;
+            addressed.push_back(*fallback);
+        }
+
+        for (CompanionKey const& key : addressed)
         {
             auto ctx = BuildContext(key).value_or(WorldContext{});
-            if (!ctx.sameGroup)
-                continue;
-            auto res = _service->OnPlayerMessage(key, msg, ChatChannel::Party, ctx, Now());
+            auto res = _service->OnPlayerMessage(key, msg, ChatChannel::Party, ctx, Now(), fallback.has_value());
             if (res.result == RomanceService::MessageResult::Accepted && res.command)
             {
                 Player* bot = ObjectAccessor::FindConnectedPlayer(PlayerGuid(uint32(key.companion)));
@@ -952,7 +1001,7 @@ namespace romance::ac
         auto r = _service->Activate(key, owner->GetSession()->GetAccountId(), bot->GetName(), owner->GetName(), now);
         if (!r.ok)
         {
-            Notice(owner, bot->GetName() + " joined as a regular bot (" + r.error + ").");
+            Notice(owner, bot->GetName() + " joined as a regular bot: " + HumanError(r.error, _cfg.maxActiveCompanionsPerPlayer));
             return false;
         }
         _trackers.erase(key);
@@ -1135,7 +1184,10 @@ namespace romance::ac
             p.Set("guid", int64_t(guid));
             p.Set("ok", ok);
             if (!code.empty())
+            {
                 p.Set("code", code);
+                p.Set("message", HumanError(code, _cfg.maxActiveCompanionsPerPlayer));
+            }
             Json n = Json::MakeArray();
             for (auto const& s : notes)
                 n.Push(s);
@@ -1386,7 +1438,7 @@ namespace romance::ac
             return "No character named " + name + ".";
         std::string res = Summon(player, guid.GetCounter());
         Execute(_service->TakeOutgoing());
-        return res == "ok" ? "Calling " + name + "..." : "Cannot call " + name + ": " + res;
+        return res == "ok" ? "Calling " + name + "..." : "Cannot call " + name + ": " + HumanError(res, _cfg.maxActiveCompanionsPerPlayer);
     }
 
     std::string RomanceManager::CommandDismiss(Player* player)

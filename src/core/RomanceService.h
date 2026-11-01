@@ -151,8 +151,13 @@ namespace romance
             std::string rewritten;                 // for PassToPlayerbots
             std::optional<ActionType> command;     // deterministic natural-language command to execute now
         };
+        // `partyTarget`: in party chat, this companion was chosen to answer even though the message
+        // does not contain her name (only companion in an all-bot group / last one talked to).
         HandleResult OnPlayerMessage(CompanionKey const& key, std::string const& text, ChatChannel channel,
-                                     WorldContext const& ctx, TimePoint now);
+                                     WorldContext const& ctx, TimePoint now, bool partyTarget = false);
+        // True if `text` addresses this companion by name or nickname.
+        bool IsAddressed(CompanionKey const& key, std::string const& text) const;
+        TimePoint LastActivity(CompanionKey const& key) const;
         void OnGameEvent(CompanionKey const& key, GameEvent const& ev, TimePoint now);
 
         struct GiftOutcome

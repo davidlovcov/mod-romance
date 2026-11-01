@@ -635,8 +635,24 @@ namespace romance
         return true;
     }
 
+    bool RomanceService::IsAddressed(CompanionKey const& key, std::string const& text) const
+    {
+        Session const* s = Find(key);
+        if (!s)
+            return false;
+        std::string cname = s->rec.personality.name.empty() ? s->rec.companionName : s->rec.personality.name;
+        return CountName(text, cname) > 0 || CountName(text, s->rec.companionName) > 0 ||
+               (!s->rec.personality.nickname.empty() && CountName(text, s->rec.personality.nickname) > 0);
+    }
+
+    TimePoint RomanceService::LastActivity(CompanionKey const& key) const
+    {
+        Session const* s = Find(key);
+        return s ? std::max(s->lastActivity, s->lastReplyAt) : 0;
+    }
+
     RomanceService::HandleResult RomanceService::OnPlayerMessage(CompanionKey const& key, std::string const& text, ChatChannel channel,
-                                                                WorldContext const& ctx, TimePoint now)
+                                                                WorldContext const& ctx, TimePoint now, bool partyTarget)
     {
         HandleResult hr;
         Session* s = Find(key);
@@ -651,10 +667,9 @@ namespace romance
 
         if (channel == ChatChannel::Party)
         {
-            // In party chat the companion only listens when addressed by name.
-            bool addressed = CountName(text, cname) > 0 || CountName(text, s->rec.companionName) > 0 ||
-                             (!s->rec.personality.nickname.empty() && CountName(text, s->rec.personality.nickname) > 0);
-            if (!s->rec.settings.listenInParty || !addressed)
+            // In party chat she answers when addressed by name, or when the caller picked her as the
+            // target of an unaddressed line (see RomanceManager::OnGroupChat).
+            if (!s->rec.settings.listenInParty || !(partyTarget || IsAddressed(key, text)))
                 return hr;
         }
 
@@ -1558,7 +1573,9 @@ namespace romance
         double initiative = 1.4 - (s.rec.personality.initiative / 100.0) * 0.8;
         double backoff = std::pow(2.0, double(std::min<uint32_t>(s.unansweredProactive, 3)));
         double jitter = std::uniform_real_distribution<double>(0.75, 1.25)(_rng);
-        s.nextProactiveAt = now + int64_t(base * initiative * backoff * jitter);
+        // Several companions share the conversation instead of all chattering at the same rate.
+        double share = double(std::max<size_t>(1, ActiveForOwner(s.rec.key.owner).size()));
+        s.nextProactiveAt = now + int64_t(base * initiative * backoff * jitter * share);
     }
 
     void RomanceService::MaybeProactive(Session& s, WorldContext const& ctx, TimePoint now)

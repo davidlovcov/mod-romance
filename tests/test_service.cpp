@@ -446,6 +446,7 @@ TEST(Service, InitialCoupleStageSeedsBackstory)
 TEST(Service, ActivationLimitsAndConflicts)
 {
     Harness h;
+    h.cfg.maxActiveCompanionsPerPlayer = 1;
     h.Activate(h.Key());
     auto second = h.svc->Activate(h.Key(kArthas, kLyra), kAccount, "Lyra", "Arthas", h.now);
     CHECK(!second.ok);
@@ -679,6 +680,32 @@ TEST(Service, PartyChatOnlyWhenAddressed)
     for (auto const& a : h.out)
         if (a.type == OutgoingAction::Type::Speak)
             CHECK(a.channel == ChatChannel::Party);
+}
+
+TEST(Service, PartyFallbackAnswersUnaddressedLines)
+{
+    Harness h;
+    h.Activate(h.Key());
+    h.llm->QueueReply(ReplyJson("Sounds good to me."));
+    // The game layer sets partyTarget when only bots share the group with the player.
+    auto r = h.svc->OnPlayerMessage(h.Key(), "nice weather today", ChatChannel::Party, h.ctx, h.now, true);
+    CHECK(r.result == RomanceService::MessageResult::Accepted);
+    CHECK(h.WaitSpeak(h.Key()));
+}
+
+TEST(Service, SeveralCompanionsPerPlayer)
+{
+    Harness h;
+    CHECK_EQ(h.cfg.maxActiveCompanionsPerPlayer, 3u);
+    h.Activate(h.Key(kArthas, kElara), "Elara");
+    h.Activate(h.Key(kArthas, kLyra), "Lyra");
+    CHECK(h.svc->IsAddressed(h.Key(kArthas, kLyra), "Lyra, come here"));
+    CHECK(!h.svc->IsAddressed(h.Key(kArthas, kElara), "Lyra, come here"));
+    CHECK(h.svc->IsAddressed(h.Key(kArthas, kElara), "hey elara!"));
+    h.llm->QueueReply(ReplyJson("Coming!"));
+    h.svc->OnPlayerMessage(h.Key(kArthas, kLyra), "Hi Lyra", ChatChannel::Whisper, h.ctx, h.now);
+    CHECK(h.WaitSpeak(h.Key(kArthas, kLyra)));
+    CHECK(h.svc->LastActivity(h.Key(kArthas, kLyra)) >= h.svc->LastActivity(h.Key(kArthas, kElara)));
 }
 
 TEST(Service, SettingsValidation)

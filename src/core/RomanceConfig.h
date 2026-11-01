@@ -20,7 +20,7 @@ namespace romance
         // module
         bool enabled = true;
         bool debugLogging = false;
-        uint32_t maxActiveCompanionsPerPlayer = 1;
+        uint32_t maxActiveCompanionsPerPlayer = 3;
         uint32_t maxAiCompanionsServer = 50;
         bool allowLinkedAccounts = true;      // Playerbots "linked accounts" may provide companions
         bool allowInitialStageSelection = true;

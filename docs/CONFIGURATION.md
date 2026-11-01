@@ -11,7 +11,7 @@ There are two layers:
 |---|---|---|
 | `Romance.Enable` | 1 | Master switch |
 | `Romance.Debug` | 0 | Extra log lines (gifts, rejected addon messages) |
-| `Romance.MaxActiveCompanionsPerPlayer` | 1 | AI companions active at once per player character |
+| `Romance.MaxActiveCompanionsPerPlayer` | 3 | AI companions active at once per player character (the named one answers; otherwise the one you talked to last) |
 | `Romance.MaxAiCompanionsServer` | 50 | Server-wide cap on AI companions |
 | `Romance.AllowLinkedAccounts` | 1 | Characters from accounts linked via `.playerbots account link` |
 | `Romance.AllowInitialStageSelection` | 1 | Players may choose the starting relationship |

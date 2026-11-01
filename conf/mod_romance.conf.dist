@@ -24,8 +24,9 @@ Romance.Debug = 0
 #    Romance.MaxActiveCompanionsPerPlayer
 #        Description: AI (Ollama) companions a single player character may have active at once.
 #                     Other Playerbots of the same player are never sent to Ollama.
-#        Default:     1
-Romance.MaxActiveCompanionsPerPlayer = 1
+#                     With several companions, the one you name answers; otherwise the one you talked to last.
+#        Default:     3
+Romance.MaxActiveCompanionsPerPlayer = 3
 
 #    Romance.MaxAiCompanionsServer
 #        Description: Server-wide limit of simultaneously active AI companions.
