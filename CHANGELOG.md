@@ -20,6 +20,7 @@
 - "Significant moments" only refreshed after switching tabs: the server now pushes `memory_changed` after every memory edit, delete, clear and reset.
 - Party chat: she didn't answer when you wrote to the group without her name, even when only bots were in it.
 - Server texts no longer assume a female companion.
+- Duplicate memories: the same thing in other words is merged across kinds (an "episode" and a "preference" saying the same), and a memory contained in another ("completed X" / "completed X together and sold items") is merged too. Her impressions of the current moment ("currently...", "they just...") are no longer stored, and the model is told not to remember quests, fights or loot (the server records those). Existing memories are tidied once when the companion is activated; pinned and player-written memories are never removed.
 - Lead mode didn't move: Playerbots' RPG mode ignores bots that have a master. She now walks to the quest area herself (step by step with path finding), waits for you, and fights the quest creatures there.
 - Ordinary messages right after a proposal (e.g. "I also like flowers") could be treated as another proposal and answered with a stock refusal. The model's proposal label is now ignored unless the message actually talks about the relationship status, and the prompt states that earlier questions don't count.
 - Stock fallback lines never repeat the previous line and have more variety.

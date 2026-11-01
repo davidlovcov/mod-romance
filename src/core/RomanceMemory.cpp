@@ -77,6 +77,11 @@ namespace romance
         std::string cur;
         auto flush = [&]()
         {
+            // quotes around words ('Kobold Camp Cleanup') are not part of them
+            while (!cur.empty() && cur.front() == '\'')
+                cur.erase(cur.begin());
+            while (!cur.empty() && cur.back() == '\'')
+                cur.pop_back();
             if (cur.size() >= 2 && !StopWords().count(cur))
                 out.push_back(Stem(cur));
             cur.clear();
@@ -108,6 +113,40 @@ namespace romance
                 }
         size_t uni = sa.size() + sb.size() - inter;
         return uni ? double(inter) / double(uni) : 0.0;
+    }
+
+    // Share of the shorter text's tokens found in the longer one ("A did X" inside "A did X and then Y").
+    double TokenContainment(std::vector<std::string> const& a, std::vector<std::string> const& b)
+    {
+        std::set<std::string> sa(a.begin(), a.end()), sb(b.begin(), b.end());
+        std::set<std::string> const& small = sa.size() <= sb.size() ? sa : sb;
+        std::set<std::string> const& large = sa.size() <= sb.size() ? sb : sa;
+        if (small.size() < 3)
+            return 0.0;   // too short to judge by containment
+        size_t inter = 0;
+        for (auto const& x : small)
+            for (auto const& y : large)
+                if (SimilarToken(x, y))
+                {
+                    ++inter;
+                    break;
+                }
+        return double(inter) / double(small.size());
+    }
+
+    bool IsTransientMemory(std::string const& text)
+    {
+        // The current situation changes in minutes; it belongs in the conversation, not in long-term memory.
+        static char const* const phrases[] = {
+            "currently", "right now", "at the moment", "at this moment", "for now", "is ready for the next", "are ready for the next",
+            "is about to", "are about to", "they just ", "we just ", "just cleared", "just finished", "just arrived", "are now ",
+            "is now ", "are hunting", "is hunting", "are heading", "is heading", "are on their way", "is waiting", "are waiting",
+            "gerade", "im moment", "jetzt " };
+        std::string l = " " + ToLower(text) + " ";
+        for (char const* p : phrases)
+            if (l.find(p) != std::string::npos)
+                return true;
+        return false;
     }
 
     void MemoryStore::Load(std::vector<MemoryEntry> entries)
@@ -156,21 +195,27 @@ namespace romance
         if (tokens.empty())
             return r;
 
-        // Merge with a near-duplicate of a compatible kind instead of storing twice.
+        // Merge with a near-duplicate instead of storing twice: same meaning in other words (any kind
+        // except summaries), or one memory contained in the other ("completed X" / "completed X together and ...").
         for (auto& e : _entries)
         {
-            bool compatibleKind = e.kind == kind || (e.kind == MemoryKind::Fact && kind == MemoryKind::Preference) ||
-                                  (e.kind == MemoryKind::Preference && kind == MemoryKind::Fact);
-            if (!compatibleKind)
+            if ((e.kind == MemoryKind::Summary) != (kind == MemoryKind::Summary))
                 continue;
-            if (TokenJaccard(tokens, Tokenize(e.text)) >= _cfg.dedupeThreshold)
+            if (e.kind == MemoryKind::Promise && kind != MemoryKind::Promise)
+                continue;   // a promise stays a promise
+            std::vector<std::string> other = Tokenize(e.text);
+            bool same = TokenJaccard(tokens, other) >= _cfg.dedupeThreshold;
+            bool contained = !same && TokenContainment(tokens, other) >= 0.8;
+            if (same || contained)
             {
                 e.importance = std::min(100, std::max(e.importance, importance) + 3);
                 e.updatedAt = now;
-                // Prefer the more reliable source and its wording.
-                if (SourceWeight(source) > SourceWeight(e.source) && e.source != MemorySource::UserEdited)
+                // Prefer the more reliable source and its wording; with equal reliability keep the fuller text.
+                bool better = SourceWeight(source) > SourceWeight(e.source);
+                bool fuller = SourceWeight(source) == SourceWeight(e.source) && tokens.size() > other.size();
+                if ((better || fuller) && e.source != MemorySource::UserEdited)
                 {
-                    e.source = source;
+                    e.source = better ? source : e.source;
                     e.text = text;
                 }
                 r.stored = true;
@@ -191,6 +236,69 @@ namespace romance
         _entries.push_back(m);
         r.stored = true;
         r.entry = m;
+        return r;
+    }
+
+    MemoryStore::CompactResult MemoryStore::Compact(TimePoint now)
+    {
+        CompactResult r;
+        std::vector<MemoryEntry> kept;
+        std::vector<std::vector<std::string>> keptTokens;
+        // oldest first, so merged duplicates keep the original id
+        std::vector<MemoryEntry> entries = _entries;
+        std::stable_sort(entries.begin(), entries.end(), [](MemoryEntry const& a, MemoryEntry const& b) { return a.id < b.id; });
+        for (MemoryEntry const& e : entries)
+        {
+            bool protectedEntry = e.pinned || e.source == MemorySource::UserEdited || e.source == MemorySource::PlayerStated;
+            if (!protectedEntry && e.source == MemorySource::Interpretation && IsTransientMemory(e.text))
+            {
+                r.removed.push_back(e.id);
+                continue;
+            }
+            std::vector<std::string> tokens = Tokenize(e.text);
+            bool merged = false;
+            for (size_t i = 0; i < kept.size() && !protectedEntry; ++i)
+            {
+                MemoryEntry& k = kept[i];
+                if ((k.kind == MemoryKind::Summary) != (e.kind == MemoryKind::Summary) || k.kind == MemoryKind::Promise ||
+                    e.kind == MemoryKind::Promise)
+                    continue;
+                if (TokenJaccard(tokens, keptTokens[i]) < _cfg.dedupeThreshold && TokenContainment(tokens, keptTokens[i]) < 0.8)
+                    continue;
+                k.importance = std::max(k.importance, e.importance);
+                k.recallCount += e.recallCount;
+                k.pinned = k.pinned || e.pinned;
+                if (SourceWeight(e.source) > SourceWeight(k.source) && k.source != MemorySource::UserEdited)
+                {
+                    k.source = e.source;
+                    k.text = e.text;
+                    keptTokens[i] = tokens;
+                }
+                k.updatedAt = now;
+                if (std::none_of(r.changed.begin(), r.changed.end(), [&](MemoryEntry const& c) { return c.id == k.id; }))
+                    r.changed.push_back(k);
+                else
+                    for (auto& c : r.changed)
+                        if (c.id == k.id)
+                            c = k;
+                r.removed.push_back(e.id);
+                merged = true;
+                break;
+            }
+            if (!merged)
+            {
+                kept.push_back(e);
+                keptTokens.push_back(std::move(tokens));
+            }
+        }
+        if (!r.removed.empty())
+        {
+            for (auto& c : r.changed)
+                for (auto const& k : kept)
+                    if (k.id == c.id)
+                        c = k;
+            _entries = kept;
+        }
         return r;
     }
 

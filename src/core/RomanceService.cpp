@@ -251,6 +251,14 @@ namespace romance
         }
         s->ownerName = ownerName;
         s->memories.Load(_repo.LoadMemories(key));
+        if (_cfg.memoryEnabled)
+        {
+            auto tidy = s->memories.Compact(now);
+            for (auto const& m : tidy.changed)
+                _repo.SaveMemory(key, m);
+            if (!tidy.removed.empty())
+                _repo.DeleteMemories(key, tidy.removed);
+        }
         for (auto const& t : _repo.LoadRecentChat(key, std::min<uint32_t>(_cfg.storedChatTurns, 60)))
             s->history.push_back(t);
         for (auto const& g : _repo.LoadGifts(key, now - 24 * 3600))
@@ -1487,6 +1495,8 @@ namespace romance
         {
             for (auto const& m : reply.memories)
             {
+                if (IsTransientMemory(m.text))
+                    continue;
                 MemorySource src = MemorySource::Interpretation;
                 if (r.ctx.trigger == TriggerKind::PlayerMessage && m.about != "companion" && TokenOverlap(m.text, r.ctx.playerText) >= 0.25)
                     src = MemorySource::PlayerStated;

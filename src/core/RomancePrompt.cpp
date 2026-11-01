@@ -399,7 +399,8 @@ namespace romance
              "\"sentiment\": how their last message felt to you (very_negative, negative, neutral, positive, very_positive), "
              "\"signals\": list of what their message contained (compliment, kindness, support, flirt, gratitude, apology, humor, deep_talk, shared_activity, promise, insult, rudeness, dismissive, broken_promise, jealousy_trigger), "
              "\"proposal\": {\"kind\": none|dating|engagement|marriage|breakup, \"response\": none|accept|defer|decline}, "
-             "\"memories\": up to 2 genuinely new, important facts worth remembering long-term, each {\"text\", \"kind\": fact|preference|episode|relationship|promise, \"about\": player|companion|both, \"importance\": 0-70} (usually empty), "
+             "\"memories\": up to 2 genuinely new, important things worth remembering for weeks (never the current situation, "
+             "never quests, fights or loot - those are recorded automatically - and nothing you already remember), each {\"text\", \"kind\": fact|preference|episode|relationship|promise, \"about\": player|companion|both, \"importance\": 0-70} (usually empty), "
              "\"action\": "
           << (in.allowActions ? "one of none, follow, stay, attack, flee, heal, emote_hug, emote_kiss, emote_wave, emote_laugh, emote_blush, emote_dance, emote_cheer, emote_bow, emote_cry (only if asked or it truly fits)"
                               : "\"none\"")

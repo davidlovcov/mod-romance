@@ -498,6 +498,74 @@ TEST(Memory, DedupeMergesNearDuplicates)
     CHECK_EQ(store.Size(), size_t(2));
 }
 
+TEST(Memory, RealSessionDuplicatesAreMerged)
+{
+    // Memories a companion produced in one real questing session.
+    RomanceConfig cfg;
+    MemoryStore store(cfg);
+    using K = MemoryKind;
+    using S = MemorySource;
+    store.Add(K::Episode, S::Observed, 30, "Jina and Madox completed the quest \"Kobold Camp Cleanup\".", kNow);
+    store.Add(K::Fact, S::Interpretation, 25, "Jina and Madox successfully completed 'Kobold Camp Cleanup' together and sold items after.", kNow);
+    store.Add(K::Episode, S::Interpretation, 40, "Jina and Madox successfully sold items after clearing the Kobold Camp Cleanup quest together.", kNow);
+    store.Add(K::Episode, S::Interpretation, 30, "Madox prefers turning in quests before continuing the adventure.", kNow);
+    store.Add(K::Preference, S::Interpretation, 66, "Madox prefers to turn in quests before continuing the adventure.", kNow);
+    store.Add(K::Episode, S::Observed, 30, "Jina and Madox completed the quest \"Wolves Across the Border\".", kNow);
+    // two different quests, one completion each, one preference
+    CHECK_EQ(store.Size(), size_t(3));
+    size_t prefs = 0;
+    for (auto const& e : store.All())
+        if (e.text.find("prefers") != std::string::npos)
+        {
+            ++prefs;
+            CHECK(e.importance >= 66);
+        }
+    CHECK_EQ(prefs, size_t(1));
+
+    CHECK(IsTransientMemory("Madox is currently ready for the next activity after clearing the Kobold Camp Cleanup quest."));
+    CHECK(IsTransientMemory("They just cleared 10/10 Kobolds and are hunting wolves for 'Wolves Across the Border'."));
+    CHECK(IsTransientMemory("Jina and Madox are currently at level 2 in Elwynn Forest."));
+    CHECK(!IsTransientMemory("Madox prefers to turn in quests before continuing the adventure."));
+    CHECK(!IsTransientMemory("Madox grew up in a caravan that crossed the Barrens."));
+    // different facts stay apart
+    store.Add(K::Preference, S::PlayerStated, 50, "Madox likes flowers.", kNow);
+    store.Add(K::Preference, S::PlayerStated, 50, "Madox hates spiders.", kNow);
+    CHECK_EQ(store.Size(), size_t(5));
+}
+
+TEST(Memory, CompactTidiesOldMemories)
+{
+    RomanceConfig cfg;
+    MemoryStore store(cfg);
+    std::vector<MemoryEntry> old;
+    auto add = [&](uint32_t id, MemoryKind k, MemorySource src, int imp, std::string const& text, bool pinned = false)
+    {
+        MemoryEntry m;
+        m.id = id;
+        m.kind = k;
+        m.source = src;
+        m.importance = imp;
+        m.text = text;
+        m.pinned = pinned;
+        old.push_back(m);
+    };
+    add(1, MemoryKind::Episode, MemorySource::Interpretation, 30, "Madox prefers turning in quests before continuing the adventure.");
+    add(2, MemoryKind::Preference, MemorySource::Interpretation, 66, "Madox prefers to turn in quests before continuing the adventure.");
+    add(3, MemoryKind::Fact, MemorySource::Interpretation, 25, "Madox is currently ready for the next activity.");
+    add(4, MemoryKind::Fact, MemorySource::UserEdited, 40, "Madox is currently learning to fish.");
+    add(5, MemoryKind::Fact, MemorySource::Interpretation, 25, "They just cleared 10/10 Kobolds.", true);
+    add(6, MemoryKind::Preference, MemorySource::PlayerStated, 50, "Madox likes flowers.");
+    store.Load(old);
+    auto r = store.Compact(kNow);
+    CHECK_EQ(r.removed.size(), size_t(2));        // duplicate 2 merged into 1, transient 3 dropped
+    CHECK_EQ(store.Size(), size_t(4));
+    CHECK(store.Find(1) && store.Find(1)->importance == 66);
+    CHECK(store.Find(4) != nullptr);              // written by the player: kept
+    CHECK(store.Find(5) != nullptr);              // pinned: kept
+    CHECK_EQ(r.changed.size(), size_t(1));
+    CHECK(store.Compact(kNow).removed.empty());   // idempotent
+}
+
 TEST(Memory, RetrievalFindsRelevantMemory)
 {
     RomanceConfig cfg;

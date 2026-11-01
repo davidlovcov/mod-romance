@@ -24,6 +24,9 @@ namespace romance
 {
     // Lower-cased word tokens with stop words removed and light stemming (EN + DE).
     std::vector<std::string> Tokenize(std::string const& text);
+    double TokenContainment(std::vector<std::string> const& a, std::vector<std::string> const& b);
+    // "currently", "right now", "they just ..." - situation statements that should not become long-term memories.
+    bool IsTransientMemory(std::string const& text);
     double TokenJaccard(std::vector<std::string> const& a, std::vector<std::string> const& b);
 
     class MemoryStore
@@ -52,6 +55,15 @@ namespace romance
 
         // Enforce the per-companion limit and retention period. Returns removed ids.
         std::vector<uint32_t> Prune(TimePoint now);
+
+        // Tidies stored memories (e.g. from older versions): merges duplicates and drops the companion's own
+        // impressions of a momentary situation. Pinned and player-written memories are never removed.
+        struct CompactResult
+        {
+            std::vector<uint32_t> removed;
+            std::vector<MemoryEntry> changed;
+        };
+        CompactResult Compact(TimePoint now);
 
         std::vector<MemoryEntry> Filter(std::optional<MemoryKind> kind, std::string const& search, size_t offset,
                                         size_t limit, size_t* total = nullptr) const;
