@@ -93,6 +93,32 @@ TEST(Commands, QuestionsAndChatAreNotCommands)
     CHECK(Kind("Elara") == CompanionCommandKind::None);
 }
 
+TEST(Commands, GroupOrdersQuestsAndClearing)
+{
+    CHECK(Kind("attack all here") == CompanionCommandKind::AttackAll);
+    CHECK(Kind("everyone, kill everything nearby") == CompanionCommandKind::AttackAll);
+    CHECK(Kind("guys clear the area") == CompanionCommandKind::AttackAll);
+    CHECK(Kind("kill them all") == CompanionCommandKind::AttackAll);
+    CHECK_EQ(Arg("kill all wolves"), std::string("wolves"));
+    CHECK_EQ(Arg("attack all here"), std::string(""));
+    CHECK(Kind("stop attacking") == CompanionCommandKind::StopAttack);
+    CHECK(Kind("take down the wolf") == CompanionCommandKind::AttackNamed);
+    CHECK(Kind("vendor, sell trash") == CompanionCommandKind::SellJunk);
+    CHECK(Kind("accept the quest") == CompanionCommandKind::AcceptQuests);
+    CHECK(Kind("everyone take the quests too") == CompanionCommandKind::AcceptQuests);
+    CHECK_EQ(Arg("accept the quest Kobold Camp Cleanup"), std::string("kobold camp cleanup"));
+    CHECK(Kind("turn in your quests") == CompanionCommandKind::TurnInQuests);
+    CHECK(Kind("hand in the quest") == CompanionCommandKind::TurnInQuests);
+    CHECK(Kind("take the lead") == CompanionCommandKind::Lead);
+    CHECK(Kind("get me a drink") == CompanionCommandKind::None);
+
+    CHECK(AddressesEveryone("Everyone, follow me"));
+    CHECK(AddressesEveryone("how are you all of you?"));
+    CHECK(AddressesEveryone("guys, attack!"));
+    CHECK(!AddressesEveryone("Elara, attack all here"));
+    CHECK(!AddressesEveryone("I love you"));
+}
+
 TEST(Commands, KnowledgeTopics)
 {
     using namespace knowledge;

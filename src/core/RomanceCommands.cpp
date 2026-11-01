@@ -99,6 +99,13 @@ namespace romance
                 s = Trim(s.substr(0, s.size() - n.size() - 1));
         }
 
+        bool StripGroupAddress(std::string& s)
+        {
+            return StripPrefix(s, { "hey everyone", "hey everybody", "hey guys", "hey girls", "hey all", "everyone", "everybody",
+                                    "all of you", "you all", "y'all", "you guys", "guys", "girls", "ladies", "team", "both of you",
+                                    "you two", "you both", "both", "alle", "ihr alle", "ihr beiden", "leute" });
+        }
+
         void StripPoliteness(std::string& s)
         {
             bool again = true;
@@ -179,6 +186,10 @@ namespace romance
             case CompanionCommandKind::GiveGold: return "give_gold";
             case CompanionCommandKind::AttackNamed: return "attack_named";
             case CompanionCommandKind::AttackTarget: return "attack_target";
+            case CompanionCommandKind::AttackAll: return "attack_all";
+            case CompanionCommandKind::StopAttack: return "stop_attack";
+            case CompanionCommandKind::AcceptQuests: return "accept_quests";
+            case CompanionCommandKind::TurnInQuests: return "turn_in_quests";
             case CompanionCommandKind::SellJunk: return "sell_junk";
             case CompanionCommandKind::SellItem: return "sell_item";
             case CompanionCommandKind::ShareQuests: return "share_quests";
@@ -229,11 +240,14 @@ namespace romance
                                                           std::string const& otherName)
     {
         std::string s = Normalize(text);
+        StripGroupAddress(s);
         StripAddress(s, companionName);
         StripAddress(s, otherName);
         StripPoliteness(s);
         StripAddress(s, companionName);
         StripAddress(s, otherName);
+        StripGroupAddress(s);
+        StripPoliteness(s);
         if (s.empty())
             return std::nullopt;
         // Questions about her state ("what spells do you have") are knowledge, not commands.
@@ -284,14 +298,47 @@ namespace romance
                 return c;
             }
 
+        static char const* const stopAttack[] = { "stop attacking", "stop fighting", "stop killing", "stop hunting", "stop the attack",
+                                                  "hold your fire", "cease fire", "hör auf anzugreifen", "hört auf" };
+        for (char const* p : stopAttack)
+            if (s == p || StartsWith(s, std::string(p) + " "))
+            {
+                c.kind = CompanionCommandKind::StopAttack;
+                return c;
+            }
+
         // Negated or stopping sentences never trigger an action ("don't attack", "stop selling").
         if (StartsWith(s, "don't ") || StartsWith(s, "dont ") || StartsWith(s, "do not ") || StartsWith(s, "never ") ||
             StartsWith(s, "stop ") || StartsWith(s, "nicht ") || StartsWith(s, "no "))
             return std::nullopt;
 
+        // ---- quests at quest givers
+        // (worked on a copy: "take down the wolf" must still reach the attack rules)
+        {
+            std::string t = s;
+            bool accept = StripPrefix(t, { "accept", "take", "get", "pick up", "grab", "nimm", "nehmt", "annehmen" });
+            bool turnIn = !accept && StripPrefix(t, { "turn in", "hand in", "complete", "finish", "deliver", "abgeben", "gib ab" });
+            if (accept || turnIn)
+            {
+                StripDeterminers(t);
+                bool quest = StripPrefix(t, { "quests", "quest" }) || StripSuffix(t, { "quests", "quest" });
+                if (quest || (turnIn && t.empty()))
+                {
+                    StripPrefix(t, { "too", "as well", "from here", "here" });
+                    StripSuffix(t, { "too", "as well", "from here", "here", "from him", "from her", "from them", "quests", "quest" });
+                    StripDeterminers(t);
+                    c.kind = accept ? CompanionCommandKind::AcceptQuests : CompanionCommandKind::TurnInQuests;
+                    c.arg = t;
+                    return c;
+                }
+            }
+        }
+
         // ---- sell
         if (StripPrefix(s, { "sell", "vendor", "get rid of", "verkauf", "verkaufe" }))
         {
+            // "vendor, sell trash" / "vendor sell your junk"
+            StripPrefix(s, { "sell", "verkauf", "verkaufe" });
             StripDeterminers(s);
             StripSuffix(s, { "at the vendor", "to the vendor", "to a vendor", "at a vendor" });
             if (s.empty() || IsJunk(s))
@@ -382,12 +429,30 @@ namespace romance
         }
 
         // ---- attack
-        if (StripPrefix(s, { "attack", "kill", "fight", "pull", "go for", "take down", "take out", "go after",
+        if (StripPrefix(s, { "attack", "kill", "fight", "pull", "go for", "take down", "take out", "go after", "clear", "clean up",
                              "greif", "töte", "angreifen" }))
         {
             StripSuffix(s, { "an", "with me", "for me", "first" });
+            // "attack all here", "kill everything", "kill them all", "kill all wolves"
+            bool all = StripPrefix(s, { "everything", "everyone", "everybody", "all of them", "them all", "all enemies", "all mobs",
+                                        "every enemy", "every mob", "all monsters", "all", "alles", "alle" });
+            if (!all)
+                all = StripSuffix(s, { "all", "all of them" });
             StripDeterminers(s);
-            StripSuffix(s, { "over there", "there", "here", "nearby", "near us", "in front of us" });
+            StripSuffix(s, { "over there", "there", "here", "nearby", "near us", "in front of us", "around us", "around here", "in the area" });
+            StripPrefix(s, { "here", "around here", "nearby", "in the area" });
+            if (all)
+            {
+                c.kind = CompanionCommandKind::AttackAll;
+                if (s != "enemies" && s != "mobs" && s != "monsters" && s != "of them" && s != "them")
+                    c.arg = s;
+                return c;
+            }
+            if (s == "area" || s == "the area")
+            {
+                c.kind = CompanionCommandKind::AttackAll;
+                return c;
+            }
             if (IsPronounTarget(s))
             {
                 c.kind = CompanionCommandKind::AttackTarget;
@@ -429,6 +494,20 @@ namespace romance
         if (has({ "gear", "equipment", "armor", "armour", "weapon", "wearing", "equipped", "ausrüstung", "rüstung", "waffe" }))
             t |= knowledge::Gear;
         return t;
+    }
+
+    bool AddressesEveryone(std::string const& text)
+    {
+        std::string s = Normalize(text);
+        StripPrefix(s, { "hey", "hi", "ok", "okay", "so" });
+        if (StripGroupAddress(s))
+            return true;
+        s = " " + s + " ";
+        for (char const* w : { " everyone ", " everybody ", " all of you ", " you all ", " y'all ", " you guys ", " both of you ",
+                               " you two ", " ihr alle ", " ihr beiden " })
+            if (s.find(w) != std::string::npos)
+                return true;
+        return false;
     }
 
     uint32_t CreatureTypeFromWord(std::string const& wordIn)

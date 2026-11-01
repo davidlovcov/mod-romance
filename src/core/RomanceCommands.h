@@ -31,11 +31,15 @@ namespace romance
         GiveItem,      // arg = item name; amount = count (0 = all/one stack)
         GiveGold,      // amount = copper
         AttackNamed,   // arg = creature name or creature type ("wolf", "beasts", "undead")
-        AttackTarget,  // the player's current target
+        AttackTarget,  // the player's current target (nearest enemy if nothing is targeted)
+        AttackAll,     // clear the area: one enemy after another; arg = optional name/type filter
+        StopAttack,    // stop clearing the area
         SellJunk,      // all gray items
         SellItem,      // arg = item name
         ShareQuests,   // share every quest the player could take
         ShareQuest,    // arg = quest title
+        AcceptQuests,  // take quests from nearby quest givers; arg = optional title
+        TurnInQuests,  // turn in finished quests at nearby quest enders; arg = optional title
         Lead,          // she leads; arg = quest title to do (optional)
         StopLead,      // back to following
     };
@@ -71,6 +75,9 @@ namespace romance
         };
     }
     uint32_t DetectKnowledgeTopics(std::string const& text);
+
+    // True if the line addresses every companion ("everyone, ...", "all of you", "guys", ...).
+    bool AddressesEveryone(std::string const& text);
 
     // Creature types players use in commands ("beast", "undead", ...), as the CreatureType id
     // used by the game (1 beast .. 10 not specified); 0 = not a creature type word.
