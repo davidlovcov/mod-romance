@@ -86,8 +86,8 @@ namespace truecompanion
         std::string Begin(size_t parts, TimePoint now);
         // Adds part `index` (JSON text of one page). Returns an error code or "".
         std::string Add(size_t index, std::string const& data, TimePoint now);
-        // All parts there: the joined export. Otherwise an error code in `error`.
-        std::optional<Json> Finish(std::string& error);
+        // All parts there (and the import not timed out): the joined export. Otherwise an error code in `error`.
+        std::optional<Json> Finish(std::string& error, TimePoint now);
         bool Active(TimePoint now) const { return _parts > 0 && now - _last <= kImportTimeoutSec; }
         size_t Received() const;
         size_t Expected() const { return _parts; }

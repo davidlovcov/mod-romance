@@ -2366,29 +2366,77 @@ namespace truecompanion
             r.error = "not_a_companion_export";
             return r;
         }
-        if (data["personality"].IsObject())
+        // Everything is checked first; a section that can't be applied rejects the whole import, so nothing changes
+        // halfway (an export is one companion: personality, settings and memories belong together).
+        Json const& pj = data["personality"];
+        Json const& sj = data["settings"];
+        Json const& mj = data["memories"];
+        if ((data.Has("personality") && !pj.IsObject()) || (data.Has("settings") && !sj.IsObject()) ||
+            (data.Has("memories") && !mj.IsArray()))
         {
-            SaveResult p = SavePersonality(key, ownerAccount, companionName, PersonalityProfile::FromJson(data["personality"]), now);
+            r.error = "import_malformed";
+            return r;
+        }
+        std::optional<CompanionSettings> settings;
+        if (sj.IsObject())
+        {
+            settings = CompanionSettings::FromJson(sj);
+            std::string err = CheckSettings(key, *settings, now);
+            if (!err.empty())
+            {
+                r.error = "import_settings_rejected:" + err;
+                return r;
+            }
+        }
+
+        if (pj.IsObject())
+        {
+            SaveResult p = SavePersonality(key, ownerAccount, companionName, PersonalityProfile::FromJson(pj), now);
+            if (!p.ok && !p.error.empty())
+            {
+                r.error = "import_personality_rejected:" + p.error;
+                return r;
+            }
             r.notes.insert(r.notes.end(), p.notes.begin(), p.notes.end());
         }
-        if (data["settings"].IsObject())
-            SaveSettings(key, ownerAccount, companionName, CompanionSettings::FromJson(data["settings"]), now);
-        size_t imported = 0;
-        for (Json const& mj : data["memories"].AsArray())
+        if (settings)
+        {
+            SaveResult st = SaveSettings(key, ownerAccount, companionName, *settings, now);
+            if (!st.ok)
+            {
+                // checked above; only a change in between (another companion took the last AI slot) gets here
+                r.error = "import_settings_rejected:" + st.error;
+                r.notes.push_back("personality imported, settings and memories not");
+                return r;
+            }
+        }
+        size_t imported = 0, offered = mj.IsArray() ? mj.AsArray().size() : 0, invalid = 0;
+        bool full = false;
+        for (Json const& m : mj.AsArray())
         {
             if (imported >= _cfg.maxMemoriesPerCompanion)
+            {
+                full = true;
                 break;
-            auto m = MemoryEntry::FromJson(mj);
-            if (!m || m->kind == MemoryKind::Summary)
+            }
+            auto e = MemoryEntry::FromJson(m);
+            if (!e)
+            {
+                ++invalid;
+                continue;
+            }
+            if (e->kind == MemoryKind::Summary)
                 continue;
             // Imported memories are the player's own statements now; they cannot claim to be server observations.
-            if (AddUserMemory(key, m->kind, m->text, std::min(m->importance, 80), now, false))
+            if (AddUserMemory(key, e->kind, e->text, std::min(e->importance, 80), now, false))
                 ++imported;
         }
         PushMemoryChanged(key, -1);   // one refresh for the whole import
-        size_t offered = data["memories"].AsArray().size();
-        r.notes.push_back(std::to_string(imported) + " of " + std::to_string(offered) + " memories imported" +
-                          (imported < offered ? " (duplicates merged, summaries skipped or the memory limit reached)" : ""));
+        std::string why;
+        if (imported < offered)
+            why = std::string(" (") + (full ? "the memory limit was reached" : "duplicates merged or summaries skipped") +
+                  (invalid ? ", " + std::to_string(invalid) + " unreadable" : "") + ")";
+        r.notes.push_back(std::to_string(imported) + " of " + std::to_string(offered) + " memories imported" + why);
         r.notes.push_back("relationship values are server-authoritative and were not imported");
         r.ok = true;
         return r;

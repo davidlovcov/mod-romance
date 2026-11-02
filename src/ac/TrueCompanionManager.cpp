@@ -1761,7 +1761,7 @@ namespace truecompanion::ac
                 err = imp.Add(size_t(std::max<int64_t>(0, msg.GetInt("index", -1))), msg.GetString("data"), now);
             else
             {
-                auto full = imp.Finish(err);
+                auto full = imp.Finish(err, now);
                 if (full)
                 {
                     auto res = _service->ImportCompanion(key, account, name, *full, now);

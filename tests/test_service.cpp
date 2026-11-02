@@ -1137,7 +1137,7 @@ TEST(Service, ExportImportRoundTripAtMemoryCapacity)
         CHECK(imp.Add(size_t(got.message.GetInt("index")), got.message.GetString("data"), h.now).empty());
     }
     std::string err;
-    auto joined = imp.Finish(err);
+    auto joined = imp.Finish(err, h.now);
     CHECK(joined.has_value());
     h.svc->TakeOutgoing();
     auto res = h.svc->ImportCompanion(h.Key(kArthas, kLyra), kAccount, "Lyra", *joined, h.now);
@@ -1162,7 +1162,7 @@ TEST(Service, IncompleteImportChangesNothing)
     CHECK(imp.Add(2, "{}", h.now).empty());
     CHECK_EQ(imp.Add(5, "{}", h.now), std::string("import_bad_part"));
     std::string err;
-    CHECK(!imp.Finish(err).has_value());
+    CHECK(!imp.Finish(err, h.now).has_value());
     CHECK_EQ(err, std::string("import_incomplete"));
     // timed out between parts
     CHECK(imp.Begin(2, h.now).empty());
@@ -1702,4 +1702,43 @@ TEST(Service, SwitchingTheAiOffDropsRepliesOnTheirWay)
                 return true;
         return false;
     }));
+}
+
+TEST(Service, ImportWithRejectedSettingsChangesNothing)
+{
+    Harness h;
+    h.cfg.allowedModels = { "qwen3.5:4b" };
+    h.Restart();
+    h.Activate(h.Key());
+    h.svc->AddUserMemory(h.Key(), MemoryKind::Fact, "Arthas collects rare equipment.", 60, h.now);
+    Json exp = h.svc->ExportCompanion(h.Key(), kAccount);
+    Json settings = exp["settings"];
+    settings.Set("model", "evil-model");
+    exp.Set("settings", settings);
+    Json personality = exp["personality"];
+    personality.Set("name", "Imported Name");
+    exp.Set("personality", personality);
+    auto res = h.svc->ImportCompanion(h.Key(kArthas, kLyra), kAccount, "Lyra", exp, h.now);
+    CHECK(!res.ok);
+    CHECK_CONTAINS(res.error, "import_settings_rejected:model_not_allowed");
+    CHECK(h.repo.LoadMemories(h.Key(kArthas, kLyra)).empty());
+    auto rec = h.repo.LoadCompanion(h.Key(kArthas, kLyra));
+    CHECK(!rec || rec->personality.name != "Imported Name");
+    // a malformed section is rejected as a whole too
+    Json bad = h.svc->ExportCompanion(h.Key(), kAccount);
+    bad.Set("memories", "not a list");
+    CHECK_EQ(h.svc->ImportCompanion(h.Key(kArthas, kLyra), kAccount, "Lyra", bad, h.now).error, std::string("import_malformed"));
+}
+
+TEST(Service, ImportEndAfterTheTimeoutIsNotApplied)
+{
+    Harness h;
+    ImportAssembler imp;
+    CHECK(imp.Begin(1, h.now).empty());
+    CHECK(imp.Add(0, "{}", h.now).empty());
+    std::string err;
+    CHECK(!imp.Finish(err, h.now + kImportTimeoutSec + 1).has_value());
+    CHECK_EQ(err, std::string("import_expired"));
+    CHECK(!imp.Finish(err, h.now + kImportTimeoutSec + 2).has_value());
+    CHECK_EQ(err, std::string("import_not_started"));
 }

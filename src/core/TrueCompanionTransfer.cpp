@@ -115,11 +115,17 @@ namespace truecompanion
         return size_t(std::count_if(_data.begin(), _data.end(), [](auto const& d) { return d.has_value(); }));
     }
 
-    std::optional<Json> ImportAssembler::Finish(std::string& error)
+    std::optional<Json> ImportAssembler::Finish(std::string& error, TimePoint now)
     {
         if (_parts == 0)
         {
             error = "import_not_started";
+            return std::nullopt;
+        }
+        if (!Active(now))
+        {
+            Reset();
+            error = "import_expired";   // parts that waited too long are not applied late
             return std::nullopt;
         }
         if (Received() != _parts)
