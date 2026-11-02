@@ -51,13 +51,13 @@ The server **never** takes identity from the payload. The owner is always the se
 | `save_settings` | `guid`, `settings` | `ack`, `companion` |
 | `summon` | `guid` | `ack` {ok, code: online_as_player, controlled_elsewhere, limit_reached, already_loading, not_owner, playerbots_not_installed, estranged ...} |
 | `dismiss` | `guid`, `logout` | `ack` |
-| `chat` | `guid`, `text` | pushes (`typing`, `chat_msg`) or `error` {busy, not_active, ai_disabled} |
+| `chat` | `guid`, `text` | pushes (`typing`, `chat_msg`) or `error` {busy, not_active, ai_disabled}. A line that goes to Playerbots instead (e.g. `follow`) gets `typing` {on: false}. |
 | `get_lead` | | `lead_state` {leader?, leaderGuid?, you (nobody leads), kind (quest, turn_in, pick_up, take, merchant, grind), target, distance, direction, paused, errands[{name, kind, target}]}; also as `lead` in `group_quests` |
 | `get_history` | `guid`, `limit ≤ 50` | `history` {items[{from, text, ts}]} |
 | `get_memories` | `guid`, `kind?`, `search?`, `offset`, `limit ≤ 25` | `memories` {items[MemoryEntry], total, offset} |
 | `edit_memory` | `guid`, `id`, `text`, `importance?` | `ack` |
-| `delete_memory` | `guid`, `id` | `ack` |
-| `add_memory` | `guid`, `kind`, `text`, `importance` | `ack` |
+| `delete_memory` | `guid`, `id` | `ack` {code: not_found} |
+| `add_memory` | `guid`, `kind`, `text`, `importance` | `ack` {code: invalid_text, memory_limit_reached}. Your own memories count towards `TrueCompanion.Memory.MaxPerCompanion`; other memories are pruned to make room, but your own are never removed, so a full store refuses new ones. |
 | `pin_memory` | `guid`, `id`, `pinned` | `ack` |
 | `clear_memories` | `guid`, `kind?` (absent = all) | `ack` {notes} |
 | `clear_history` | `guid` | `ack` |

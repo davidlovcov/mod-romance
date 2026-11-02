@@ -10,6 +10,7 @@
 #include "Bag.h"
 #include "CellImpl.h"
 #include "Creature.h"
+#include "CreatureAI.h"
 #include "DatabaseEnv.h"
 #include "DBCStores.h"
 #include "GridNotifiers.h"
@@ -21,6 +22,7 @@
 #include "Player.h"
 #include "QuestDef.h"
 #include "SharedDefines.h"
+#include "ScriptMgr.h"
 #include "SpellInfo.h"
 #include "SpellMgr.h"
 #include "Trainer.h"
@@ -290,6 +292,35 @@ namespace truecompanion::ac
             return uint32(PickQuestReward(options, PreferredArmorTier(int(bot->getClass()), int(bot->GetLevel()))));
         }
 
+        // ---- quest pickup and turn-in, the way the core's quest handler does them ----
+
+        // Takes `q` from the quest giver `giver` (a creature or game object near her): the same checks and the same
+        // AddQuestAndCheckCompletion call as the client's accept, so the giver's scripts run (escort starts, events).
+        // `giver` is null only for a shared quest (no quest giver involved, like the core's own quest sharing).
+        bool AcceptQuest(Player* p, Quest const* q, Object* giver)
+        {
+            if (!q || p->FindQuestSlot(q->GetQuestId()) < MAX_QUEST_LOG_SIZE || !p->CanTakeQuest(q, false) || !p->CanAddQuest(q, false))
+                return false;
+            p->AddQuestAndCheckCompletion(q, giver);
+            return true;
+        }
+
+        // Turns `q` in at `ender` like the client's "complete quest": the chosen reward is validated (it must fit in
+        // her bags, like for a player), then RewardQuest, then the quest ender's reward scripts (follow-up events).
+        bool TurnInQuest(Player* p, Quest const* q, Creature* ender)
+        {
+            if (!q || !ender || p->GetQuestStatus(q->GetQuestId()) != QUEST_STATUS_COMPLETE)
+                return false;
+            uint32 reward = BestRewardChoice(p, q);
+            if (!p->CanRewardQuest(q, reward, false))
+                return false;
+            p->RewardQuest(q, reward, ender, false);
+            if (!sScriptMgr->OnQuestReward(p, ender, q, reward))
+                ender->AI()->sQuestReward(p, q, reward);
+            return true;
+        }
+
+
         std::vector<std::pair<Quest const*, uint16>> QuestLog(Player* p)
         {
             std::vector<std::pair<Quest const*, uint16>> out;
@@ -350,6 +381,16 @@ namespace truecompanion::ac
                     out.push_back(c);
             std::sort(out.begin(), out.end(), [center](Creature* a, Creature* b) { return center->GetDistance(a) < center->GetDistance(b); });
             return out;
+        }
+
+        // The living creature `entry` within `range` of `p` (the quest giver she stands at).
+        Creature* CreatureNear(Player* p, uint32 entry, float range)
+        {
+            Creature* best = nullptr;
+            for (Creature* c : NearbyCreatures(p, range))
+                if (c->GetEntry() == entry && c->IsAlive() && (!best || p->GetDistance(c) < p->GetDistance(best)))
+                    best = c;
+            return best;
         }
 
         // A merchant within `range` of the companion (no need to target or walk up to him).
@@ -860,9 +901,17 @@ namespace truecompanion::ac
             return s;
         }
 
+        // Both really in the same place: in the world, same map AND same instance (dungeon copies share a map id),
+        // same phase, and neither is in the middle of a teleport. Coordinates alone can't tell these apart.
+        bool SameWorld(Player* a, Player* b)
+        {
+            return a && b && a->IsInWorld() && b->IsInWorld() && !a->IsBeingTeleported() && !b->IsBeingTeleported() &&
+                   a->GetMapId() == b->GetMapId() && a->GetInstanceId() == b->GetInstanceId() && a->InSamePhase(b);
+        }
+
         bool Near(Player* a, Player* b, float range)
         {
-            return a && b && a->IsInWorld() && b->IsInWorld() && a->GetMapId() == b->GetMapId() && a->GetDistance(b) <= range;
+            return SameWorld(a, b) && a->GetDistance(b) <= range;
         }
 
         // Unfinished kill objectives of `q` for `p`.
@@ -1169,7 +1218,7 @@ namespace truecompanion::ac
             return "Nothing. They asked for \"" + cmd.arg + "\", but you have no such item in your bags; tell them.";
         if (best->soulbound)
             return "Nothing. They asked for your " + best->proto->Name1 + ", but it is soulbound to you and cannot be traded; tell them.";
-        if (bot->GetMapId() != owner->GetMapId() || bot->GetDistance(owner) > kTradeDistance)
+        if (!SameWorld(bot, owner) || bot->GetDistance(owner) > kTradeDistance)
             return "Nothing yet. They asked for your " + best->proto->Name1 + ", but you are too far apart to trade; ask them to come closer.";
         if (owner->GetTrader() && owner->GetTrader() != bot)
             return "Nothing. They are trading with someone else right now.";
@@ -1203,7 +1252,7 @@ namespace truecompanion::ac
         if (_cfg.maxGoldPerRequest && amount > _cfg.maxGoldPerRequest)
             return "Nothing. They asked for " + Money(amount) + ", which is more than you are willing to hand over at once (at most " +
                    Money(_cfg.maxGoldPerRequest) + "); tell them.";
-        if (bot->GetMapId() != owner->GetMapId() || bot->GetDistance(owner) > kHandOverDistance)
+        if (!SameWorld(bot, owner) || bot->GetDistance(owner) > kHandOverDistance)
             return "Nothing yet. They asked for " + Money(amount) + ", but you are too far apart; ask them to come closer.";
         if (amount == 0 || amount > uint64(std::numeric_limits<int32>::max()))
             return "Nothing. That is not an amount you can hand over at once; tell them.";
@@ -1559,7 +1608,7 @@ namespace truecompanion::ac
         std::vector<Player*> bots;
         for (ObjectGuid g : h.bots)
             if (Player* b = ObjectAccessor::FindConnectedPlayer(g))
-                if (b->IsInWorld() && b->IsAlive() && b->GetMapId() == owner->GetMapId())
+                if (b->IsInWorld() && b->IsAlive() && SameWorld(b, owner))
                     bots.push_back(b);
         if (bots.empty())
             return false;
@@ -1761,7 +1810,7 @@ namespace truecompanion::ac
         std::stable_sort(offered.begin(), offered.end(),
                          [bot](auto const& a, auto const& b) { return bot->GetDistance(a.second) < bot->GetDistance(b.second); });
         size_t limit = (cmd.all || !cmd.arg.empty()) ? 8 : 1;
-        std::vector<Quest const*> take;
+        std::vector<std::pair<Quest const*, Creature*>> take;
         std::vector<std::string> cannot;
         for (int pass = 0; pass < 2 && take.empty(); ++pass)
             for (auto const& [id, npc] : offered)
@@ -1782,16 +1831,14 @@ namespace truecompanion::ac
                         cannot.push_back(q->GetTitle());
                     continue;
                 }
-                take.push_back(q);
+                take.emplace_back(q, npc);
                 if (take.size() >= limit)
                     break;
             }
         std::string names;
-        for (Quest const* q : take)
-        {
-            bot->AddQuestAndCheckCompletion(q, nullptr);
-            names += (names.empty() ? "\"" : ", \"") + q->GetTitle() + "\"";
-        }
+        for (auto const& [q, npc] : take)
+            if (AcceptQuest(bot, q, npc))
+                names += (names.empty() ? "\"" : ", \"") + q->GetTitle() + "\"";
         std::string refused;
         for (auto const& t : cannot)
             refused += (refused.empty() ? "\"" : ", \"") + t + "\"";
@@ -1842,7 +1889,11 @@ namespace truecompanion::ac
                 notReady += (notReady.empty() ? "\"" : ", \"") + q->GetTitle() + "\"";
                 continue;
             }
-            bot->RewardQuest(q, BestRewardChoice(bot, q), it->second, false);
+            if (!TurnInQuest(bot, q, it->second))
+            {
+                notReady += (notReady.empty() ? "\"" : ", \"") + q->GetTitle() + "\" (no room in your bags for the reward)";
+                continue;
+            }
             done += (done.empty() ? "\"" : ", \"") + q->GetTitle() + "\"";
         }
         std::vector<Quest const*> ready;
@@ -1876,6 +1927,7 @@ namespace truecompanion::ac
             lead.title = best->name;
             lead.since = now;
             lead.map = bot->GetMapId();
+            lead.instance = bot->GetInstanceId();
             lead.x = best->x;
             lead.y = best->y;
             lead.z = best->z;
@@ -1898,9 +1950,9 @@ namespace truecompanion::ac
         Quest const* q = sObjectMgr->GetQuestTemplate(questId);
         if (!q || bot->FindQuestSlot(questId) < MAX_QUEST_LOG_SIZE || bot->GetQuestRewardStatus(questId))
             return "";
-        if (!bot->CanTakeQuest(q, false) || !bot->CanAddQuest(q, false))
+        // like a shared quest: the player's accept already ran the quest giver's scripts once
+        if (!AcceptQuest(bot, q, nullptr))
             return "";
-        bot->AddQuestAndCheckCompletion(q, nullptr);
         return "You took the quest \"" + q->GetTitle() + "\" too, together with them.";
     }
 
@@ -1915,7 +1967,7 @@ namespace truecompanion::ac
         auto it = enders.find(questId);
         if (it == enders.end())
             return "";
-        bot->RewardQuest(q, BestRewardChoice(bot, q), it->second, false);
+        TurnInQuest(bot, q, it->second);
         return "";   // the quest-complete event already makes her comment
     }
 
@@ -2114,6 +2166,7 @@ namespace truecompanion::ac
                    "known location); tell them and suggest they lead.";
         if (!PlayerbotsBridge::StartLead(bot, owner))
             return "Nothing. You could not take the lead right now; tell them.";
+        lead.instance = bot->GetInstanceId();
         lead.lastX = bot->GetPositionX();
         lead.lastY = bot->GetPositionY();
         float dist = bot->GetDistance2d(lead.x, lead.y);
@@ -2225,11 +2278,8 @@ namespace truecompanion::ac
                 holder = holder ? holder : m;
                 continue;
             }
-            if (CanTakeNow(m, q))
-            {
-                m->AddQuestAndCheckCompletion(q, nullptr);
+            if (CanTakeNow(m, q) && AcceptQuest(m, q, nullptr))   // shared by the group, no quest giver
                 got += (got.empty() ? "" : ", ") + m->GetName();
-            }
             else
                 cannot += (cannot.empty() ? "" : ", ") + m->GetName();
         }
@@ -2703,27 +2753,28 @@ namespace truecompanion::ac
         // one chosen quest (Take): no level cap, not hidden by the ignore list
         bool chosen = onlyQuest != 0 || !filter.empty();
         int cap = chosen ? 0 : LevelCap(owner, bot);
+        Creature* giver = CreatureNear(bot, entry, 30.0f);
+        if (!giver)
+            return taken;   // not there (despawned, dead): nothing can be taken from it
         for (GiverInfo const& g : AvailableGivers(bot, 30.0f, filter, cap, chosen ? nullptr : Ignored(owner)))
             if (g.entry == entry)
                 for (Quest const* q : g.quests)
-                    if (taken.size() < limit && (!onlyQuest || q->GetQuestId() == onlyQuest) && CanTakeNow(bot, q))
-                    {
-                        bot->AddQuestAndCheckCompletion(q, nullptr);
+                    if (taken.size() < limit && (!onlyQuest || q->GetQuestId() == onlyQuest) && CanTakeNow(bot, q) &&
+                        AcceptQuest(bot, q, giver))
                         taken.push_back(q);
-                    }
         if (!group)
             return taken;
         // the other companions (they came along) take what they can from this quest giver too
         QuestRelationBounds b = sObjectMgr->GetCreatureQuestRelationBounds(entry);
         for (Player* m : OtherCompanions(owner, bot))
         {
-            if (!m->IsAlive() || m->GetMapId() != bot->GetMapId() || m->GetDistance(bot) > 100.0f)
+            if (!m->IsAlive() || !SameWorld(m, bot) || m->GetDistance(bot) > 100.0f)
                 continue;
             for (auto it = b.first; it != b.second; ++it)
                 if (Quest const* oq = sObjectMgr->GetQuestTemplate(it->second))
                     if ((!onlyQuest || oq->GetQuestId() == onlyQuest) && CanTakeNow(m, oq) && (cap <= 0 || oq->GetQuestLevel() <= cap) &&
                         !(!chosen && Ignored(owner) && Ignored(owner)->count(oq->GetQuestId())))
-                        m->AddQuestAndCheckCompletion(oq, nullptr);
+                        AcceptQuest(m, oq, giver);   // from the same quest giver (they came along)
         }
         // the player gets the new quests shared (if they can take them; if not, she just goes on)
         time_t at = now;
@@ -2747,7 +2798,7 @@ namespace truecompanion::ac
         for (Player* m : OtherCompanions(owner, bot))
         {
             if (_leads.count(m->GetGUID()) || lead.escortSkip.count(m->GetGUID()) || !m->IsAlive() || m->IsInCombat() ||
-                m->GetMapId() != bot->GetMapId() || PlayerbotsBridge::FollowState(m) == "stay")
+                !SameWorld(m, bot) || PlayerbotsBridge::FollowState(m) == "stay")
                 continue;
             // not yet behind her, or back from her own errand with Playerbots' follow on again
             if ((!lead.escort.count(m->GetGUID()) || PlayerbotsBridge::FollowState(m) == "follow") &&
@@ -2848,6 +2899,7 @@ namespace truecompanion::ac
         lead.title = name;
         lead.since = now;
         lead.map = bot->GetMapId();
+        lead.instance = bot->GetInstanceId();
         lead.x = x;
         lead.y = y;
         lead.z = z;
@@ -2884,7 +2936,7 @@ namespace truecompanion::ac
     void CompanionControl::LeadStep(Player* owner, Player* bot, Lead& lead, time_t now)
     {
         // hearthstone, teleport, an instance: the lead ends and Playerbots brings her along again
-        if (bot->GetMapId() != lead.map || owner->GetMapId() != bot->GetMapId())
+        if (bot->GetMapId() != lead.map || bot->GetInstanceId() != lead.instance || !SameWorld(owner, bot))
         {
             FinishLead(owner, bot, "You got separated from them (they went somewhere else), so you stop leading and follow them "
                                    "again. Say it briefly.");
@@ -2926,7 +2978,7 @@ namespace truecompanion::ac
                 {
                     std::vector<Player*> sellers = { bot };
                     for (Player* m : OtherCompanions(owner, bot))
-                        if (m->IsAlive() && m->GetMapId() == bot->GetMapId() && m->GetDistance(bot) < 40.0f)
+                        if (m->IsAlive() && SameWorld(m, bot) && m->GetDistance(bot) < 40.0f)
                             sellers.push_back(m);
                     for (Player* p2 : sellers)
                     {
@@ -2957,8 +3009,8 @@ namespace truecompanion::ac
                         continue;
                     if (!lead.fetchFilter.empty() && MatchScore(q->GetTitle(), lead.fetchFilter) == 0)
                         continue;
-                    bot->RewardQuest(q, BestRewardChoice(bot, q), npc, false);
-                    handed.push_back(q);
+                    if (TurnInQuest(bot, q, npc))
+                        handed.push_back(q);
                 }
                 if (lead.group)
                 {
@@ -2974,16 +3026,13 @@ namespace truecompanion::ac
                     if (ender)
                         for (Player* m : OtherCompanions(owner, bot))
                         {
-                            if (!m->IsAlive() || m->GetMapId() != bot->GetMapId() || m->GetDistance(bot) > 100.0f)
+                            if (!m->IsAlive() || !SameWorld(m, bot) || m->GetDistance(bot) > 100.0f)
                                 continue;
                             for (auto it = ends.first; it != ends.second; ++it)
                                 if (Quest const* oq = sObjectMgr->GetQuestTemplate(it->second))
-                                    if (m->GetQuestStatus(oq->GetQuestId()) == QUEST_STATUS_COMPLETE && m->CanRewardQuest(oq, false))
-                                    {
-                                        m->RewardQuest(oq, BestRewardChoice(m, oq), ender, false);
+                                    if (m->GetQuestStatus(oq->GetQuestId()) == QUEST_STATUS_COMPLETE && TurnInQuest(m, oq, ender))
                                         if (std::find(handed.begin(), handed.end(), oq) == handed.end())
                                             handed.push_back(oq);
-                                    }
                         }
                     // the player turns in their own; say what they can hand in here
                     std::vector<Quest const*> theirs;
@@ -3143,7 +3192,7 @@ namespace truecompanion::ac
 
         // never run away from them: wait when they fall behind
         // (fetching she goes alone and comes back, so she doesn't wait)
-        bool ownerNear = (lead.fetch && !lead.group) || (owner->GetMapId() == bot->GetMapId() && bot->GetDistance(owner) < 40.0f);
+        bool ownerNear = (lead.fetch && !lead.group) || (SameWorld(owner, bot) && bot->GetDistance(owner) < 40.0f);
         if (!ownerNear)
         {
             if (!lead.waiting)
@@ -3395,21 +3444,67 @@ namespace truecompanion::ac
 
     void CompanionControl::Forget(ObjectGuid bot)
     {
-        // a leading companion goes: the ones walking behind her get Playerbots' follow back
+        // She is no longer a companion (dismissed; she may stay as a plain Playerbot): everything companion control
+        // started for her ends the way a lead ends (FinishLead), and Playerbots' own follow is back.
+        Player* b = ObjectAccessor::FindConnectedPlayer(bot);
+        Player* owner = nullptr;
         if (auto l = _leads.find(bot); l != _leads.end())
-            if (Player* owner = ObjectAccessor::FindConnectedPlayer(l->second.owner))
-                ReleaseEscort(l->second, owner);
+        {
+            owner = ObjectAccessor::FindConnectedPlayer(l->second.owner);
+            if (owner)
+            {
+                ReleaseEscort(l->second, owner);   // the ones walking behind her follow the player again
+                if (auto h = _hunts.find(owner->GetGUID()); h != _hunts.end() && h->second.forLead)
+                {
+                    ReleaseChasers(h->second);      // her lead's fight ends with her lead
+                    _hunts.erase(h);
+                }
+            }
+            _leads.erase(l);
+        }
+        // walking behind another companion: her follow was switched off for that
         for (auto& [leader, l] : _leads)
         {
-            l.escort.erase(bot);
+            bool escorted = l.escort.erase(bot) > 0;
             l.escortSkip.erase(bot);
+            if (escorted && !owner)
+                owner = ObjectAccessor::FindConnectedPlayer(l.owner);
         }
-        _leads.erase(bot);
+        // part of an area clearing: out of it; if she was walking closer to an enemy, her follow comes back
+        bool unfollowed = false;
+        for (auto it = _hunts.begin(); it != _hunts.end();)
+        {
+            Hunt& h = it->second;
+            h.bots.erase(std::remove(h.bots.begin(), h.bots.end(), bot), h.bots.end());
+            if (h.unfollowed.erase(bot))
+            {
+                unfollowed = true;
+                if (!owner)
+                    owner = ObjectAccessor::FindConnectedPlayer(h.owner);
+            }
+            if (h.bots.empty())
+            {
+                ReleaseChasers(h);
+                it = _hunts.erase(it);
+            }
+            else
+                ++it;
+        }
         _lastAutoSell.erase(bot);
         _lastBagsFull.erase(bot);
-        for (auto& [owner, h] : _hunts)
-            h.bots.erase(std::remove(h.bots.begin(), h.bots.end(), bot), h.bots.end());
         _pending.erase(std::remove_if(_pending.begin(), _pending.end(), [&](Pending const& p) { return p.bot == bot; }), _pending.end());
+        if (b && b->IsInWorld())
+        {
+            if (!owner)
+                owner = PlayerbotsBridge::MasterOf(b);
+            b->GetMotionMaster()->Clear();
+            if (owner)
+            {
+                PlayerbotsBridge::StopLead(b, owner);   // Playerbots' follow and its own movement again
+                if (unfollowed)
+                    PlayerbotsBridge::SetFollow(b, owner, true);
+            }
+        }
     }
 
     // ------------------------------------------------------------------ character sheet

@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <cmath>
 #include <sstream>
+#include <stdexcept>
 
 namespace truecompanion
 {
@@ -122,17 +123,20 @@ namespace truecompanion
         _sessions.clear();
     }
 
+    void TrueCompanionService::InvalidateRequests(Session& s)
+    {
+        for (auto& t : s.tokens)
+            t->store(true);
+        s.tokens.clear();
+        s.pending = 0;
+        s.summarizing = false;
+        s.generation = ++_nextGeneration;
+    }
+
     void TrueCompanionService::Reconfigure(std::shared_ptr<ILlmBackend> backend)
     {
         for (auto& [k, s] : _sessions)
-        {
-            for (auto& t : s->tokens)
-                t->store(true);
-            s->tokens.clear();
-            s->pending = 0;
-            s->summarizing = false;
-            s->generation = ++_nextGeneration;   // results of the old pool are ignored
-        }
+            InvalidateRequests(*s);   // results of the old pool are ignored
         if (_pool)
             _pool->Shutdown();
         _pool = std::make_unique<WorkerPool>(_cfg.maxConcurrentRequests, _cfg.maxQueuedRequests);
@@ -810,7 +814,26 @@ namespace truecompanion
             if (token->load())
                 r.llm.status = LlmResult::Status::Cancelled;
             else
-                r.llm = backend->Chat(req, token);
+            {
+                // A result must always come back: otherwise `pending` never drops and the companion
+                // stays "busy" for good.
+                try
+                {
+                    r.llm = backend->Chat(req, token);
+                }
+                catch (std::exception const& e)
+                {
+                    r.llm = LlmResult{};
+                    r.llm.status = LlmResult::Status::BadResponse;
+                    r.llm.error = std::string("backend error: ") + e.what();
+                }
+                catch (...)
+                {
+                    r.llm = LlmResult{};
+                    r.llm.status = LlmResult::Status::BadResponse;
+                    r.llm.error = "backend error";
+                }
+            }
             results->Push(std::move(r));
         };
         if (!_pool->Submit(std::move(job)))
@@ -876,10 +899,18 @@ namespace truecompanion
                 return hr;
         }
 
+        // The addon's chat tab shows "is thinking..." as soon as a line is sent; clear it when no reply will come.
+        auto noReply = [&]()
+        {
+            if (channel == ChatChannel::Addon)
+                PushTyping(*s, false);
+        };
+
         if (cm.route == MessageRoute::PlayerbotCommand)
         {
             hr.result = MessageResult::PassToPlayerbots;
             hr.rewritten = cm.text;
+            noReply();
             return hr;
         }
 
@@ -911,12 +942,16 @@ namespace truecompanion
         if (!s->rec.settings.aiEnabled || !_cfg.ollamaEnabled)
         {
             hr.result = MessageResult::AiDisabled;
+            noReply();
             return hr;
         }
 
         std::string playerText = SanitizePlayerText(cm.text, _cfg.maxPlayerMessageChars);
         if (playerText.empty())
+        {
+            noReply();
             return hr;
+        }
 
         if (s->pending >= _cfg.maxPendingPerCompanion)
         {
@@ -1091,6 +1126,14 @@ namespace truecompanion
                 AddRecentEvent(*s, pname + " reached level " + std::to_string(ev.value), now);
                 break;
             case GameEventType::QuestComplete:
+                if (ev.detail.empty())
+                {
+                    // no title known: still a shared success, but nothing specific worth remembering
+                    text = "You just completed a quest together.";
+                    priority = 1;
+                    AddRecentEvent(*s, "completed a quest", now);
+                    break;
+                }
                 text = "You just completed the quest \"" + ev.detail + "\" together.";
                 priority = 1;
                 AddRecentEvent(*s, "completed the quest \"" + ev.detail + "\"", now);
@@ -1328,9 +1371,17 @@ namespace truecompanion
         {
             JobResult r;
             r.health = true;
-            r.version = backend->Version(timeout);
-            if (r.version)
-                r.models = backend->ListModels(timeout);
+            try
+            {
+                r.version = backend->Version(timeout);
+                if (r.version)
+                    r.models = backend->ListModels(timeout);
+            }
+            catch (...)
+            {
+                r.version.reset();   // reported as offline; the next check runs normally
+                r.models.reset();
+            }
             results->Push(std::move(r));
         };
         if (_pool && _pool->Submit(std::move(job)))
@@ -1854,7 +1905,8 @@ namespace truecompanion
         Json p = Json::MakeObject();
         p.Set("op", "typing");
         p.Set("guid", int64_t(s.rec.key.companion));
-        p.Set("on", on && s.pending > 0 ? true : on);
+        // Another request still in flight keeps the indicator on.
+        p.Set("on", on || s.pending > 0);
         _out.push_back({ OutgoingAction::Type::UiPush, s.rec.key, "", ChatChannel::Addon, ActionType::None, p });
     }
 
@@ -2111,21 +2163,38 @@ namespace truecompanion
     }
 
     std::optional<MemoryEntry> TrueCompanionService::AddUserMemory(CompanionKey const& key, MemoryKind kind, std::string const& text, int importance, TimePoint now,
-                                                             bool notify)
+                                                             bool notify, std::string* error)
     {
         if (kind == MemoryKind::Summary)
             kind = MemoryKind::Fact;
-        MemoryStore::AddResult res;
-        if (Session* s = Find(key))
-            res = s->memories.Add(kind, MemorySource::UserEdited, importance, text, now);
-        else
-        {
-            MemoryStore store(_cfg);
-            store.Load(_repo.LoadMemories(key));
-            res = store.Add(kind, MemorySource::UserEdited, importance, text, now);
-        }
+        Session* s = Find(key);
+        MemoryStore offline(_cfg);
+        if (!s)
+            offline.Load(_repo.LoadMemories(key));
+        MemoryStore& store = s ? s->memories : offline;
+        MemoryStore::AddResult res = store.Add(kind, MemorySource::UserEdited, importance, text, now);
         if (!res.stored)
+        {
+            if (error)
+                *error = "invalid_text";
             return std::nullopt;
+        }
+        if (!res.merged)
+        {
+            // Player-written memories are never pruned, so the per-companion limit has to hold here:
+            // make room among the prunable ones, or refuse the new entry if there are not enough.
+            size_t limit = _cfg.maxMemoriesPerCompanion;
+            if (store.Size() > limit && store.PrunableCount() < store.Size() - limit)
+            {
+                store.Remove(res.entry.id);
+                if (error)
+                    *error = "memory_limit_reached";
+                return std::nullopt;
+            }
+            std::vector<uint32_t> removed = store.Prune(now);
+            if (!removed.empty())
+                _repo.DeleteMemories(key, removed);
+        }
         _repo.SaveMemory(key, res.entry);
         if (notify)
             PushMemoryChanged(key, res.entry.id);
@@ -2189,11 +2258,7 @@ namespace truecompanion
         uint32_t account = 0;
         if (s)
         {
-            for (auto& t : s->tokens)
-                t->store(true);
-            s->tokens.clear();
-            s->pending = 0;
-            s->generation = ++_nextGeneration;
+            InvalidateRequests(*s);
             name = s->rec.companionName;
             account = s->rec.ownerAccount;
         }

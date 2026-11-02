@@ -146,6 +146,7 @@ namespace truecompanion::ac
             std::string title;
             time_t since = 0;
             uint32 map = 0;
+            uint32 instance = 0;           // the instance she started in: another copy of the same map ends the lead
             float x = 0, y = 0, z = 0;
             bool haveZ = false;
             bool hunting = false;

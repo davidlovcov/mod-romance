@@ -16,6 +16,7 @@
 #include "TrueCompanionTransfer.h"
 
 #include <chrono>
+#include <stdexcept>
 #include <thread>
 #include <algorithm>
 #include <functional>
@@ -1407,4 +1408,223 @@ TEST(Service, WithoutTheAiSheStillThanksForAGift)
     CHECK_CONTAINS(said, "5 Linen Cloth");
     CHECK(said.find("Thank") != std::string::npos || said.find("Thanks") != std::string::npos);
     CHECK(said.find("Thank me") == std::string::npos);   // said as it is, no person swapping
+}
+
+TEST(Service, ResetDuringASummaryDoesNotStopLaterSummaries)
+{
+    Harness h;
+    h.cfg.summarizeEveryTurns = 4;
+    h.cfg.allowFullReset = true;
+    h.Restart();
+    h.Activate(h.Key());
+    std::atomic<bool> release{ false };
+    std::atomic<int> summaries{ 0 };
+    h.llm->SetResponder([&](LlmRequest const& r)
+    {
+        LlmResult res;
+        res.status = LlmResult::Status::Ok;
+        if (r.messages[0].content.find("long-term memory") != std::string::npos)
+        {
+            int n = ++summaries;
+            if (n == 1)
+                while (!release)   // the first summary hangs until after the reset
+                    std::this_thread::sleep_for(std::chrono::milliseconds(2));
+            res.content = std::string("{\"summary\":\"") + (n == 1 ? "OLD summary from before the reset." : "NEW summary after the reset.") +
+                          "\",\"facts\":[]}";
+        }
+        else
+            res.content = ReplyJson("Mm, tell me more.");
+        return res;
+    });
+    auto talk = [&](int i)
+    {
+        h.now += 5;
+        h.svc->OnPlayerMessage(h.Key(), "Tell me about Dalaran, part " + std::to_string(i), ChatChannel::Whisper, h.ctx, h.now);
+        size_t before = h.Spoken(h.Key()).size();
+        CHECK(h.WaitSpeak(h.Key(), before + 1));
+    };
+    talk(1);
+    talk(2);
+    CHECK(h.PumpUntil([&](auto const&) { return summaries >= 1; }));   // the old summary is running (blocked)
+    CHECK(h.svc->ResetCompanion(h.Key(), h.now));
+    release = true;
+    h.PumpUntil([](auto const&) { return false; }, 100);               // its late result arrives and is dropped
+    talk(3);
+    talk(4);
+    CHECK(h.PumpUntil([&](auto const&)
+    {
+        for (auto const& m : h.repo.LoadMemories(h.Key()))
+            if (m.kind == MemoryKind::Summary && m.text.find("NEW") != std::string::npos)
+                return true;
+        return false;
+    }));
+    for (auto const& m : h.repo.LoadMemories(h.Key()))
+        CHECK(m.text.find("OLD") == std::string::npos);
+}
+
+// ============================================================ edge cases found in review
+
+namespace
+{
+    std::vector<Json> TypingPushes(std::vector<OutgoingAction> const& out, size_t from = 0)
+    {
+        std::vector<Json> t;
+        for (size_t i = from; i < out.size(); ++i)
+            if (out[i].type == OutgoingAction::Type::UiPush && out[i].payload.GetString("op") == "typing")
+                t.push_back(out[i].payload);
+        return t;
+    }
+
+    class ThrowingLlm : public ILlmBackend
+    {
+    public:
+        LlmResult Chat(LlmRequest const&, CancelToken const&) override { throw std::runtime_error("boom"); }
+        std::optional<std::vector<std::string>> ListModels(uint32_t) override { throw std::runtime_error("boom"); }
+        std::optional<std::string> Version(uint32_t) override { throw std::runtime_error("boom"); }
+    };
+}
+
+TEST(Service, ThrowingBackendNeverLeavesTheCompanionBusy)
+{
+    TrueCompanionConfig cfg;
+    cfg.minResponseCooldownMs = 0;
+    cfg.proactiveEnabled = false;
+    InMemoryRepository repo;
+    TrueCompanionService svc(cfg, repo, std::make_shared<ThrowingLlm>(), 7);
+    WorldContext ctx;
+    ctx.companionInWorld = true;
+    TimePoint now = 1'800'000'000;
+    CompanionKey key{ kArthas, kElara };
+    CHECK(svc.Activate(key, kAccount, "Elara", "Arthas", now).ok);
+    auto waitError = [&]()
+    {
+        for (int i = 0; i < 400; ++i)
+        {
+            svc.Tick(now, [&](CompanionKey const&) { return std::optional<WorldContext>(ctx); });
+            for (auto const& a : svc.TakeOutgoing())
+                if (a.type == OutgoingAction::Type::UiPush && a.payload.GetString("op") == "error")
+                    return true;
+            std::this_thread::sleep_for(std::chrono::milliseconds(5));
+        }
+        return false;
+    };
+    // more messages than MaxPendingPerCompanion: each one must come back as an error, not hang
+    for (int i = 0; i < 4; ++i)
+    {
+        auto r = svc.OnPlayerMessage(key, "Message number " + std::to_string(i) + ", are you there?", ChatChannel::Whisper, ctx, now + i);
+        CHECK(r.result == TrueCompanionService::MessageResult::Accepted);
+        CHECK(waitError());
+    }
+    // the health check survives a throwing backend too and reports "offline"
+    for (int i = 0; i < 400 && !svc.Status().checked; ++i)
+    {
+        svc.Tick(now, nullptr);
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }
+    CHECK(svc.Status().checked);
+    CHECK(!svc.Status().online);
+}
+
+TEST(Service, PlayerMemoriesRespectTheLimit)
+{
+    Harness h;
+    h.cfg.maxMemoriesPerCompanion = 4;
+    h.Restart();
+    h.Activate(h.Key());
+    // two observed episodes the server may prune to make room
+    h.svc->OnGameEvent(h.Key(), { GameEventType::QuestComplete, "Kobold Camp Cleanup", 0, h.now }, h.now);
+    h.svc->OnGameEvent(h.Key(), { GameEventType::QuestComplete, "Wolves Across the Border", 0, h.now }, h.now);
+    CHECK_EQ(h.repo.LoadMemories(h.Key()).size(), size_t(2));
+    char const* texts[] = { "Arthas grew up on a farm near Goldshire.", "Arthas is afraid of deep water.",
+                            "Arthas plays the lute badly but happily.", "Arthas once tamed a wild gryphon.",
+                            "Arthas hates the taste of murloc stew." };
+    for (int i = 0; i < 4; ++i)
+        CHECK(h.svc->AddUserMemory(h.Key(), MemoryKind::Fact, texts[i], 60, h.now).has_value());
+    CHECK_EQ(h.repo.LoadMemories(h.Key()).size(), size_t(4));   // the episodes made room
+    std::string error;
+    CHECK(!h.svc->AddUserMemory(h.Key(), MemoryKind::Fact, texts[4], 60, h.now, true, &error).has_value());
+    CHECK_EQ(error, std::string("memory_limit_reached"));
+    CHECK_EQ(h.repo.LoadMemories(h.Key()).size(), size_t(4));
+    // the same limit applies while the companion is not summoned
+    h.svc->Deactivate(h.Key(), h.now);
+    CHECK(!h.svc->AddUserMemory(h.Key(), MemoryKind::Fact, texts[4], 60, h.now, true, &error).has_value());
+    CHECK_EQ(h.repo.LoadMemories(h.Key()).size(), size_t(4));
+    // a near-duplicate still merges instead of being refused
+    CHECK(h.svc->AddUserMemory(h.Key(), MemoryKind::Fact, "Arthas is afraid of deep water!", 70, h.now).has_value());
+    error.clear();
+    CHECK(!h.svc->AddUserMemory(h.Key(), MemoryKind::Fact, "x", 60, h.now, true, &error).has_value());
+    CHECK_EQ(error, std::string("invalid_text"));
+}
+
+TEST(Service, TypingIndicatorFollowsPendingRequests)
+{
+    Harness h;
+    h.Activate(h.Key());
+    int n = 0;
+    std::mutex m;
+    h.llm->SetResponder([&](LlmRequest const&)
+    {
+        int mine;
+        {
+            std::lock_guard<std::mutex> g(m);
+            mine = ++n;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(mine == 1 ? 50 : 400));
+        LlmResult res;
+        res.status = LlmResult::Status::Ok;
+        res.content = ReplyJson(mine == 1 ? "First thought." : "And a completely different second one.");
+        return res;
+    });
+    h.svc->OnPlayerMessage(h.Key(), "Tell me about Dalaran.", ChatChannel::Whisper, h.ctx, h.now);
+    h.svc->OnPlayerMessage(h.Key(), "And about Stormwind?", ChatChannel::Whisper, h.ctx, h.now);
+    CHECK(h.WaitSpeak(h.Key()));
+    size_t first = h.out.size();
+    CHECK(h.WaitSpeak(h.Key(), 2));
+    // after the first answer the second request is still running: the indicator stays on
+    bool onAfterFirst = false;
+    size_t speakIdx = 0;
+    for (size_t i = 0; i < first; ++i)
+        if (h.out[i].type == OutgoingAction::Type::Speak)
+            speakIdx = i;
+    for (size_t i = speakIdx; i < first; ++i)
+        if (h.out[i].type == OutgoingAction::Type::UiPush && h.out[i].payload.GetString("op") == "typing")
+            onAfterFirst = h.out[i].payload.GetBool("on");
+    CHECK(onAfterFirst);
+    auto all = TypingPushes(h.out);
+    CHECK(!all.empty());
+    CHECK(!all.back().GetBool("on"));
+}
+
+TEST(Service, ChatTabCommandsClearTheTypingIndicator)
+{
+    Harness h;
+    h.Activate(h.Key());
+    h.svc->TakeOutgoing();
+    auto r = h.svc->OnPlayerMessage(h.Key(), "follow", ChatChannel::Addon, h.ctx, h.now);
+    CHECK(r.result == TrueCompanionService::MessageResult::PassToPlayerbots);
+    auto pushes = TypingPushes(h.svc->TakeOutgoing());
+    CHECK_EQ(pushes.size(), size_t(1));
+    CHECK(!pushes[0].GetBool("on"));
+    // whispers never produce addon traffic for commands
+    h.svc->OnPlayerMessage(h.Key(), "follow", ChatChannel::Whisper, h.ctx, h.now);
+    CHECK(TypingPushes(h.svc->TakeOutgoing()).empty());
+    // AI switched off: also no reply coming
+    CompanionSettings off;
+    off.aiEnabled = false;
+    h.svc->SaveSettings(h.Key(), kAccount, "Elara", off, h.now);
+    h.svc->TakeOutgoing();
+    CHECK(h.svc->OnPlayerMessage(h.Key(), "Hello there, Elara!", ChatChannel::Addon, h.ctx, h.now).result ==
+          TrueCompanionService::MessageResult::AiDisabled);
+    pushes = TypingPushes(h.svc->TakeOutgoing());
+    CHECK_EQ(pushes.size(), size_t(1));
+    CHECK(!pushes[0].GetBool("on"));
+}
+
+TEST(Service, QuestWithoutTitleIsNotRememberedAsEmptyQuotes)
+{
+    Harness h;
+    h.Activate(h.Key());
+    h.svc->OnGameEvent(h.Key(), { GameEventType::QuestComplete, "", 0, h.now }, h.now);
+    for (auto const& m : h.repo.LoadMemories(h.Key()))
+        CHECK_NOT_CONTAINS(m.text, "\"\"");
 }

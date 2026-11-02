@@ -4,6 +4,7 @@
  */
 
 #include "TestFramework.h"
+#include "TrueCompanionTransfer.h"
 
 #include "TrueCompanionGift.h"
 #include "TrueCompanionJson.h"
@@ -1108,4 +1109,225 @@ TEST(Text, PlainCompanionLineWithoutTheAi)
     // quest names keep their words; only instructions -> nothing to say
     CHECK_EQ(PlainCompanionLine("You picked up \"You Are Rakh'likh, Demon\". Tell them."), std::string("I picked up \"You Are Rakh'likh, Demon\"."));
     CHECK_EQ(PlainCompanionLine("Tell them."), std::string(""));
+}
+
+TEST(Transfer, ExportSnapshotIsFrozenAcrossPages)
+{
+    using namespace truecompanion;
+    ExportSnapshots snaps;
+    int builds = 0;
+    std::vector<std::string> state = { "p0-v1", "p1-v1", "p2-v1" };
+    auto build = [&] { ++builds; return state; };
+    auto p0 = snaps.Get(2, 0, "", build, 1000);
+    CHECK(p0.error.empty() && p0.parts == 3 && p0.data == "p0-v1" && !p0.snapshot.empty());
+    // memories change between pages (same page count): later pages still come from the frozen export
+    state = { "p0-v2", "p1-v2", "p2-v2" };
+    auto p1 = snaps.Get(2, 1, p0.snapshot, build, 1010);
+    CHECK_EQ(p1.data, std::string("p1-v1"));
+    CHECK_EQ(builds, 1);
+    // a wrong snapshot id is refused
+    CHECK_EQ(snaps.Get(2, 2, "999", build, 1011).error, std::string("snapshot_expired"));
+    auto p2 = snaps.Get(2, 2, p0.snapshot, build, 1012);
+    CHECK_EQ(p2.data, std::string("p2-v1"));
+    CHECK_EQ(snaps.Count(), size_t(0));   // the last page releases it
+    // changed page count: a new export starts a new snapshot
+    state = { "a", "b" };
+    auto n0 = snaps.Get(2, 0, "", build, 1100);
+    CHECK(n0.parts == 2 && n0.snapshot != p0.snapshot);
+    // expiry
+    CHECK_EQ(snaps.Get(2, 1, n0.snapshot, build, 1100 + kExportSnapshotTtlSec + 1).error, std::string("snapshot_expired"));
+    // two companions at once don't disturb each other
+    auto a0 = snaps.Get(2, 0, "", build, 2000);
+    state = { "x", "y" };
+    auto b0 = snaps.Get(3, 0, "", build, 2000);
+    CHECK_EQ(snaps.Get(2, 1, a0.snapshot, build, 2001).data, std::string("b"));
+    CHECK_EQ(snaps.Get(3, 1, b0.snapshot, build, 2001).data, std::string("y"));
+    // out of range, and nothing to export
+    auto c0 = snaps.Get(4, 0, "", build, 3000);
+    CHECK_EQ(snaps.Get(4, 5, c0.snapshot, build, 3001).error, std::string("bad_part"));
+    CHECK_EQ(snaps.Get(5, 0, "", [] { return std::vector<std::string>{}; }, 3000).error, std::string("export_disabled"));
+}
+
+TEST(Protocol, EmptyAndReplacedDuplicateChunks)
+{
+    using S = AddonReassembler::Status;
+    // an empty chunk sent twice counts once: a 3-part message is not complete before part 3
+    {
+        AddonReassembler re;
+        CHECK(re.Feed("m1:1/3:", 0).status == S::Incomplete);
+        CHECK(re.Feed("m1:1/3:", 1).status == S::Incomplete);
+        CHECK(re.Feed("m1:2/3:{\"op\":", 2).status == S::Incomplete);
+        auto r = re.Feed("m1:3/3:\"x\"}", 3);
+        CHECK(r.status == S::Complete && r.message.GetString("op") == "x");
+    }
+    // identical duplicates
+    {
+        AddonReassembler re;
+        CHECK(re.Feed("m2:1/2:{\"op\":", 0).status == S::Incomplete);
+        CHECK(re.Feed("m2:1/2:{\"op\":", 0).status == S::Incomplete);
+        CHECK(re.Feed("m2:2/2:\"y\"}", 0).status == S::Complete);
+    }
+    // a longer replacement is counted against the limit, a shorter one frees the difference
+    {
+        AddonReassembler re;
+        std::string half(kMaxInboundMessageBytes / 2, 'a');
+        CHECK(re.Feed("m3:1/3:" + half, 0).status == S::Incomplete);
+        CHECK(re.Feed("m3:2/3:" + std::string(10, 'b'), 0).status == S::Incomplete);
+        CHECK(re.Feed("m3:2/3:" + half, 0).status == S::Incomplete);              // exactly at the limit
+        CHECK(re.Feed("m3:2/3:" + half + "c", 0).status == S::TooLarge);         // one byte over
+    }
+    {
+        AddonReassembler re;
+        std::string half(kMaxInboundMessageBytes / 2, 'a');
+        CHECK(re.Feed("m4:1/3:" + half, 0).status == S::Incomplete);
+        CHECK(re.Feed("m4:2/3:" + half, 0).status == S::Incomplete);
+        CHECK(re.Feed("m4:2/3:x", 0).status == S::Incomplete);                   // shorter replacement
+        CHECK(re.Feed("m4:3/3:" + std::string(100, 'z'), 0).status != S::TooLarge);
+    }
+}
+
+// ============================================================ edge cases found in review
+
+TEST(Json, HugeNumbersSaturateInsteadOfOverflowing)
+{
+    // Casting an out-of-range double to int64 is undefined behaviour; addon input is untrusted.
+    auto j = Json::Parse("{\"big\":1e300,\"small\":-1e300,\"edge\":9223372036854775808,\"ok\":42.9,\"neg\":-7.9}");
+    CHECK(j.has_value());
+    CHECK_EQ(j->GetInt("big"), INT64_MAX);
+    CHECK_EQ(j->GetInt("small"), INT64_MIN);
+    CHECK_EQ(j->GetInt("edge"), INT64_MAX);
+    CHECK_EQ(j->GetInt("ok"), int64_t(42));
+    CHECK_EQ(j->GetInt("neg"), int64_t(-7));
+    // and the typed parsers built on it stay sane
+    PersonalityProfile p = PersonalityProfile::FromJson(*Json::Parse("{\"age\":1e300,\"traits\":{\"outgoing\":-1e300}}"));
+    p.Sanitize(600, 1200);
+    CHECK_EQ(p.age, 1000);
+    CHECK_EQ(p.outgoing, 0);
+    MemoryEntry m = *MemoryEntry::FromJson(*Json::Parse(
+        "{\"id\":1e30,\"kind\":\"fact\",\"source\":\"observed\",\"importance\":1e30,\"text\":\"Elara likes roses.\"}"));
+    CHECK_EQ(m.importance, 100);
+}
+
+TEST(Json, NumbersRoundTripWithoutLosingPrecision)
+{
+    for (double v : { 0.1, 1234567.5, 3.141592653589793, -0.000123456789, 1e-300, 1.7976931348623157e308, 9.5e15, 123456789012.25 })
+    {
+        Json j = Json::MakeArray();
+        j.Push(v);
+        auto back = Json::Parse(j.Dump());
+        CHECK(back.has_value());
+        CHECK(back->AsArray()[0].AsNumber() == v);
+    }
+    // short values stay short
+    Json k = Json::MakeArray();
+    k.Push(0.75);
+    k.Push(2.5);
+    CHECK_EQ(k.Dump(), std::string("[0.75,2.5]"));
+}
+
+TEST(Protocol, EmptyChunksAreTrackedCorrectly)
+{
+    // An empty chunk sent twice used to count twice, completing the message with a part missing.
+    AddonReassembler re;
+    CHECK(re.Feed("e:1/3:", 0).status == AddonReassembler::Status::Incomplete);
+    CHECK(re.Feed("e:1/3:", 0).status == AddonReassembler::Status::Incomplete);
+    CHECK(re.Feed("e:2/3:{\"op\":\"x\"", 0).status == AddonReassembler::Status::Incomplete);
+    auto r = re.Feed("e:3/3:}", 0);
+    CHECK(r.status == AddonReassembler::Status::Complete);
+    CHECK_EQ(r.message.GetString("op"), std::string("x"));
+    CHECK_EQ(re.PartialCount(), size_t(0));
+}
+
+TEST(Text, ProposalsNeedWholeWords)
+{
+    MessageClassifier c;
+    // "date me" inside "update me" / "candidate me..." is not a proposal
+    CHECK(c.Classify("Can you update me on the quest?", "Elara", true).proposal == ProposalIntent::None);
+    CHECK(c.Classify("Keep updating me about the camp, okay?", "Elara", true).proposal == ProposalIntent::None);
+    CHECK(c.Classify("Will you date me?", "Elara", true).proposal == ProposalIntent::Dating);
+    CHECK(c.Classify("I want us to be together forever.", "Elara", true).proposal == ProposalIntent::Dating);
+    CHECK(c.Classify("Möchtest du mich heiraten?", "Elara", true).proposal == ProposalIntent::Marry);
+}
+
+TEST(Text, RelationshipStemsMatchWordForms)
+{
+    // stems used to require an exact word ("propos" never matched "propose")
+    CHECK(MessageClassifier::MentionsRelationshipStatus("can i propose something?"));
+    CHECK(MessageClassifier::MentionsRelationshipStatus("you'd be the perfect fiancée"));
+    CHECK(MessageClassifier::MentionsRelationshipStatus("wollen wir uns verloben?"));
+    CHECK(MessageClassifier::MentionsRelationshipStatus("willst du mich heiraten?"));
+    CHECK(MessageClassifier::MentionsRelationshipStatus("are we girlfriends now?"));
+    CHECK(!MessageClassifier::MentionsRelationshipStatus("let's engage those murlocs"));
+    CHECK(!MessageClassifier::MentionsRelationshipStatus("let me update my gear"));
+}
+
+TEST(Text, EllipsisIsRoleplayNotACommand)
+{
+    MessageClassifier c;
+    CHECK(c.Classify("...I missed you.", "Elara", true).route == MessageRoute::Roleplay);
+    CHECK(c.Classify("..", "Elara", true).route == MessageRoute::Roleplay);
+    CHECK(c.Classify(".playerbots bot add Elara", "Elara", true).route == MessageRoute::PlayerbotCommand);
+}
+
+TEST(Text, TrailingPipeAndTinyChatLimit)
+{
+    std::string p = SanitizePlayerText("I love you|", 500);
+    CHECK_NOT_CONTAINS(p, "|");
+    CHECK_EQ(p, std::string("I love you"));
+    // a limit smaller than one UTF-8 character must not loop forever
+    auto parts = SplitForChat("\xc3\xa4\xc3\xb6", 1);
+    CHECK_EQ(parts.size(), size_t(2));
+    CHECK_EQ(parts[0], std::string("\xc3\xa4"));
+}
+
+TEST(Text, LimitByCharactersForSqlColumns)
+{
+    // VARCHAR(12) counts characters: a 12-letter name with umlauts is longer than 12 bytes
+    std::string name = "\xc3\x84\xc3\xb6\xc3\xbc\xc3\xa4\xc3\xb6\xc3\xbc\xc3\xa4\xc3\xb6\xc3\xbc\xc3\xa4\xc3\xb6\xc3\xbc";   // 12 chars
+    CHECK_EQ(LimitUtf8Chars(name, 12), name);
+    CHECK_EQ(LimitUtf8Chars(name + "x", 12), name);
+    CHECK_EQ(LimitUtf8Chars("Elara", 3), std::string("Ela"));
+    CHECK_EQ(LimitUtf8Chars("", 3), std::string(""));
+    CHECK(LimitUtf8(name, 12).size() < name.size());   // the byte limit would have cut it
+}
+
+TEST(Memory, PromiseIsNotSwallowedByOrdinaryMemory)
+{
+    TrueCompanionConfig cfg;
+    MemoryStore store(cfg);
+    auto fact = store.Add(MemoryKind::Fact, MemorySource::PlayerStated, 50, "Arthas will bring Elara roses from Stormwind.", kNow);
+    auto promise = store.Add(MemoryKind::Promise, MemorySource::PlayerStated, 60, "Arthas will bring Elara roses from Stormwind.", kNow);
+    CHECK(fact.stored && promise.stored);
+    CHECK(!promise.merged);
+    CHECK_EQ(store.Size(), size_t(2));
+    // two promises with the same meaning still merge
+    auto again = store.Add(MemoryKind::Promise, MemorySource::PlayerStated, 60, "Arthas will bring Elara roses from Stormwind!", kNow);
+    CHECK(again.merged);
+    CHECK_EQ(store.Size(), size_t(2));
+}
+
+TEST(Memory, PrunableCountIgnoresProtectedEntries)
+{
+    TrueCompanionConfig cfg;
+    MemoryStore store(cfg);
+    store.Add(MemoryKind::Fact, MemorySource::UserEdited, 50, "Elara grew up in Goldshire.", kNow);
+    store.Add(MemoryKind::Relationship, MemorySource::Observed, 90, "Elara and Arthas became a couple.", kNow);
+    auto pin = store.Add(MemoryKind::Episode, MemorySource::Interpretation, 40, "They watched the sunset at the lake.", kNow);
+    store.Add(MemoryKind::Preference, MemorySource::PlayerStated, 40, "Arthas likes strong coffee.", kNow);
+    CHECK_EQ(store.PrunableCount(), size_t(2));
+    store.SetPinned(pin.entry.id, true);
+    CHECK_EQ(store.PrunableCount(), size_t(1));
+}
+
+TEST(Prompt, ModelCannotMakeHerLeave)
+{
+    std::string content = "{\"reply\":\"Fine.\",\"emotion\":\"upset\",\"sentiment\":\"negative\",\"signals\":[],"
+                          "\"proposal\":{\"kind\":\"none\",\"response\":\"none\"},\"memories\":[],\"action\":\"leave\"}";
+    CompanionReply r = DialogueContextBuilder::ParseReply(content, "Elara", 450);
+    CHECK(r.valid);
+    CHECK(r.action == ActionType::None);
+    bool warned = false;
+    for (auto const& w : r.warnings)
+        warned = warned || w.find("leave") != std::string::npos;
+    CHECK(warned);
 }

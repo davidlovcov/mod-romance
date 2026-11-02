@@ -37,6 +37,7 @@ namespace truecompanion::test
         bool chunked = false;
         std::string chunkedHeader = "Transfer-Encoding: chunked";   // exact header line, to test odd spacing/case
         int delayMs = 0;
+        std::string raw;     // if set, sent verbatim instead of a generated response (malformed-HTTP tests)
     };
 
     class MockHttpServer
@@ -138,6 +139,11 @@ namespace truecompanion::test
             MockHttpResponse resp = _handler(req);
             for (int waited = 0; waited < resp.delayMs && !_stop; waited += 10)
                 std::this_thread::sleep_for(std::chrono::milliseconds(10));
+            if (!resp.raw.empty())
+            {
+                ::send(c, resp.raw.data(), resp.raw.size(), MSG_NOSIGNAL);
+                return;
+            }
             std::string out = "HTTP/1.1 " + std::to_string(resp.status) + " OK\r\nContent-Type: application/json\r\nConnection: close\r\n";
             if (resp.chunked)
             {

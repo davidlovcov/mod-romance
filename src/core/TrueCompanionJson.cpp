@@ -288,6 +288,18 @@ namespace truecompanion
         };
     }
 
+    int64_t Json::AsInt(int64_t def) const
+    {
+        if (_type != Type::Number || std::isnan(_num))
+            return def;
+        // 2^63 is exactly representable; every double below it fits into int64.
+        if (_num >= 9223372036854775808.0)
+            return INT64_MAX;
+        if (_num <= -9223372036854775808.0)
+            return INT64_MIN;
+        return int64_t(_num);
+    }
+
     std::string const& Json::AsString() const { return _type == Type::String ? _str : kEmptyString; }
     Json::Array const& Json::AsArray() const { return (_type == Type::Array && _arr) ? *_arr : kEmptyArray; }
     Json::Object const& Json::AsObject() const { return (_type == Type::Object && _obj) ? *_obj : kEmptyObject; }
@@ -420,8 +432,12 @@ namespace truecompanion
                 }
                 else
                 {
-                    char buf[32];
-                    std::snprintf(buf, sizeof(buf), "%.6g", _num);
+                    // Shortest form that reads back as the same double ("%.6g" lost precision,
+                    // e.g. 1234567.5 -> 1.23457e+06).
+                    char buf[40];
+                    std::snprintf(buf, sizeof(buf), "%.15g", _num);
+                    if (std::strtod(buf, nullptr) != _num)
+                        std::snprintf(buf, sizeof(buf), "%.17g", _num);
                     out += buf;
                 }
                 break;

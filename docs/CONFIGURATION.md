@@ -68,7 +68,7 @@ There are two layers:
 | `TrueCompanion.Proactive.EventReactionCooldownSec` / `EventReactionChance` | 90 / 0.5 | Ordinary events. Near-death, deaths, level-ups, summons and gifts always get a reaction. |
 | **Memory** | | |
 | `TrueCompanion.Memory.Enable` | 1 | Long-term memory |
-| `TrueCompanion.Memory.MaxPerCompanion` | 400 | Bound. Pinned, milestone and player-edited entries are never pruned |
+| `TrueCompanion.Memory.MaxPerCompanion` | 400 | Bound. Pinned, milestone and player-edited entries are never pruned; when only those are left, new player-written memories are refused |
 | `TrueCompanion.Memory.RetrievalCount` / `RetrievalChars` | 10 / 1400 | Prompt memory budget |
 | `TrueCompanion.Memory.SummarizeEveryTurns` | 24 | Conversation summary interval (0 = off) |
 | `TrueCompanion.Memory.RetentionDays` | 0 | Forget unimportant, unprotected memories after N days |

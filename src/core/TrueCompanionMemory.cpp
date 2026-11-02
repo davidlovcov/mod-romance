@@ -201,8 +201,8 @@ namespace truecompanion
         {
             if ((e.kind == MemoryKind::Summary) != (kind == MemoryKind::Summary))
                 continue;
-            if (e.kind == MemoryKind::Promise && kind != MemoryKind::Promise)
-                continue;   // a promise stays a promise
+            if ((e.kind == MemoryKind::Promise) != (kind == MemoryKind::Promise))
+                continue;   // a promise stays a promise, and is not swallowed by an ordinary memory either
             std::vector<std::string> other = Tokenize(e.text);
             bool same = TokenJaccard(tokens, other) >= _cfg.dedupeThreshold;
             bool contained = !same && TokenContainment(tokens, other) >= 0.8;
@@ -471,6 +471,11 @@ namespace truecompanion
         // Present oldest first so the model reads them as a timeline.
         std::sort(result.begin(), result.end(), [](MemoryEntry const& a, MemoryEntry const& b) { return a.createdAt < b.createdAt; });
         return result;
+    }
+
+    size_t MemoryStore::PrunableCount() const
+    {
+        return size_t(std::count_if(_entries.begin(), _entries.end(), [this](MemoryEntry const& m) { return !IsProtected(m); }));
     }
 
     bool MemoryStore::IsProtected(MemoryEntry const& m) const

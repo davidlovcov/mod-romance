@@ -64,6 +64,70 @@ TEST(Http, UrlParsing)
     CHECK(!HttpUrl::Parse("http://host:99999", u, &err));
 }
 
+TEST(Http, UrlParsingIpv6AndBadPorts)
+{
+    HttpUrl u;
+    std::string err;
+    // IPv6 literals: the brackets are not part of the host, the port after them is used
+    CHECK(HttpUrl::Parse("http://[::1]:11434/ollama/", u, &err));
+    CHECK_EQ(u.host, std::string("::1"));
+    CHECK_EQ(u.port, uint16_t(11434));
+    CHECK_EQ(u.basePath, std::string("/ollama"));
+    CHECK(HttpUrl::Parse("http://[fe80::1]", u, &err));
+    CHECK_EQ(u.host, std::string("fe80::1"));
+    CHECK_EQ(u.port, uint16_t(80));
+    CHECK(!HttpUrl::Parse("http://[::1", u, &err));
+    CHECK(!HttpUrl::Parse("http://[::1]x", u, &err));
+    CHECK(!HttpUrl::Parse("http://[::1]:", u, &err));
+    // trailing garbage, empty and signed ports are rejected instead of silently accepted
+    CHECK(!HttpUrl::Parse("http://localhost:11434x", u, &err));
+    CHECK_EQ(err, std::string("invalid port"));
+    CHECK(!HttpUrl::Parse("http://localhost:", u, &err));
+    CHECK(!HttpUrl::Parse("http://localhost:-1", u, &err));
+    CHECK(!HttpUrl::Parse("http://localhost:0", u, &err));
+    CHECK(!HttpUrl::Parse("http://localhost:4294967297", u, &err));
+    CHECK(!HttpUrl::Parse("http://:11434", u, &err));
+}
+
+TEST(Http, Ipv6LoopbackRequest)
+{
+    // Only runs where the machine has IPv6 loopback; the request must at least fail cleanly otherwise.
+    HttpOptions opt;
+    opt.connectTimeoutMs = 300;
+    opt.totalTimeoutMs = 600;
+    HttpResponse r = HttpRequest("GET", "http://[::1]:" + std::to_string(FreePort()), "/api/version", "", opt);
+    CHECK(r.error != HttpResponse::Error::BadUrl);
+    CHECK(r.error != HttpResponse::Error::Resolve);
+}
+
+TEST(Http, HostileChunkedBodiesAreRejected)
+{
+    // a chunk size near SIZE_MAX used to wrap the bounds check
+    MockHttpServer huge([](MockHttpRequest const&)
+    {
+        MockHttpResponse resp;
+        resp.raw = "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n"
+                   "ffffffffffffffff\r\n{\"x\":1}\r\n0\r\n\r\n";
+        return resp;
+    });
+    HttpOptions opt;
+    opt.totalTimeoutMs = 2000;
+    HttpResponse r = HttpRequest("GET", huge.Url(), "/api/version", "", opt);
+    CHECK(r.error == HttpResponse::Error::Protocol);
+
+    // "Transfer-Encoding:chunked" without a space is still chunked
+    MockHttpServer compact([](MockHttpRequest const&)
+    {
+        MockHttpResponse resp;
+        resp.raw = "HTTP/1.1 200 OK\r\nTransfer-Encoding:chunked\r\nConnection: close\r\n\r\n"
+                   "7\r\n{\"a\":1}\r\n0\r\n\r\n";
+        return resp;
+    });
+    HttpResponse c = HttpRequest("GET", compact.Url(), "/api/version", "", opt);
+    CHECK(c.Ok());
+    CHECK_EQ(c.body, std::string("{\"a\":1}"));
+}
+
 TEST(Http, OllamaChatSendsStructuredNonThinkingRequest)
 {
     MockHttpServer server([](MockHttpRequest const& r)

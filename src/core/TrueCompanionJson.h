@@ -61,7 +61,9 @@ namespace truecompanion
 
         bool AsBool(bool def = false) const { return _type == Type::Bool ? _bool : def; }
         double AsNumber(double def = 0.0) const { return _type == Type::Number ? _num : def; }
-        int64_t AsInt(int64_t def = 0) const { return _type == Type::Number ? int64_t(_num) : def; }
+        // Saturates at the int64 range (casting an out-of-range double is undefined behaviour);
+        // hostile input such as {"id":1e300} must not reach that cast.
+        int64_t AsInt(int64_t def = 0) const;
         std::string const& AsString() const;
         std::string AsString(std::string const& def) const { return _type == Type::String ? _str : def; }
 

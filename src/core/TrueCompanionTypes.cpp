@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <cctype>
 #include <cmath>
+#include <limits>
 
 namespace truecompanion
 {
@@ -44,6 +45,8 @@ namespace truecompanion
             "emote_dance", "emote_cheer", "emote_bow", "emote_cry", "leave" };
 
         int ClampInt(int64_t v, int lo, int hi) { return int(std::max<int64_t>(lo, std::min<int64_t>(hi, v))); }
+        // int64 -> int without wrapping (1e300 must stay "huge", not turn negative)
+        int Narrow(int64_t v) { return ClampInt(v, std::numeric_limits<int>::min(), std::numeric_limits<int>::max()); }
         double Clamp100(double v) { return std::isfinite(v) ? std::max(0.0, std::min(100.0, v)) : 0.0; }
     }
 
@@ -222,7 +225,7 @@ namespace truecompanion
         p.name = j.GetString("name");
         p.nickname = j.GetString("nickname");
         p.addressPlayerAs = j.GetString("addressPlayerAs");
-        p.age = int(j.GetInt("age", 21));
+        p.age = Narrow(j.GetInt("age", 21));
         p.gender = j.GetString("gender");
         p.pronouns = j.GetString("pronouns");
         p.relationshipPreferences = j.GetString("relationshipPreferences");
@@ -235,18 +238,18 @@ namespace truecompanion
         p.fears = j.GetString("fears");
         p.lore = j.GetString("lore");
         Json const& t = j["traits"];
-        p.outgoing = int(t.GetInt("outgoing", p.outgoing));
-        p.sarcasm = int(t.GetInt("sarcasm", p.sarcasm));
-        p.playfulness = int(t.GetInt("playfulness", p.playfulness));
-        p.energy = int(t.GetInt("energy", p.energy));
-        p.confidence = int(t.GetInt("confidence", p.confidence));
-        p.romanticism = int(t.GetInt("romanticism", p.romanticism));
-        p.jealousy = int(t.GetInt("jealousy", p.jealousy));
-        p.humor = int(t.GetInt("humor", p.humor));
-        p.expressiveness = int(t.GetInt("expressiveness", p.expressiveness));
-        p.affectionLevel = int(t.GetInt("affectionLevel", p.affectionLevel));
-        p.initiative = int(t.GetInt("initiative", p.initiative));
-        p.loyalty = int(t.GetInt("loyalty", p.loyalty));
+        p.outgoing = Narrow(t.GetInt("outgoing", p.outgoing));
+        p.sarcasm = Narrow(t.GetInt("sarcasm", p.sarcasm));
+        p.playfulness = Narrow(t.GetInt("playfulness", p.playfulness));
+        p.energy = Narrow(t.GetInt("energy", p.energy));
+        p.confidence = Narrow(t.GetInt("confidence", p.confidence));
+        p.romanticism = Narrow(t.GetInt("romanticism", p.romanticism));
+        p.jealousy = Narrow(t.GetInt("jealousy", p.jealousy));
+        p.humor = Narrow(t.GetInt("humor", p.humor));
+        p.expressiveness = Narrow(t.GetInt("expressiveness", p.expressiveness));
+        p.affectionLevel = Narrow(t.GetInt("affectionLevel", p.affectionLevel));
+        p.initiative = Narrow(t.GetInt("initiative", p.initiative));
+        p.loyalty = Narrow(t.GetInt("loyalty", p.loyalty));
         p.length = LengthFromId(j.GetString("length", "varied"));
         p.formal = j.GetBool("formal", false);
         for (Json const& s : j["styles"].AsArray())
@@ -338,7 +341,7 @@ namespace truecompanion
         PlayerProfile p;
         p.preferredName = j.GetString("preferredName");
         p.nickname = j.GetString("nickname");
-        p.age = int(j.GetInt("age", 0));
+        p.age = Narrow(j.GetInt("age", 0));
         p.pronouns = j.GetString("pronouns");
         p.rpIdentity = j.GetString("rpIdentity");
         p.background = j.GetString("background");
@@ -521,6 +524,20 @@ namespace truecompanion
         while (cut > 0 && (static_cast<unsigned char>(s[cut]) & 0xC0) == 0x80)
             --cut;
         return s.substr(0, cut);
+    }
+
+    std::string LimitUtf8Chars(std::string const& s, size_t maxChars)
+    {
+        size_t chars = 0;
+        for (size_t i = 0; i < s.size(); ++i)
+        {
+            if ((static_cast<unsigned char>(s[i]) & 0xC0) == 0x80)
+                continue;   // continuation byte
+            if (chars == maxChars)
+                return s.substr(0, i);
+            ++chars;
+        }
+        return s;
     }
 
     std::string CollapseWhitespace(std::string const& s)

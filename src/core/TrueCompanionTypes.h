@@ -386,6 +386,8 @@ namespace truecompanion
     std::string Trim(std::string const& s);
     std::string ToLower(std::string s);              // ASCII + common German umlauts in UTF-8
     std::string LimitUtf8(std::string const& s, size_t maxBytes);
+    // Limits by characters (code points), e.g. for MySQL VARCHAR(n) columns, which count characters.
+    std::string LimitUtf8Chars(std::string const& s, size_t maxChars);
     bool IsValidUtf8(std::string const& s);
     std::string CollapseWhitespace(std::string const& s);
 }

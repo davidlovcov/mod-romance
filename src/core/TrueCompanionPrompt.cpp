@@ -592,7 +592,8 @@ namespace truecompanion
             r.proposalResponse = ProposalOutcomeFromId(prop.GetString("response", "none")).value_or(ProposalOutcome::None);
             r.memories = ParseMemoryCandidates((*j)["memories"], r.warnings, 2);
             std::string act = j->GetString("action", "none");
-            if (auto a = ActionFromId(act))
+            auto a = ActionFromId(act);
+            if (a && *a != ActionType::Leave)   // leaving is decided by the relationship engine only
                 r.action = *a;
             else
             {

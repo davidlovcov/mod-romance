@@ -123,6 +123,7 @@ namespace truecompanion::ac
             uint32 nextMessageId = 1;
             uint32 rejected = 0;
             std::map<uint32, ImportAssembler> imports;   // multi-part imports in progress, by companion guid
+            ExportSnapshots exports;                     // frozen exports while their pages are fetched
         };
 
         struct PendingSummon

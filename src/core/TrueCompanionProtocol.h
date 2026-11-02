@@ -61,6 +61,7 @@ namespace truecompanion
         {
             uint32_t total = 0;
             std::vector<std::string> parts;
+            std::vector<bool> have;      // received slots (a chunk may be empty, so `parts` can't tell)
             uint32_t received = 0;
             size_t bytes = 0;
             int64_t firstMs = 0;

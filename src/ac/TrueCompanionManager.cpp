@@ -122,6 +122,10 @@ namespace truecompanion::ac
             if (code == "preset_label_required") return "Give the preset a name first.";
             if (code == "preset_limit_reached") return "You have reached the maximum number of custom presets. Delete one first.";
             if (code == "activation_failed") return "The companion joined, but the AI could not be activated.";
+            if (code == "invalid_text") return "That text is too short or not valid.";
+            if (code == "memory_limit_reached")
+                return "This companion cannot hold more of your own memories. Delete or edit some first.";
+            if (code == "not_found") return "That entry does not exist (anymore).";
             return code;
         }
 
@@ -1675,17 +1679,21 @@ namespace truecompanion::ac
         {
             std::optional<int> importance;
             if (msg.Has("importance"))
-                importance = int(msg.GetInt("importance", 50));
+                importance = int(std::clamp<int64_t>(msg.GetInt("importance", 50), 0, 100));
             auto m = _service->EditMemory(key, uint32(msg.GetInt("id", 0)), msg.GetString("text"), importance, now);
             ack(m.has_value(), m ? "" : "not_found");
         }
         else if (op == "delete_memory")
-            ack(_service->DeleteMemory(key, uint32(msg.GetInt("id", 0))), "");
+        {
+            bool deleted = _service->DeleteMemory(key, uint32(msg.GetInt("id", 0)));
+            ack(deleted, deleted ? "" : "not_found");
+        }
         else if (op == "add_memory")
         {
             MemoryKind kind = MemoryKindFromId(msg.GetString("kind", "fact")).value_or(MemoryKind::Fact);
-            auto m = _service->AddUserMemory(key, kind, msg.GetString("text"), int(msg.GetInt("importance", 60)), now);
-            ack(m.has_value(), m ? "" : "invalid_text");
+            std::string error;
+            auto m = _service->AddUserMemory(key, kind, msg.GetString("text"), int(std::clamp<int64_t>(msg.GetInt("importance", 60), 0, 100)), now, true, &error);
+            ack(m.has_value(), m ? "" : error);
         }
         else if (op == "pin_memory")
         {
@@ -1717,24 +1725,30 @@ namespace truecompanion::ac
         else if (op == "export")
         {
             // Paged: the addon asks for part 0, 1, ... until `parts`; each page stays far below its receive limit.
-            std::vector<std::string> pages = _service->ExportPages(key, account);
-            if (pages.empty())
-            {
-                ReplyError(player, msg, "export_disabled", "Exporting memories is disabled on this server.");
-                return;
-            }
+            // Part 0 freezes the export; later parts come from that snapshot (its id travels with every page).
             int64_t part = msg.GetInt("part", 0);
-            if (part < 0 || part >= int64_t(pages.size()))
+            if (part < 0)
             {
                 ReplyError(player, msg, "bad_part");
+                return;
+            }
+            auto page = _peers[player->GetGUID().GetCounter()].exports.Get(guid, size_t(part), msg.GetString("snapshot"),
+                [&] { return _service->ExportPages(key, account); }, now);
+            if (!page.error.empty())
+            {
+                ReplyError(player, msg, page.error,
+                           page.error == "export_disabled" ? "Exporting memories is disabled on this server."
+                           : page.error == "snapshot_expired" ? "The export took too long or was restarted; please export again."
+                                                              : "");
                 return;
             }
             Json p = Json::MakeObject();
             p.Set("op", "export_data");
             p.Set("guid", int64_t(guid));
             p.Set("part", part);
-            p.Set("parts", int64_t(pages.size()));
-            p.Set("data", pages[size_t(part)]);
+            p.Set("parts", int64_t(page.parts));
+            p.Set("snapshot", page.snapshot);
+            p.Set("data", page.data);
             Reply(player, msg, p);
         }
         else if (op == "import_begin" || op == "import_part" || op == "import_end")

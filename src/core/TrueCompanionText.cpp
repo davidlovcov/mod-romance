@@ -52,6 +52,19 @@ namespace truecompanion
             return false;
         }
 
+        // Word stem at a word start: "propos" matches "propose" and "proposal", but not "unproposed".
+        bool ContainsStem(std::string const& hay, std::string const& stem)
+        {
+            size_t pos = 0;
+            while ((pos = hay.find(stem, pos)) != std::string::npos)
+            {
+                if (pos == 0 || !std::isalnum(static_cast<unsigned char>(hay[pos - 1])))
+                    return true;
+                ++pos;
+            }
+            return false;
+        }
+
         bool NegatedBefore(std::string const& hay, std::string const& phrase)
         {
             size_t pos = hay.find(phrase);
@@ -117,7 +130,10 @@ namespace truecompanion
     {
         if (lower.empty())
             return false;
-        if (lower[0] == '#' || lower[0] == '.' )
+        if (lower[0] == '#')
+            return true;
+        // ".command" goes to Playerbots; "...I missed you" is roleplay.
+        if (lower[0] == '.' && lower.size() > 1 && std::isalpha(static_cast<unsigned char>(lower[1])))
             return true;
         size_t words = WordCount(lower);
         // Longer sentences and questions are conversation, even if they start with a command word
@@ -173,17 +189,18 @@ namespace truecompanion
                                               "be my lover", "be together", "be a couple", "date me", "dating me",
                                               "meine freundin sein", "mein freund sein", "meine partnerin", "zusammen sein",
                                               "mit mir gehen", "ein paar sein" };
+        // Whole words only: "update me" is not "date me", "be together forever" still is "be together".
         for (char const* p : breakup)
-            if (l.find(p) != std::string::npos && !NegatedBefore(l, p))
+            if (ContainsPhrase(l, p) && !NegatedBefore(l, p))
                 return ProposalIntent::Breakup;
         for (char const* p : engage)
-            if (l.find(p) != std::string::npos && !NegatedBefore(l, p))
+            if (ContainsPhrase(l, p) && !NegatedBefore(l, p))
                 return ProposalIntent::Engage;
         for (char const* p : marry)
-            if (l.find(p) != std::string::npos && !NegatedBefore(l, p))
+            if (ContainsPhrase(l, p) && !NegatedBefore(l, p))
                 return ProposalIntent::Marry;
         for (char const* p : dating)
-            if (l.find(p) != std::string::npos && !NegatedBefore(l, p))
+            if (ContainsPhrase(l, p) && !NegatedBefore(l, p))
                 return ProposalIntent::Dating;
         return ProposalIntent::None;
     }
@@ -192,12 +209,18 @@ namespace truecompanion
     {
         static char const* const words[] = {
             "girlfriend", "boyfriend", "partner", "couple", "together", "date", "dating", "go out", "lover", "relationship",
-            "marry", "married", "marriage", "wedding", "engaged", "engagement", "fiance", "wife", "husband", "propos",
+            "marry", "married", "marriage", "wedding", "engaged", "engagement", "wife", "husband",
             "break up", "breaking up", "it's over", "we're over", "we are over",
-            "freundin", "freund sein", "zusammen", "paar", "beziehung", "heirat", "hochzeit", "verlob", "ehe",
+            "freundin", "freund sein", "zusammen", "paar", "beziehung", "hochzeit", "ehe",
             "frau werden", "mann werden", "schluss", "trennen", "es ist aus" };
+        // Stems: any word starting with them (propose/proposal, fiance/fiancée, girlfriends, heiraten, verloben/verlobt).
+        static char const* const stems[] = { "propos", "fianc", "girlfriend", "boyfriend", "partner", "marri", "marry",
+                                             "heirat", "verlob" };
         for (char const* w : words)
             if (ContainsPhrase(l, w))
+                return true;
+        for (char const* w : stems)
+            if (ContainsStem(l, w))
                 return true;
         return false;
     }
@@ -352,7 +375,9 @@ namespace truecompanion
                 continue;
             }
             // Item links arrive as |cff...|Hitem:...|h[Name]|h|r; keep only the visible name.
-            if (c == '|' && i + 1 < text.size())
+            if (c == '|' && i + 1 == text.size())
+                break;   // a lone trailing '|' would start a UI escape sequence
+            if (c == '|')
             {
                 char n = text[i + 1];
                 if (n == 'c') { i += std::min<size_t>(9, text.size() - i - 1); continue; }   // |cAARRGGBB
@@ -402,6 +427,13 @@ namespace truecompanion
                 cut = sentence + 1;
             else if (space != std::string::npos && space > maxBytes / 3)
                 cut = space;
+            if (cut == 0)
+            {
+                // maxBytes smaller than one character: emit that character instead of looping forever
+                cut = 1;
+                while (cut < rest.size() && (static_cast<unsigned char>(rest[cut]) & 0xC0) == 0x80)
+                    ++cut;
+            }
             parts.push_back(Trim(rest.substr(0, cut)));
             rest = Trim(rest.substr(cut));
         }

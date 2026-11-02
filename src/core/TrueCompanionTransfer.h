@@ -19,6 +19,8 @@
 #include "TrueCompanionJson.h"
 #include "TrueCompanionTypes.h"
 
+#include <functional>
+#include <map>
 #include <optional>
 #include <string>
 #include <vector>
@@ -44,6 +46,37 @@ namespace truecompanion
 
     // Joins pages (in order) back into one export; nullopt if a page is missing, malformed or out of order.
     std::optional<Json> JoinExportPages(std::vector<std::string> const& pages);
+
+    // An unfinished export snapshot is dropped this long after its last page request.
+    constexpr int64_t kExportSnapshotTtlSec = 60;
+
+    // One frozen export per companion while the addon fetches its pages: page 0 builds and freezes it, later pages
+    // come from that snapshot, so memories that change in between (conversation, gifts, cleanup) can't mix two
+    // states. The addon sends the snapshot id with every later page; a different or expired id is refused.
+    class ExportSnapshots
+    {
+    public:
+        struct Page
+        {
+            std::string error;      // export_disabled | snapshot_expired | bad_part
+            std::string data;
+            size_t parts = 0;
+            std::string snapshot;
+        };
+        Page Get(uint64_t companion, size_t part, std::string const& snapshotId,
+                 std::function<std::vector<std::string>()> const& build, TimePoint now);
+        size_t Count() const { return _byCompanion.size(); }
+
+    private:
+        struct Snap
+        {
+            std::string id;
+            std::vector<std::string> pages;
+            TimePoint lastUse = 0;
+        };
+        std::map<uint64_t, Snap> _byCompanion;
+        uint64_t _next = 0;
+    };
 
     // Collects the parts of one import on the server.
     class ImportAssembler

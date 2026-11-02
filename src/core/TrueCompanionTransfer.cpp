@@ -143,4 +143,45 @@ namespace truecompanion
         _bytes = 0;
         _data.clear();
     }
+
+    ExportSnapshots::Page ExportSnapshots::Get(uint64_t companion, size_t part, std::string const& snapshotId,
+                                               std::function<std::vector<std::string>()> const& build, TimePoint now)
+    {
+        for (auto it = _byCompanion.begin(); it != _byCompanion.end();)
+            it = now - it->second.lastUse > kExportSnapshotTtlSec ? _byCompanion.erase(it) : std::next(it);
+        Page r;
+        if (part == 0)
+        {
+            Snap s;
+            s.pages = build();
+            if (s.pages.empty())
+            {
+                _byCompanion.erase(companion);
+                r.error = "export_disabled";
+                return r;
+            }
+            s.id = std::to_string(++_next);
+            s.lastUse = now;
+            _byCompanion[companion] = std::move(s);
+        }
+        auto it = _byCompanion.find(companion);
+        if (it == _byCompanion.end() || (part > 0 && it->second.id != snapshotId))
+        {
+            r.error = "snapshot_expired";
+            return r;
+        }
+        Snap& s = it->second;
+        if (part >= s.pages.size())
+        {
+            r.error = "bad_part";
+            return r;
+        }
+        s.lastUse = now;
+        r.data = s.pages[part];
+        r.parts = s.pages.size();
+        r.snapshot = s.id;
+        if (part + 1 == s.pages.size())
+            _byCompanion.erase(it);   // the last page: done
+        return r;
+    }
 }

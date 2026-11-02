@@ -139,6 +139,7 @@ namespace truecompanion
             Partial p;
             p.total = total;
             p.parts.resize(total);
+            p.have.assign(total, false);
             p.firstMs = nowMs;
             it = _partials.emplace(id, std::move(p)).first;
         }
@@ -151,13 +152,14 @@ namespace truecompanion
             return r;
         }
         std::string& slot = p.parts[seq - 1];
-        if (slot.empty())
+        if (!p.have[seq - 1])
         {
+            p.have[seq - 1] = true;
             p.bytes += data.size();
             ++p.received;
         }
         else
-            p.bytes = p.bytes - slot.size() + data.size(); // duplicate chunk: last one wins
+            p.bytes = p.bytes - slot.size() + data.size(); // duplicate chunk (also an empty one): last one wins
         slot = data;
         if (p.bytes > kMaxInboundMessageBytes)
         {

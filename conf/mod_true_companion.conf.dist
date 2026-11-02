@@ -316,7 +316,8 @@ TrueCompanion.Memory.Enable = 1
 
 #    TrueCompanion.Memory.MaxPerCompanion
 #        Description: Upper bound; least important, old, unpinned entries are pruned first.
-#                     Milestones, pinned and player-edited memories are never pruned.
+#                     Milestones, pinned and player-edited memories are never pruned; when
+#                     only those are left, new player-written memories are refused.
 #        Default:     400
 TrueCompanion.Memory.MaxPerCompanion = 400
 

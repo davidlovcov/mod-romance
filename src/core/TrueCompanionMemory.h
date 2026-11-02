@@ -72,6 +72,8 @@ namespace truecompanion
         MemoryEntry const* Find(uint32_t id) const;
         uint32_t NextId() const { return _nextId; }
         size_t Size() const { return _entries.size(); }
+        // Entries Prune() may remove (not pinned, not player-written, not an observed milestone).
+        size_t PrunableCount() const;
 
         static int SourceCertainty(MemorySource s); // 0..100, how much the companion can rely on it
         static std::string PromptTag(MemorySource s);

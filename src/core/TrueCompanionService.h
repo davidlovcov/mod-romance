@@ -212,9 +212,10 @@ namespace truecompanion
                                               size_t offset, size_t limit, size_t* total);
         bool DeleteMemory(CompanionKey const& key, uint32_t id);
         std::optional<MemoryEntry> EditMemory(CompanionKey const& key, uint32_t id, std::string const& text, std::optional<int> importance, TimePoint now);
-        // notify = false: no memory_changed push (an import sends one at the end instead of one per memory)
+        // notify = false: no memory_changed push (an import sends one at the end instead of one per memory).
+        // `error` (optional) receives "invalid_text" or "memory_limit_reached" when nothing was stored.
         std::optional<MemoryEntry> AddUserMemory(CompanionKey const& key, MemoryKind kind, std::string const& text, int importance, TimePoint now,
-                                                 bool notify = true);
+                                                 bool notify = true, std::string* error = nullptr);
         std::optional<MemoryEntry> PinMemory(CompanionKey const& key, uint32_t id, bool pinned);
         size_t ClearMemories(CompanionKey const& key, std::optional<MemoryKind> kind);
         void ClearChatHistory(CompanionKey const& key);
@@ -335,6 +336,9 @@ namespace truecompanion
         void HandleReply(Session& s, JobResult& r, TimePoint now);
         void HandleSummary(Session& s, JobResult& r, TimePoint now);
         void HandleFailure(Session& s, JobResult& r, TimePoint now);
+        // Cancels everything in flight for the session and forgets it: answers of the old generation are ignored,
+        // so every flag they would have cleared (pending, summarizing, typing) is cleared here.
+        void InvalidateRequests(Session& s);
         // The AI can answer now: Ollama is on and not known to be offline. Without it, commands still work and
         // she says what she did in plain words (PlainCompanionLine).
         bool AiAvailable() const { return _cfg.ollamaEnabled && !(_status.checked && !_status.online); }

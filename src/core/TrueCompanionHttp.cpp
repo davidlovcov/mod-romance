@@ -148,7 +148,7 @@ namespace truecompanion
                 p = eol + 2;
                 if (n == 0)
                     return true;
-                if (p + n > in.size())
+                if (n > in.size() - p)   // also rejects absurd sizes that would overflow p + n
                     return false;
                 out.append(in, p, n);
                 p += n + 2; // skip CRLF
@@ -173,11 +173,65 @@ namespace truecompanion
         out.basePath = slash == std::string::npos ? "" : rest.substr(slash);
         while (!out.basePath.empty() && out.basePath.back() == '/')
             out.basePath.pop_back();
-        size_t colon = hostPort.rfind(':');
-        if (colon != std::string::npos && hostPort.find(']') == std::string::npos)
+        std::string portText;
+        if (!hostPort.empty() && hostPort[0] == '[')
         {
-            out.host = hostPort.substr(0, colon);
-            int port = std::atoi(hostPort.c_str() + colon + 1);
+            // IPv6 literal: http://[::1]:11434
+            size_t close = hostPort.find(']');
+            if (close == std::string::npos)
+            {
+                if (error)
+                    *error = "invalid IPv6 address";
+                return false;
+            }
+            out.host = hostPort.substr(1, close - 1);
+            std::string rest2 = hostPort.substr(close + 1);
+            if (!rest2.empty())
+            {
+                if (rest2[0] != ':')
+                {
+                    if (error)
+                        *error = "invalid host";
+                    return false;
+                }
+                portText = rest2.substr(1);
+                if (portText.empty())
+                {
+                    if (error)
+                        *error = "invalid port";
+                    return false;
+                }
+            }
+        }
+        else
+        {
+            size_t colon = hostPort.rfind(':');
+            if (colon != std::string::npos)
+            {
+                portText = hostPort.substr(colon + 1);
+                out.host = hostPort.substr(0, colon);
+                if (portText.empty())
+                {
+                    if (error)
+                        *error = "invalid port";
+                    return false;
+                }
+            }
+            else
+                out.host = hostPort;
+        }
+        if (!portText.empty())
+        {
+            int port = 0;
+            for (char c : portText)
+            {
+                if (c < '0' || c > '9' || port > 65535)
+                {
+                    port = -1;
+                    break;
+                }
+                port = port * 10 + (c - '0');
+            }
             if (port <= 0 || port > 65535)
             {
                 if (error)
@@ -186,8 +240,6 @@ namespace truecompanion
             }
             out.port = uint16_t(port);
         }
-        else
-            out.host = hostPort;
         if (out.host.empty() || out.host.find_first_of(" \r\n\t") != std::string::npos)
         {
             if (error)
@@ -269,7 +321,8 @@ namespace truecompanion
         }
 
         std::string req = method + " " + url.basePath + path + " HTTP/1.1\r\n";
-        req += "Host: " + url.host + ":" + portStr + "\r\n";
+        bool ipv6 = url.host.find(':') != std::string::npos;
+        req += "Host: " + (ipv6 ? "[" + url.host + "]" : url.host) + ":" + portStr + "\r\n";
         req += "User-Agent: mod-true-companion/1.0\r\n";
         req += "Accept: application/json\r\n";
         req += "Connection: close\r\n";

@@ -112,7 +112,7 @@ namespace truecompanion::ac
             "configured = VALUES(configured), personality = VALUES(personality), relationship = VALUES(relationship), "
             "settings = VALUES(settings), turns_since_summary = VALUES(turns_since_summary), updated_at = VALUES(updated_at), "
             "stage = VALUES(stage)",
-            kCompanionColumns, uint32(rec.key.owner), uint32(rec.key.companion), rec.ownerAccount, Esc(LimitUtf8(rec.companionName, 12)),
+            kCompanionColumns, uint32(rec.key.owner), uint32(rec.key.companion), rec.ownerAccount, Esc(LimitUtf8Chars(rec.companionName, 12)),
             rec.configured ? 1 : 0, Esc(rec.personality.ToJson().Dump()), Esc(rec.relationship.ToJson().Dump()),
             Esc(rec.settings.ToJson().Dump()), rec.turnsSinceSummary, int64(rec.createdAt), int64(rec.updatedAt),
             uint32(rec.relationship.stage));

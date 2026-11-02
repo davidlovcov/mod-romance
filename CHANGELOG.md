@@ -30,6 +30,12 @@
 - "Pick up your quests" / "go get your class quest": the companion walks to the nearest quest giver with something for them (e.g. their class trainer), picks the quests up and comes back.
 
 ### Fixed
+- Quests are picked up and turned in the way the core's quest handler does it: from the real quest giver she stands at (its accept scripts run: escort starts, events), with the chosen reward validated (it must fit in her bags, like for a player) and the quest ender's reward scripts afterwards. Quests shared within the group (quest sync, Share) stay shares without a quest giver.
+- Dismissing a companion without logging her out left her lead, her place behind another leader or in an area clearing half set up (Playerbots' follow could stay off). Dismiss now ends all of it like a finished lead: followers and chasers get their follow back, her movement stops, she follows you as a plain Playerbot. Switching the AI conversation off does not end commands, leads or errands.
+- "Near" checks (gold handover, quest sync, followers, turn-ins together, the lead's separation check) now require the same instance and phase and no teleport in progress; coordinates in another copy of a dungeon no longer count as near. A lead ends when she ends up in another instance of the same map.
+- Export: page 0 freezes the export; later pages come from that snapshot (id sent with every page, 60 s lifetime, released after the last page), so memories that change in between can no longer produce a mixed export with duplicated or missing memories.
+- A full reset during a memory summary stopped all later summaries for that session (the "summarizing" flag stayed set). Reset and reconfigure now share one cancellation that clears every in-flight flag.
+- Protocol: an empty chunk sent twice was counted twice, so a message could be dispatched before its last part arrived.
 - Chat without the AI (Ollama off, or her AI conversation off) answered with a bare "ai_disabled"; it now says why and that commands still work.
 - Spells "soon": spells that need a talent she doesn't have (or a rank she can't learn yet) are left out.
 - Companion commands that start with a Playerbots command word ("sell your junk", "Vendor, sell trash", "attack", "accept the quest", "go on") went to Playerbots instead: nothing was sold or accepted and the companion didn't answer. mod-true-companion now handles them; `!` still sends a line to Playerbots unchanged.
@@ -86,6 +92,19 @@
 - Opening the Character tab for the first time still lagged: the quest-giver index is now built at server start.
 - Quests with a choice of rewards always gave the companion the first item. She now picks for herself: gear she can use that upgrades what she wears comes first (in her best armor type: cloth, leather, mail or plate), then other usable gear, then potions and bags, and last things she cannot use. Applies to turn-ins by command, quest sync and fetch errands.
 - Selling an item by name reported the whole stack even if part of it was skipped (e.g. in a trade window); it now reports what was actually sold.
+
+- An error thrown inside a model request left the companion "still answering" forever, and a failing health check stopped all further checks.
+- Your own memories (memory viewer, import) are never pruned, so they could grow without limit. They now count towards `TrueCompanion.Memory.MaxPerCompanion`; a full store refuses new ones with a clear message (`memory_limit_reached`).
+- "Can you update me on the quest?" was taken as a dating proposal ("date me"); proposals now need whole words. Word forms such as "propose", "fiancée", "girlfriends", "heiraten" or "verloben" now count as talking about the relationship.
+- Messages starting with "..." ("...I missed you") were passed to Playerbots as a dot command instead of reaching her.
+- The chat tab kept showing "is thinking..." after a line that went to Playerbots (e.g. `follow`); the indicator also went off after the first answer although a second message was still being answered.
+- Character names with umlauts or other non-ASCII letters were cut off when saved (the 12-letter limit was applied to bytes).
+- Huge numbers in addon messages (e.g. `"age": 1e300`) caused undefined behaviour when converted; they are now clamped. Non-integer numbers are no longer rounded to 6 digits in JSON.
+- Ollama URLs with an IPv6 address (`http://[::1]:11434`) did not work; ports with trailing characters (`11434x`) were accepted; absurd chunk sizes in HTTP answers are rejected.
+- A trailing `|` in a player's message was passed on; a model answering with `"action": "leave"` is now flagged (leaving is only decided by the relationship engine).
+- A completed quest without a title was remembered as `completed the quest ""`.
+- A promise and an ordinary memory with the same words were merged into one, losing the promise.
+- `delete_memory` for an unknown id answered without an error code.
 
 ### Changed
 - Documentation and config descriptions use neutral wording, since companions can be male or female.
