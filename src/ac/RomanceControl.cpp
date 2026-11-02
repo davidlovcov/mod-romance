@@ -892,8 +892,14 @@ namespace romance::ac
             case CompanionCommandKind::AttackTarget: return Attack(owner, bot, cmd, now);
             case CompanionCommandKind::AttackAll: return AttackAll(owner, bot, cmd, now);
             case CompanionCommandKind::StopAttack: return StopAttack(owner, bot);
-            case CompanionCommandKind::AcceptQuests: return AcceptQuests(owner, bot, cmd, now);
-            case CompanionCommandKind::TurnInQuests: return TurnInQuests(owner, bot, cmd, now);
+            case CompanionCommandKind::AcceptQuests:
+            case CompanionCommandKind::TurnInQuests:
+            {
+                auto l = _leads.find(bot->GetGUID());
+                if (l != _leads.end() && (!l->second.fetch || l->second.group))
+                    return "Nothing yet. You are leading them to " + l->second.title + " right now; that comes afterwards. Say so briefly.";
+                return cmd.kind == CompanionCommandKind::AcceptQuests ? AcceptQuests(owner, bot, cmd, now) : TurnInQuests(owner, bot, cmd, now);
+            }
             case CompanionCommandKind::SellJunk:
             case CompanionCommandKind::SellItem: return Sell(owner, bot, cmd);
             case CompanionCommandKind::ShareQuests:
@@ -1390,11 +1396,8 @@ namespace romance::ac
             Creature* c = u->ToCreature();
             if (!c || !c->IsAlive() || !anchor->IsValidAttackTarget(c))
                 continue;
-            // "Civilian" creatures (e.g. Springpaw Cubs, which drop the Lynx Collars) are left alone when clearing an
-            // area, but not when they are what the quest needs or the one enemy that was named.
-            bool wanted = (!h.only.IsEmpty() && c->GetGUID() == h.only) || h.entries.count(c->GetEntry());
-            if (c->IsCivilian() && !wanted)
-                continue;
+            // "Civilian" wildlife (e.g. Springpaw Cubs, which drop the Lynx Collars) counts as an enemy like with
+            // Playerbots' grind; friendly townsfolk never pass IsValidAttackTarget anyway.
             ++h.seen;
             if (c->hasLootRecipient() && !c->isTappedBy(owner))
             {
@@ -1717,6 +1720,8 @@ namespace romance::ac
         lead.lastX = bot->GetPositionX();
         lead.lastY = bot->GetPositionY();
         float dist = bot->GetDistance2d(lead.x, lead.y);
+        if (auto prev = _leads.find(bot->GetGUID()); prev != _leads.end())
+            lead.escort = prev->second.escort;
         _leads[bot->GetGUID()] = lead;
         LOG_INFO("module", "[mod-romance] {} leads to \"{}\": {} yards, {} target kinds, {}", bot->GetName(), pick->GetTitle(), int(dist),
                  TargetEntries(bot, pick).size(), lead.haveZ ? "nearest spawn" : "quest map marker");
@@ -1772,14 +1777,85 @@ namespace romance::ac
                        "), then to the other quest givers around, and then you lead them to the quests. They follow you. Tell them.";
             }
         }
+        std::vector<Quest const*> ready;
         for (auto const& [q, slot] : QuestLog(bot))
-            if (bot->GetQuestStatus(q->GetQuestId()) == QUEST_STATUS_COMPLETE)
+            if (bot->GetQuestStatus(q->GetQuestId()) == QUEST_STATUS_COMPLETE && bot->CanRewardQuest(q, false))
+                ready.push_back(q);
+        if (!ready.empty())
+        {
+            auto enders = QuestEnders(bot, kAreaRadius, ready);
+            if (!enders.empty())
             {
-                CompanionCommand turnIn;
-                turnIn.kind = CompanionCommandKind::TurnInQuests;
-                return TurnInQuests(owner, bot, turnIn, now);
+                GiverInfo const& g = enders.front();
+                if (BeginErrand(owner, bot, g.entry, g.name, g.x, g.y, g.z, true, "", false, now))
+                {
+                    _leads[bot->GetGUID()].group = true;
+                    return "You lead them to " + g.name + " (about " + std::to_string(int(g.dist)) + " yards " + Direction(bot, g.x, g.y) +
+                           ") to turn in " + QuestList(g.quests) + "; they follow you. Tell them.";
+                }
             }
+        }
         return Grind(owner, bot, now);
+    }
+
+    // After a turn-in during a round: more quest givers, else a quest to lead to, else grind.
+    std::string CompanionControl::RoundNext(Player* owner, Player* bot, time_t now)
+    {
+        auto givers = AvailableGivers(bot, kAreaRadius, "");
+        if (!givers.empty())
+        {
+            GiverInfo const& g = givers.front();
+            if (BeginErrand(owner, bot, g.entry, g.name, g.x, g.y, g.z, false, "", true, now))
+            {
+                _leads[bot->GetGUID()].group = true;
+                return "Next you lead them to " + g.name + " (about " + std::to_string(int(g.dist)) + " yards " + Direction(bot, g.x, g.y) +
+                       ") to pick up " + QuestList(g.quests) + ". Say it in a few words.";
+            }
+        }
+        if (Quest const* nq = NextQuest(owner, bot))
+        {
+            std::string said = BeginQuestLead(owner, bot, nq, now);
+            if (said.compare(0, 7, "Nothing") != 0)
+                return said;
+        }
+        FinishLead(owner, bot, "");
+        return Grind(owner, bot, now);
+    }
+
+    // While she leads, the other companions walk a few yards behind her (Playerbots can only follow the player).
+    void CompanionControl::Escort(Player* owner, Player* bot, Lead& lead, time_t now)
+    {
+        if (lead.fetch && !lead.group)
+        {
+            ReleaseEscort(lead, owner);   // an errand she runs alone
+            return;
+        }
+        if (now - lead.lastEscort < 3)
+            return;
+        lead.lastEscort = now;
+        for (Player* m : OtherCompanions(owner, bot))
+        {
+            if (_leads.count(m->GetGUID()) || !m->IsAlive() || m->IsInCombat() || m->GetMapId() != bot->GetMapId() ||
+                PlayerbotsBridge::FollowState(m) == "stay")
+                continue;
+            if (!lead.escort.count(m->GetGUID()) && PlayerbotsBridge::SetFollow(m, owner, false))
+                lead.escort.insert(m->GetGUID());
+            if (lead.escort.count(m->GetGUID()) && m->GetDistance(bot) > 8.0f)
+            {
+                float behind = bot->GetOrientation() + 3.14159265f;
+                PlayerbotsBridge::MoveTo(m, owner, bot->GetPositionX() + 3.0f * std::cos(behind),
+                                         bot->GetPositionY() + 3.0f * std::sin(behind), bot->GetPositionZ());
+            }
+        }
+    }
+
+    void CompanionControl::ReleaseEscort(Lead& lead, Player* owner)
+    {
+        for (ObjectGuid g : lead.escort)
+            if (Player* m = ObjectAccessor::FindConnectedPlayer(g))
+                if (!_leads.count(g))
+                    PlayerbotsBridge::SetFollow(m, owner, true);
+        lead.escort.clear();
     }
 
     std::string CompanionControl::Grind(Player* owner, Player* bot, time_t now)
@@ -1827,6 +1903,8 @@ namespace romance::ac
 
     std::string CompanionControl::StopLead(Player* owner, Player* bot)
     {
+        if (auto cur = _leads.find(bot->GetGUID()); cur != _leads.end())
+            ReleaseEscort(cur->second, owner);
         bool was = _leads.erase(bot->GetGUID()) > 0;
         if (was)
             LOG_INFO("module", "[mod-romance] {} stops leading: told to (stop leading / follow me)", bot->GetName());
@@ -1862,6 +1940,11 @@ namespace romance::ac
         lead.haveZ = true;
         lead.lastX = bot->GetPositionX();
         lead.lastY = bot->GetPositionY();
+        if (auto prev = _leads.find(bot->GetGUID()); prev != _leads.end())
+            lead.escort = prev->second.escort;
+        // she goes on her own errand: no longer part of an area clearing (it would keep ordering her to attack)
+        for (auto& [o, h] : _hunts)
+            h.bots.erase(std::remove(h.bots.begin(), h.bots.end(), bot->GetGUID()), h.bots.end());
         _leads[bot->GetGUID()] = lead;
         return true;
     }
@@ -1869,6 +1952,8 @@ namespace romance::ac
     void CompanionControl::FinishLead(Player* owner, Player* bot, std::string const& notice)
     {
         LOG_INFO("module", "[mod-romance] {} stops leading: {}", bot->GetName(), notice.empty() ? "(quest gone from her log)" : notice);
+        if (auto cur = _leads.find(bot->GetGUID()); cur != _leads.end())
+            ReleaseEscort(cur->second, owner);
         _leads.erase(bot->GetGUID());
         auto h = _hunts.find(owner->GetGUID());
         if (h != _hunts.end() && h->second.forLead)
@@ -1909,6 +1994,13 @@ namespace romance::ac
                     bot->RewardQuest(q, BestRewardChoice(bot, q), npc, false);
                     handed.push_back(q);
                 }
+                if (lead.group)
+                {
+                    std::string done = handed.empty() ? "" : "You turned in " + QuestList(handed) + ". ";
+                    std::string next = RoundNext(owner, bot, now);
+                    _notices.push_back({ bot->GetGUID(), done + next });
+                    return;
+                }
                 FinishLead(owner, bot, handed.empty()
                     ? "You reached " + lead.title + " but could not turn anything in there. You are coming back to them; tell them."
                     : "You turned in " + QuestList(handed) + " at " + lead.title + " and are coming back to them. Tell them briefly.");
@@ -1933,7 +2025,7 @@ namespace romance::ac
                     QuestRelationBounds b = sObjectMgr->GetCreatureQuestRelationBounds(lead.fetchEntry);
                     for (Player* m : OtherCompanions(owner, bot))
                     {
-                        if (!m->IsAlive() || m->GetMapId() != bot->GetMapId() || m->GetDistance(bot) > 40.0f)
+                        if (!m->IsAlive() || m->GetMapId() != bot->GetMapId() || m->GetDistance(bot) > 100.0f)
                             continue;
                         for (auto it = b.first; it != b.second; ++it)
                             if (Quest const* oq = sObjectMgr->GetQuestTemplate(it->second))
@@ -2210,6 +2302,8 @@ namespace romance::ac
             ++it;   // LeadStep may erase this lead
             auto cur = _leads.find(botGuid);
             LeadStep(owner, bot, cur->second, now);
+            if (auto again = _leads.find(botGuid); again != _leads.end())
+                Escort(owner, bot, again->second, now);
         }
         _notices.erase(std::remove_if(_notices.begin(), _notices.end(), [](auto const& n) { return n.second.empty(); }), _notices.end());
     }

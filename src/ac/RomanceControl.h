@@ -134,6 +134,8 @@ namespace romance::ac
             bool fetchAll = false;         // pick up from every giver around (else only one quest)
             bool group = false;            // "lead the way" without a quest: the player and the other companions come
                                            // along, everyone picks up quests, then she leads to them (or grinds)
+            std::set<ObjectGuid> escort;   // other companions walking behind her (their Playerbots follow is off)
+            time_t lastEscort = 0;
             std::set<uint32> visited;      // givers already visited on this errand
             std::vector<std::string> taken;   // quests picked up so far on this errand
             uint32 moves = 0;              // lead: spots tried after one had no free quest mobs
@@ -165,6 +167,9 @@ namespace romance::ac
         std::string Grind(Player* owner, Player* bot, time_t now);
         Quest const* NextQuest(Player* owner, Player* bot) const;
         std::vector<Player*> OtherCompanions(Player* owner, Player* bot) const;
+        std::string RoundNext(Player* owner, Player* bot, time_t now);
+        void Escort(Player* owner, Player* bot, Lead& lead, time_t now);
+        void ReleaseEscort(Lead& lead, Player* owner);
         void Trade(Player* owner, Player* bot, std::string const& command, time_t now);
 
         RomanceConfig const& _cfg;
