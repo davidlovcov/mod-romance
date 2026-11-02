@@ -624,28 +624,26 @@ namespace truecompanion::ac
             return it == byMap.end() ? none : it->second;
         }
 
-        // Every class-trainer spell of a class, once per spell: (trainer creature entry, spell id). Built once per class;
-        // the trainer and its spell are looked up again on each use, so a ".reload" of trainers can't leave stale pointers.
-        std::vector<std::pair<uint32, uint32>> const& ClassTrainerSpells(uint8 classId)
+        // The class trainers (creature entries) of a class. Only the entries are kept: their spells are read from the
+        // trainer data on each use, so a ".reload" of trainers is seen right away and no trainer is dropped because
+        // another one teaches the same spell (which trainers suit her is decided per character, at use).
+        std::vector<uint32> const& ClassTrainers(uint8 classId)
         {
-            static std::unordered_map<uint8, std::vector<std::pair<uint32, uint32>>> byClass;
+            static std::unordered_map<uint8, std::vector<uint32>> byClass;
             auto it = byClass.find(classId);
             if (it != byClass.end())
                 return it->second;
-            std::vector<std::pair<uint32, uint32>> list;
-            std::set<uint32> seen;
+            std::vector<uint32> list;
             if (CreatureTemplateContainer const* all = sObjectMgr->GetCreatureTemplates())
                 for (auto const& [entry, ct] : *all)
                 {
                     if (!(ct.npcflag & UNIT_NPC_FLAG_TRAINER))
                         continue;
                     Trainer::Trainer* trainer = sObjectMgr->GetTrainer(entry);
-                    if (!trainer || trainer->GetTrainerType() != Trainer::Type::Class || trainer->GetTrainerRequirement() != classId)
-                        continue;
-                    for (Trainer::Spell const& sp : trainer->GetSpells())
-                        if (seen.insert(sp.SpellId).second)
-                            list.emplace_back(entry, sp.SpellId);
+                    if (trainer && trainer->GetTrainerType() == Trainer::Type::Class && trainer->GetTrainerRequirement() == classId)
+                        list.push_back(entry);
                 }
+            std::sort(list.begin(), list.end());
             return byClass.emplace(classId, std::move(list)).first->second;
         }
 
@@ -693,23 +691,46 @@ namespace truecompanion::ac
             return true;
         }
 
-        // Spells any trainer of her class could teach her now, and what they cost together (without discounts).
+        // Whether trainer `entry` suits her and has at least one spell for her right now.
+        bool TeachesHerNow(Player* p, uint32 entry)
+        {
+            Trainer::Trainer* t = sObjectMgr->GetTrainer(entry);
+            if (!t || !IsHerTrainer(p, entry))
+                return false;
+            for (Trainer::Spell const& sp : t->GetSpells())
+                if (t->CanTeachSpell(p, &sp))
+                    return true;
+            return false;
+        }
+
+        // Spells any trainer of her class could teach her now, and what they cost together (without discounts). Each spell
+        // counts once, from the cheapest trainer that suits her.
         uint32 TeachableNow(Player* p, std::vector<std::string>* names = nullptr)
         {
-            uint32 cost = 0, n = 0;
-            for (auto const& [entry, spellId] : ClassTrainerSpells(p->getClass()))
+            std::map<uint32, uint32> cheapest;   // spell -> cost
+            for (uint32 entry : ClassTrainers(p->getClass()))
             {
                 Trainer::Trainer* t = sObjectMgr->GetTrainer(entry);
-                Trainer::Spell const* sp = t ? t->GetSpell(spellId) : nullptr;
-                if (!sp || !t->IsTrainerValidForPlayer(p) || !t->CanTeachSpell(p, sp))
+                if (!t || !IsHerTrainer(p, entry))
                     continue;
-                cost += sp->MoneyCost;
-                ++n;
+                for (Trainer::Spell const& sp : t->GetSpells())
+                {
+                    if (!t->CanTeachSpell(p, &sp))
+                        continue;
+                    auto [it, added] = cheapest.emplace(sp.SpellId, sp.MoneyCost);
+                    if (!added)
+                        it->second = std::min(it->second, sp.MoneyCost);
+                }
+            }
+            uint32 cost = 0;
+            for (auto const& [spellId, c] : cheapest)
+            {
+                cost += c;
                 if (names)
-                    if (SpellInfo const* info = sSpellMgr->GetSpellInfo(sp->SpellId))
+                    if (SpellInfo const* info = sSpellMgr->GetSpellInfo(spellId))
                         names->push_back(info->SpellName[0]);
             }
-            return n ? std::max<uint32>(cost, 1) : 0;
+            return cheapest.empty() ? 0 : std::max<uint32>(cost, 1);
         }
 
         // At the trainer: learns what she can, cheapest first, paying like Trainer::TeachSpell (reputation discount).
@@ -2021,7 +2042,7 @@ namespace truecompanion::ac
             return "Nothing. Your class trainer has nothing new for you at your level; tell them.";
         // her trainer right here: learn now
         for (Creature* c : NearbyCreatures(bot, _cfg.interactRange + 5.0f))
-            if (c->IsAlive() && IsHerTrainer(bot, c->GetEntry()))
+            if (c->IsAlive() && TeachesHerNow(bot, c->GetEntry()))
             {
                 uint32 paid = 0, tooExpensive = 0;
                 std::vector<std::string> learned = LearnFrom(bot, c, paid, tooExpensive);
@@ -2039,7 +2060,7 @@ namespace truecompanion::ac
         for (QuestSpawn const& sp : ClassTrainerSpawns(bot->GetMapId()))
         {
             float d = bot->GetDistance2d(sp.posX, sp.posY);
-            if (d > 800.0f || (best && d >= bestDist) || !IsHerTrainer(bot, sp.id))
+            if (d > 800.0f || (best && d >= bestDist) || !TeachesHerNow(bot, sp.id))
                 continue;
             best = &sp;
             bestDist = d;
@@ -3638,12 +3659,19 @@ namespace truecompanion::ac
         uint32 learnCost = 0;
         std::set<uint32> learnNow;
         std::vector<std::pair<Trainer::Spell const*, Json>> later;
-        for (auto const& [entry, spellId] : ClassTrainerSpells(bot->getClass()))
+        std::set<uint32> listed;   // a spell several of her trainers teach is listed once
+        std::vector<std::pair<Trainer::Trainer*, Trainer::Spell const*>> offers;
+        for (uint32 entry : ClassTrainers(bot->getClass()))
+            if (Trainer::Trainer* trainer = sObjectMgr->GetTrainer(entry); trainer && IsHerTrainer(bot, entry))
+                for (Trainer::Spell const& sp : trainer->GetSpells())
+                    offers.emplace_back(trainer, &sp);
+        // the ones she can learn now first, so a spell is listed with a trainer that can teach it to her
+        std::stable_sort(offers.begin(), offers.end(), [bot](auto const& a, auto const& b)
+                         { return a.first->CanTeachSpell(bot, a.second) && !b.first->CanTeachSpell(bot, b.second); });
+        for (auto const& [trainer, sp] : offers)
         {
-            Trainer::Trainer* trainer = sObjectMgr->GetTrainer(entry);
-            Trainer::Spell const* sp = trainer ? trainer->GetSpell(spellId) : nullptr;
-            SpellInfo const* teaches = sp ? sSpellMgr->GetSpellInfo(sp->SpellId) : nullptr;
-            if (!sp || !teaches || !trainer->IsTrainerValidForPlayer(bot))
+            SpellInfo const* teaches = sSpellMgr->GetSpellInfo(sp->SpellId);
+            if (!teaches || !listed.insert(sp->SpellId).second)
                 continue;
             // a trainer spell usually casts "learn X": show X, the spell she gets
             SpellInfo const* learned = teaches;
