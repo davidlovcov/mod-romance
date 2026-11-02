@@ -166,6 +166,7 @@ namespace truecompanion::ac
             bool sell = false;             // errand to a merchant: everyone sells their junk there
             uint32 onlyQuest = 0;          // errand to take exactly this quest (Quests tab: Take)
             uint32 thenQuest = 0;          // errand that interrupted a lead to this quest: back to it afterwards
+            bool train = false;            // errand to her class trainer: learn the new spells she can afford
             std::set<ObjectGuid> escort;   // other companions walking behind her (their Playerbots follow is off)
             std::set<ObjectGuid> escortSkip;   // told "follow me" by the player: they follow the player, not her
             time_t lastEscort = 0;
@@ -182,6 +183,7 @@ namespace truecompanion::ac
         std::string ChaseAttack(Player* owner, Player* bot, Unit* target, time_t now);
         void ReleaseChasers(Hunt& h);
         std::string Sell(Player* owner, Player* bot, CompanionCommand const& cmd);
+        std::string LearnSpells(Player* owner, Player* bot, time_t now);
         std::string Share(Player* owner, Player* bot, CompanionCommand const& cmd, time_t now);
         std::string AttackAll(Player* owner, Player* bot, CompanionCommand const& cmd, time_t now);
         std::string StopAttack(Player* owner, Player* bot);

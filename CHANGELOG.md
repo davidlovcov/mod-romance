@@ -7,6 +7,9 @@
 - Upgrading keeps everything: a new SQL update renames the `romance_*` tables (only when the old ones exist, so it is safe to run again), `scripts/migrate-from-mod-romance.sh` converts your config, and memory exports made before the rename can still be imported. Steps: docs/INSTALLATION.md, "Upgrading from mod-romance".
 
 ### Added
+- "Learn your spells" / "go to your trainer": she walks to the nearest trainer of her class, learns the new spells she can afford with her own gold and comes back (right away when the trainer is next to her).
+- With her AI conversation off, a companion still carries out commands and answers them in plain words (before: a plain Playerbot). Such companions don't count toward the companion limit; turning the AI on checks the limit.
+- Without the AI she still thanks you for a gift ("Thank you for the 5 Linen Cloth.").
 - Who leads also says when you lead and the companions clear the area with you ("attack all here"): `fighting`.
 - Spells to learn: the character sheet lists what her class trainer can teach her now (with the total cost) and what comes in the next two levels.
 - Who leads (`get_lead`, also in the Quests tab data): the leading companion, where to and how far, or that you lead; companions on an errand.

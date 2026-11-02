@@ -231,20 +231,25 @@ namespace truecompanion
             r.error = "companion_in_use";
             return r;
         }
-        if (ActiveForOwner(key.owner).size() >= _cfg.maxActiveCompanionsPerPlayer)
+        auto s = std::make_unique<Session>(_cfg);
+        s->rec = LoadOrDefault(key, ownerAccount, companionName, now);
+        // The limits and estrangement are about the AI; with it off she only carries out commands.
+        bool ai = s->rec.settings.aiEnabled;
+        if (ai && AiActiveForOwner(key.owner) >= _cfg.maxActiveCompanionsPerPlayer)
         {
             r.error = "limit_reached";
             return r;
         }
-        if (_sessions.size() >= _cfg.maxAiCompanionsServer)
+        size_t aiSessions = 0;
+        for (auto const& [k, other] : _sessions)
+            if (other->rec.settings.aiEnabled)
+                ++aiSessions;
+        if (ai && aiSessions >= _cfg.maxAiCompanionsServer)
         {
             r.error = "server_limit_reached";
             return r;
         }
-
-        auto s = std::make_unique<Session>(_cfg);
-        s->rec = LoadOrDefault(key, ownerAccount, companionName, now);
-        if (RelationshipEngine::Away(s->rec.relationship, now))
+        if (ai && RelationshipEngine::Away(s->rec.relationship, now))
         {
             r.error = "estranged";
             return r;
@@ -316,6 +321,15 @@ namespace truecompanion
         return out;
     }
 
+    size_t TrueCompanionService::AiActiveForOwner(Guid owner) const
+    {
+        size_t n = 0;
+        for (auto const& [k, s] : _sessions)
+            if (k.owner == owner && s->rec.settings.aiEnabled)
+                ++n;
+        return n;
+    }
+
     std::vector<CompanionKey> TrueCompanionService::ActiveForOwner(Guid owner) const
     {
         std::vector<CompanionKey> out;
@@ -340,8 +354,8 @@ namespace truecompanion
     {
         ControlRequest r;
         Session* s = Find(key);
-        if (!s || _shutdown || !s->rec.settings.aiEnabled)
-            return r;
+        if (!s || _shutdown)
+            return r;   // with her AI conversation off she still carries out commands
         r.active = true;
         r.knowledgeTopics = DetectKnowledgeTopics(text);
         std::string cname = s->rec.personality.name.empty() ? s->rec.companionName : s->rec.personality.name;
@@ -617,6 +631,12 @@ namespace truecompanion
 
         if (Session* s = Find(key))
         {
+            // she is with them with the AI off (commands only): turning it on counts toward the limit now
+            if (st.aiEnabled && !s->rec.settings.aiEnabled && AiActiveForOwner(key.owner) >= _cfg.maxActiveCompanionsPerPlayer)
+            {
+                r.error = "limit_reached";
+                return r;
+            }
             s->rec.settings = st;
             s->dirty = true;
             SaveRecord(*s, now, true);
@@ -864,7 +884,7 @@ namespace truecompanion
         }
 
         // A command was carried out but the AI can't answer (Ollama off or offline): she says what she did in plain words.
-        if (ctx.commandHandled && s->rec.settings.aiEnabled && !AiAvailable())
+        if (ctx.commandHandled && (!s->rec.settings.aiEnabled || !AiAvailable()))
         {
             std::string said = SanitizePlayerText(cm.text, _cfg.maxPlayerMessageChars);
             if (!said.empty())
@@ -1108,7 +1128,7 @@ namespace truecompanion
                     AddRecentEvent(*s, "you equipped " + ev.detail, now);
                 break;
             case GameEventType::CompanionNotice:
-                if (s->rec.settings.aiEnabled && !AiAvailable())
+                if (!s->rec.settings.aiEnabled || !AiAvailable())
                 {
                     SayPlain(*s, ev.detail, now);   // no AI: she says what happened in plain words
                     return;
@@ -1136,6 +1156,8 @@ namespace truecompanion
         PendingReaction pr;
         pr.event = ev;
         pr.event.detail = text;
+        if (ev.type == GameEventType::CompanionNotice)
+            pr.fallback = ev.detail;   // what she did still reaches the player if the AI fails
         pr.notBefore = now;
         pr.expires = now + 120;
         pr.priority = priority;
@@ -1200,7 +1222,12 @@ namespace truecompanion
         std::string text = pname + " just handed you " + desc + " as a gift." +
                            (notes.empty() ? "" : " About it: " + notes + ".") +
                            " How meaningful it is to you: " + std::to_string(int(ev.score)) + "/100.";
-        RequestReaction(*s, TriggerKind::Gift, text, ctx, now, "", ev.score < 25);
+        // without the AI she still says thank you (a literal line, marked with \x01: no person swapping)
+        std::string thing = (item.count > 1 ? std::to_string(item.count) + " " : std::string()) + item.name;
+        std::string thanks = ev.score >= 60 ? "Thank you so much for the " + thing + "!"
+                           : ev.score >= 25 ? "Thank you for the " + thing + "."
+                                            : "Oh, the " + thing + ". Thanks.";
+        RequestReaction(*s, TriggerKind::Gift, text, ctx, now, "", ev.score < 25, std::string("\x01") + thanks);
 
         PushRelationship(*s);
         _repo.LogRelationshipEvent(key, "gift", desc + " score=" + std::to_string(int(ev.score)), now);
@@ -1211,9 +1238,7 @@ namespace truecompanion
     void TrueCompanionService::RequestReaction(Session& s, TriggerKind trigger, std::string const& text, WorldContext const& ctx, TimePoint now,
                                          std::string const& eventMemory, bool shortHint, std::string const& fallback)
     {
-        if (!s.rec.settings.aiEnabled)
-            return;
-        if (!AiAvailable())
+        if (!s.rec.settings.aiEnabled || !AiAvailable())
         {
             if (!fallback.empty())
                 SayPlain(s, fallback, now);
@@ -1232,7 +1257,8 @@ namespace truecompanion
             // keep it for later if the companion is busy
             PendingReaction pr;
             pr.event.detail = text;
-            pr.event.type = fallback.empty() ? GameEventType::CombatEnd : GameEventType::CompanionNotice;
+            pr.event.type = GameEventType::CombatEnd;
+            pr.fallback = fallback;
             pr.notBefore = now + 2;
             pr.expires = now + 90;
             pr.priority = trigger == TriggerKind::Gift ? 4 : 1;
@@ -1786,7 +1812,8 @@ namespace truecompanion
 
     void TrueCompanionService::SayPlain(Session& s, std::string const& note, TimePoint now, ChatChannel channel)
     {
-        std::string line = PlainCompanionLine(note);
+        // "\x01..." is a line to say as it is; anything else is a note about what she did (persons swapped)
+        std::string line = !note.empty() && note[0] == '\x01' ? note.substr(1) : PlainCompanionLine(note);
         if (line.empty())
             return;
         Deliver(s, line, channel, now);
@@ -1878,7 +1905,7 @@ namespace truecompanion
         s.reaction.reset();
         TriggerKind trig = pr.priority >= 4 ? TriggerKind::Gift : TriggerKind::GameEvent;
         // what a command did (turned in, picked up, ...): said in plain words if the AI can't
-        std::string fallback = pr.event.type == GameEventType::CompanionNotice ? pr.event.detail : std::string();
+        std::string fallback = pr.fallback;
         RequestReaction(s, trig, pr.event.detail, ctx, now, "", pr.priority < 3, fallback);
     }
 

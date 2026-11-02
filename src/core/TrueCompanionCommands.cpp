@@ -198,6 +198,7 @@ namespace truecompanion
             case CompanionCommandKind::StopLead: return "stop_lead";
             case CompanionCommandKind::PauseLead: return "pause_lead";
             case CompanionCommandKind::ResumeLead: return "resume_lead";
+            case CompanionCommandKind::LearnSpells: return "learn_spells";
             default: return "none";
         }
     }
@@ -337,6 +338,27 @@ namespace truecompanion
         if (StartsWith(s, "don't ") || StartsWith(s, "dont ") || StartsWith(s, "do not ") || StartsWith(s, "never ") ||
             StartsWith(s, "stop ") || StartsWith(s, "nicht ") || StartsWith(s, "no "))
             return std::nullopt;
+
+        // ---- class trainer: "learn your spells", "go to your trainer", "train"
+        {
+            std::string t = s;
+            StripPrefix(t, { "go and", "go", "please" });
+            static char const* const exact[] = { "train", "get trained", "go train", "train up", "visit your trainer", "visit the trainer",
+                                                 "to your trainer", "to the trainer", "to your class trainer", "see your trainer" };
+            bool learn = false;
+            for (char const* p : exact)
+                if (t == p)
+                    learn = true;
+            if (!learn && (StartsWith(t, "learn ") || StartsWith(t, "train ") || StartsWith(t, "lern ")) &&
+                (t.find("spell") != std::string::npos || t.find("abilit") != std::string::npos || t.find("skills") != std::string::npos ||
+                 t.find("zauber") != std::string::npos || t.find("fähigkeit") != std::string::npos))
+                learn = true;
+            if (learn)
+            {
+                c.kind = CompanionCommandKind::LearnSpells;
+                return c;
+            }
+        }
 
         // ---- quests at quest givers
         // (worked on a copy: "take down the wolf" must still reach the attack rules)

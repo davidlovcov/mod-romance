@@ -202,3 +202,15 @@ TEST(Commands, KnowledgeTopics)
     CHECK_EQ(CreatureTypeFromWord("undead"), 6u);
     CHECK_EQ(CreatureTypeFromWord("wolf"), 0u);
 }
+
+TEST(Commands, LearnSpells)
+{
+    for (char const* t : { "learn your spells", "go learn your new spells", "Elara, go and learn your spells please", "train",
+                           "go to your trainer", "learn your new abilities", "visit your trainer", "lern deine zauber" })
+        CHECK(Kind(t) == CompanionCommandKind::LearnSpells);
+    // not a request to train
+    CHECK(Kind("I learned a lot today") == CompanionCommandKind::None);
+    CHECK(Kind("don't learn your spells") == CompanionCommandKind::None);
+    CHECK(Kind("learn to cook") == CompanionCommandKind::None);
+    CHECK(Kind("the train left") == CompanionCommandKind::None);
+}

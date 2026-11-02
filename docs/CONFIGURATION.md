@@ -101,7 +101,7 @@ Related settings in other files:
 
 | Preference | Limits applied by the server |
 |---|---|
-| AI conversation on/off | Off = no Ollama requests for this companion |
+| AI conversation on/off | Off = no Ollama requests for this companion; she still carries out commands (answered in plain words) and doesn't count toward `MaxActiveCompanionsPerPlayer` |
 | Proactive on/off, frequency 0–100 | Off if the server disables proactive chat |
 | Spoken commands | Off if the server disables them; allow-list only |
 | Party chat mode / listen in party | Forced on if `Chat.PartyOnly = 1` |

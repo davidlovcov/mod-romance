@@ -119,6 +119,9 @@ namespace truecompanion
         bool IsActive(CompanionKey const& key) const;
         std::vector<CompanionKey> ActiveKeys() const;
         std::vector<CompanionKey> ActiveForOwner(Guid owner) const;
+        // Active companions of `owner` with the AI conversation on (the ones that count toward the limits; with the
+        // AI off a companion only carries out commands).
+        size_t AiActiveForOwner(Guid owner) const;
         std::optional<CompanionKey> ActiveByCompanion(Guid companion) const;
         size_t ActiveCount() const { return _sessions.size(); }
 
@@ -245,6 +248,7 @@ namespace truecompanion
             TimePoint notBefore = 0;
             TimePoint expires = 0;
             int priority = 0;
+            std::string fallback;   // said without the AI if it can't answer (see SayPlain)
         };
 
         struct Session

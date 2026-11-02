@@ -427,7 +427,7 @@ namespace truecompanion::ac
             // Companions added through ".playerbots bot add" also come alive if the owner configured them.
             CompanionRecord rec = _service->GetOrCreateRecord({ master->GetGUID().GetCounter(), guid },
                                                               master->GetSession()->GetAccountId(), p->GetName(), now);
-            if (requested || (rec.configured && rec.settings.aiEnabled))
+            if (requested || rec.configured)   // with the AI off she comes along for commands only
                 ActivateCompanion(master, p, true);
             it = _loginWatch.erase(it);
         }
@@ -443,7 +443,7 @@ namespace truecompanion::ac
         if (!PlayerbotsBridge::IsMyBot(bot, owner))
             return false;
         CompanionRecord rec = _service->GetOrCreateRecord(key, owner->GetSession()->GetAccountId(), bot->GetName(), Now());
-        if (!rec.settings.aiEnabled || (requireConfigured && !rec.configured))
+        if (requireConfigured && !rec.configured)
             return false;
         _loginWatch.erase(key.companion);
         _pendingSummons.erase(uint32(key.companion));
@@ -1139,7 +1139,7 @@ namespace truecompanion::ac
                 CompanionRecord rec = _service->GetOrCreateRecord(key, owner->GetSession()->GetAccountId(), p->GetName(), Now());
                 if (!rec.settings.aiEnabled)
                 {
-                    reason = "AI companion is disabled for this character.";
+                    reason = "AI conversation is off: she carries out commands once called.";
                     return CharacterStatus::AiDisabled;
                 }
             }
@@ -1246,14 +1246,6 @@ namespace truecompanion::ac
                 Notice(owner, bot->GetName() + ": " + HumanError("other_faction", 0));
             return false;
         }
-        CompanionRecord rec = _service->GetOrCreateRecord(key, owner->GetSession()->GetAccountId(), bot->GetName(), now);
-        if (!rec.settings.aiEnabled)
-        {
-            Json p = Json::MakeObject();
-            p.Set("op", "chars_changed");
-            SendAddon(owner, p);
-            return false;
-        }
         auto r = _service->Activate(key, owner->GetSession()->GetAccountId(), bot->GetName(), owner->GetName(), now);
         if (!r.ok)
         {
@@ -1294,7 +1286,7 @@ namespace truecompanion::ac
         CompanionRecord rec = _service->GetOrCreateRecord({ owner->GetGUID().GetCounter(), guidLow }, owner->GetSession()->GetAccountId(), name, Now());
         if (rec.settings.aiEnabled && RelationshipEngine::Away(rec.relationship, Now()))
             return "estranged";
-        if (rec.settings.aiEnabled && _service->ActiveForOwner(owner->GetGUID().GetCounter()).size() >= _cfg.maxActiveCompanionsPerPlayer)
+        if (rec.settings.aiEnabled && _service->AiActiveForOwner(owner->GetGUID().GetCounter()) >= _cfg.maxActiveCompanionsPerPlayer)
             return "limit_reached";
         std::string res = PlayerbotsBridge::Summon(owner, PlayerGuid(guidLow));
         if (res == "ok")
@@ -1603,13 +1595,11 @@ namespace truecompanion::ac
         {
             auto res = _service->SaveSettings(key, account, name, CompanionSettings::FromJson(msg["settings"]), now);
             ack(res.ok, res.error, res.notes);
-            // Turning the AI on for an already-summoned bot activates it right away.
-            CompanionRecord rec = _service->GetOrCreateRecord(key, account, name, now);
+            // An already-summoned bot becomes a companion right away (with the AI off: for commands only; she is
+            // not sent away).
             Player* bot = ObjectAccessor::FindConnectedPlayer(PlayerGuid(guid));
-            if (rec.settings.aiEnabled && bot && PlayerbotsBridge::IsMyBot(bot, player) && !_service->IsActive(key))
+            if (res.ok && bot && PlayerbotsBridge::IsMyBot(bot, player) && !_service->IsActive(key))
                 ActivateCompanion(player, bot, false);
-            else if (!rec.settings.aiEnabled && _service->IsActive(key))
-                _service->Deactivate(key, now);
             sendCompanion();
         }
         else if (op == "summon")
@@ -1857,11 +1847,8 @@ namespace truecompanion::ac
         CompanionRecord rec = _service->GetOrCreateRecord(key, player->GetSession()->GetAccountId(), target->GetName(), Now());
         rec.settings.aiEnabled = on;
         _service->SaveSettings(key, player->GetSession()->GetAccountId(), target->GetName(), rec.settings, Now());
-        if (on)
-            ActivateCompanion(player, target, true);
-        else
-            _service->Deactivate(key, Now());
+        ActivateCompanion(player, target, true);   // off: she stays, for commands only
         Execute(_service->TakeOutgoing());
-        return target->GetName() + (on ? " is now your AI companion." : " is a regular bot again.");
+        return target->GetName() + (on ? " is now your AI companion." : " no longer talks through the AI; she still carries out commands.");
     }
 }

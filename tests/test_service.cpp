@@ -1029,15 +1029,47 @@ TEST(Service, SameCommandPathForWhisperPartyAndAddon)
         h.PumpUntil([](auto const&) { return false; }, 100);
     }
 
-    // natural commands off: knowledge only; AI off: nothing
+    // natural commands off: knowledge only; AI conversation off: commands still work
     CompanionSettings st;
     st.naturalCommands = false;
     h.svc->SaveSettings(h.Key(), kAccount, "Elara", st, h.now);
     auto off = h.svc->PrepareControl(h.Key(), "give me 10 gold and show me your bags", "Elara");
     CHECK(off.active && !off.command && off.knowledgeTopics != 0);
     st.aiEnabled = false;
+    st.naturalCommands = true;
     h.svc->SaveSettings(h.Key(), kAccount, "Elara", st, h.now);
-    CHECK(!h.svc->PrepareControl(h.Key(), "give me 10 gold", "Elara").active);
+    auto aiOff = h.svc->PrepareControl(h.Key(), "give me 10 gold", "Elara");
+    CHECK(aiOff.active && aiOff.command.has_value());
+}
+
+TEST(Service, AiOffMeansCommandsOnlyAndDoesNotCountTowardTheLimit)
+{
+    Harness h;
+    h.cfg.maxActiveCompanionsPerPlayer = 1;
+    h.Restart();
+    // Lyra has her AI conversation off: she comes along for commands without taking the one AI slot
+    CompanionSettings st;
+    st.aiEnabled = false;
+    h.svc->SaveSettings(h.Key(kArthas, kLyra), kAccount, "Lyra", st, h.now);
+    CHECK(h.svc->Activate(h.Key(kArthas, kLyra), kAccount, "Lyra", "Arthas", h.now).ok);
+    h.Activate(h.Key());   // Elara, AI on
+    CHECK_EQ(h.svc->AiActiveForOwner(kArthas), size_t(1));
+    // turning Lyra's AI on now would exceed the limit
+    st.aiEnabled = true;
+    CHECK_EQ(h.svc->SaveSettings(h.Key(kArthas, kLyra), kAccount, "Lyra", st, h.now).error, std::string("limit_reached"));
+    // a command to Lyra: carried out, answered in plain words, no request to the AI
+    size_t calls = h.llm->CallCount();
+    WorldContext ctx = h.ctx;
+    ctx.commandOutcome = "You took the lead; they follow you. Tell them.";
+    ctx.commandHandled = true;
+    auto r = h.svc->OnPlayerMessage(h.Key(kArthas, kLyra), "lead the way", ChatChannel::Whisper, ctx, h.now);
+    CHECK(r.result == TrueCompanionService::MessageResult::Accepted);
+    CHECK(h.WaitSpeak(h.Key(kArthas, kLyra)));
+    CHECK_EQ(h.Spoken(h.Key(kArthas, kLyra)).back(), std::string("I took the lead; you follow me."));
+    // plain chat to her still goes to Playerbots, and the AI is never asked
+    CHECK(h.svc->OnPlayerMessage(h.Key(kArthas, kLyra), "how are you?", ChatChannel::Whisper, h.ctx, h.now).result ==
+          TrueCompanionService::MessageResult::AiDisabled);
+    CHECK_EQ(h.llm->CallCount(), calls);
 }
 
 TEST(Service, ExportImportRoundTripAtMemoryCapacity)
@@ -1355,4 +1387,24 @@ TEST(Service, WhenOllamaFailsTheCommandOutcomeStillReachesThePlayer)
     CHECK(h.WaitSpeak(h.Key(), 2));
     CHECK_EQ(h.Spoken(h.Key()).back(), std::string("There is no enemy nearby to attack."));
     CHECK_EQ(h.llm->CallCount(), calls);
+}
+
+TEST(Service, WithoutTheAiSheStillThanksForAGift)
+{
+    Harness h;
+    h.cfg.ollamaEnabled = false;
+    h.Restart();
+    h.Activate(h.Key());
+    GiftItem item;
+    item.itemGuid = 777;
+    item.entry = 2589;
+    item.count = 5;
+    item.name = "Linen Cloth";
+    auto g = h.svc->OnGift(h.Key(), item, h.ctx, h.now);
+    CHECK(g.rewarded);
+    CHECK(h.WaitSpeak(h.Key()));
+    std::string said = h.Spoken(h.Key()).back();
+    CHECK_CONTAINS(said, "5 Linen Cloth");
+    CHECK(said.find("Thank") != std::string::npos || said.find("Thanks") != std::string::npos);
+    CHECK(said.find("Thank me") == std::string::npos);   // said as it is, no person swapping
 }

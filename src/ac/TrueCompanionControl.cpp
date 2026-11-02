@@ -445,31 +445,6 @@ namespace truecompanion::ac
 
         constexpr float kAreaRadius = 250.0f;
 
-        // Every class-trainer spell of a class, once per spell: (trainer creature entry, spell id). Built once per class;
-        // the trainer and its spell are looked up again on each use, so a ".reload" of trainers can't leave stale pointers.
-        std::vector<std::pair<uint32, uint32>> const& ClassTrainerSpells(uint8 classId)
-        {
-            static std::unordered_map<uint8, std::vector<std::pair<uint32, uint32>>> byClass;
-            auto it = byClass.find(classId);
-            if (it != byClass.end())
-                return it->second;
-            std::vector<std::pair<uint32, uint32>> list;
-            std::set<uint32> seen;
-            if (CreatureTemplateContainer const* all = sObjectMgr->GetCreatureTemplates())
-                for (auto const& [entry, ct] : *all)
-                {
-                    if (!(ct.npcflag & UNIT_NPC_FLAG_TRAINER))
-                        continue;
-                    Trainer::Trainer* trainer = sObjectMgr->GetTrainer(entry);
-                    if (!trainer || trainer->GetTrainerType() != Trainer::Type::Class || trainer->GetTrainerRequirement() != classId)
-                        continue;
-                    for (Trainer::Spell const& sp : trainer->GetSpells())
-                        if (seen.insert(sp.SpellId).second)
-                            list.emplace_back(entry, sp.SpellId);
-                }
-            return byClass.emplace(classId, std::move(list)).first->second;
-        }
-
         // "north-east" etc. from `from` towards (x, y); in WoW +x is north and +y is west.
         char const* Direction(WorldObject const* from, float x, float y)
         {
@@ -581,6 +556,158 @@ namespace truecompanion::ac
             static std::vector<QuestSpawn> const none;
             auto it = byMap.find(mapId);
             return it == byMap.end() ? none : it->second;
+        }
+
+        // Every class-trainer spell of a class, once per spell: (trainer creature entry, spell id). Built once per class;
+        // the trainer and its spell are looked up again on each use, so a ".reload" of trainers can't leave stale pointers.
+        std::vector<std::pair<uint32, uint32>> const& ClassTrainerSpells(uint8 classId)
+        {
+            static std::unordered_map<uint8, std::vector<std::pair<uint32, uint32>>> byClass;
+            auto it = byClass.find(classId);
+            if (it != byClass.end())
+                return it->second;
+            std::vector<std::pair<uint32, uint32>> list;
+            std::set<uint32> seen;
+            if (CreatureTemplateContainer const* all = sObjectMgr->GetCreatureTemplates())
+                for (auto const& [entry, ct] : *all)
+                {
+                    if (!(ct.npcflag & UNIT_NPC_FLAG_TRAINER))
+                        continue;
+                    Trainer::Trainer* trainer = sObjectMgr->GetTrainer(entry);
+                    if (!trainer || trainer->GetTrainerType() != Trainer::Type::Class || trainer->GetTrainerRequirement() != classId)
+                        continue;
+                    for (Trainer::Spell const& sp : trainer->GetSpells())
+                        if (seen.insert(sp.SpellId).second)
+                            list.emplace_back(entry, sp.SpellId);
+                }
+            return byClass.emplace(classId, std::move(list)).first->second;
+        }
+
+        // Spawns of class trainers (any class) by map; built like the merchant index.
+        std::vector<QuestSpawn> const& ClassTrainerSpawns(uint32 mapId)
+        {
+            static std::unordered_map<uint32, std::vector<QuestSpawn>> byMap;
+            static size_t builtFor = std::numeric_limits<size_t>::max();
+            auto const& all = sObjectMgr->GetAllCreatureData();
+            if (builtFor != all.size())
+            {
+                byMap.clear();
+                std::unordered_map<uint32, bool> isTrainer;
+                for (auto const& [spawnId, data] : all)
+                {
+                    auto it = isTrainer.find(data.id);
+                    if (it == isTrainer.end())
+                    {
+                        CreatureTemplate const* ct = sObjectMgr->GetCreatureTemplate(data.id);
+                        Trainer::Trainer* t = ct && (ct->npcflag & UNIT_NPC_FLAG_TRAINER) ? sObjectMgr->GetTrainer(data.id) : nullptr;
+                        it = isTrainer.emplace(data.id, t && t->GetTrainerType() == Trainer::Type::Class).first;
+                    }
+                    if (it->second)
+                        byMap[data.mapid].push_back({ data.id, data.posX, data.posY, data.posZ });
+                }
+                builtFor = all.size();
+            }
+            static std::vector<QuestSpawn> const none;
+            auto it = byMap.find(mapId);
+            return it == byMap.end() ? none : it->second;
+        }
+
+        // A trainer `p` can learn from: her class, and friendly.
+        bool IsHerTrainer(Player* p, uint32 entry)
+        {
+            Trainer::Trainer* t = sObjectMgr->GetTrainer(entry);
+            if (!t || t->GetTrainerType() != Trainer::Type::Class || !t->IsTrainerValidForPlayer(p))
+                return false;
+            CreatureTemplate const* ct = sObjectMgr->GetCreatureTemplate(entry);
+            FactionTemplateEntry const* mine = p->GetFactionTemplateEntry();
+            if (ct && mine)
+                if (FactionTemplateEntry const* ft = sFactionTemplateStore.LookupEntry(ct->faction))
+                    if (mine->IsHostileTo(*ft))
+                        return false;
+            return true;
+        }
+
+        // Spells any trainer of her class could teach her now, and what they cost together (without discounts).
+        uint32 TeachableNow(Player* p, std::vector<std::string>* names = nullptr)
+        {
+            uint32 cost = 0, n = 0;
+            for (auto const& [entry, spellId] : ClassTrainerSpells(p->getClass()))
+            {
+                Trainer::Trainer* t = sObjectMgr->GetTrainer(entry);
+                Trainer::Spell const* sp = t ? t->GetSpell(spellId) : nullptr;
+                if (!sp || !t->IsTrainerValidForPlayer(p) || !t->CanTeachSpell(p, sp))
+                    continue;
+                cost += sp->MoneyCost;
+                ++n;
+                if (names)
+                    if (SpellInfo const* info = sSpellMgr->GetSpellInfo(sp->SpellId))
+                        names->push_back(info->SpellName[0]);
+            }
+            return n ? std::max<uint32>(cost, 1) : 0;
+        }
+
+        // At the trainer: learns what she can, cheapest first, paying like Trainer::TeachSpell (reputation discount).
+        // Returns the names learned; `paid` and `tooExpensive` report the rest.
+        std::vector<std::string> LearnFrom(Player* p, Creature* npc, uint32& paid, uint32& tooExpensive)
+        {
+            std::vector<std::string> learned;
+            paid = tooExpensive = 0;
+            Trainer::Trainer* t = npc ? sObjectMgr->GetTrainer(npc->GetEntry()) : nullptr;
+            if (!t || !t->IsTrainerValidForPlayer(p))
+                return learned;
+            float discount = p->GetReputationPriceDiscount(npc);
+            // a new rank can become learnable after the one before it: a few passes
+            for (int pass = 0; pass < 3; ++pass)
+            {
+                std::vector<Trainer::Spell const*> now;
+                for (Trainer::Spell const& sp : t->GetSpells())
+                    if (t->CanTeachSpell(p, &sp))
+                        now.push_back(&sp);
+                if (now.empty())
+                    break;
+                std::sort(now.begin(), now.end(), [](Trainer::Spell const* a, Trainer::Spell const* b) { return a->MoneyCost < b->MoneyCost; });
+                bool any = false;
+                tooExpensive = 0;
+                for (Trainer::Spell const* sp : now)
+                {
+                    SpellInfo const* info = sSpellMgr->GetSpellInfo(sp->SpellId);
+                    if (!info)
+                        continue;
+                    uint32 cost = uint32(std::floor(sp->MoneyCost * discount));
+                    if (p->GetMoney() < cost)
+                    {
+                        ++tooExpensive;
+                        continue;
+                    }
+                    p->ModifyMoney(-int32(cost));
+                    if (info->HasEffect(SPELL_EFFECT_LEARN_SPELL))
+                        p->CastSpell(p, info->Id, true);
+                    else
+                        p->learnSpell(info->Id, false);
+                    paid += cost;
+                    learned.push_back(info->SpellName[0]);
+                    any = true;
+                }
+                if (!any)
+                    break;
+            }
+            return learned;
+        }
+
+        std::string NameList(std::vector<std::string> const& names, size_t max = 6)
+        {
+            std::string out;
+            for (size_t i = 0; i < names.size() && i < max; ++i)
+                out += (i ? ", " : "") + names[i];
+            if (names.size() > max)
+                out += " and " + std::to_string(names.size() - max) + " more";
+            return out;
+        }
+
+        // what an errand is for ("to turn in quests", ...)
+        char const* ErrandPurpose(bool sell, bool train, bool turnIn)
+        {
+            return sell ? " to sell junk" : train ? " to learn new spells" : turnIn ? " to turn in quests" : " to pick up quests";
         }
 
         // The nearest friendly merchant within `radius`.
@@ -1006,6 +1133,7 @@ namespace truecompanion::ac
             }
             case CompanionCommandKind::ResumeLead:
                 return _leads.count(bot->GetGUID()) ? ResumeLead(owner, bot) : "";
+            case CompanionCommandKind::LearnSpells: return LearnSpells(owner, bot, now);
             default: return "";
         }
     }
@@ -1791,6 +1919,56 @@ namespace truecompanion::ac
         return "";   // the quest-complete event already makes her comment
     }
 
+    std::string CompanionControl::LearnSpells(Player* owner, Player* bot, time_t now)
+    {
+        if (auto cur = _leads.find(bot->GetGUID()); cur != _leads.end())
+            return cur->second.fetch
+                ? "Nothing yet. You are still on your way to " + cur->second.title + ErrandPurpose(cur->second.sell, cur->second.train,
+                      cur->second.turnIn) + "; you can go to your trainer when you are back. Tell them."
+                : "Nothing yet. You are leading them to \"" + cur->second.title + "\"; you can go to your trainer afterwards (or when "
+                  "they say \"stop leading\"). Tell them.";
+        std::vector<std::string> names;
+        uint32 cost = TeachableNow(bot, &names);
+        if (!cost)
+            return "Nothing. Your class trainer has nothing new for you at your level; tell them.";
+        // her trainer right here: learn now
+        for (Creature* c : NearbyCreatures(bot, _cfg.interactRange + 5.0f))
+            if (c->IsAlive() && IsHerTrainer(bot, c->GetEntry()))
+            {
+                uint32 paid = 0, tooExpensive = 0;
+                std::vector<std::string> learned = LearnFrom(bot, c, paid, tooExpensive);
+                if (learned.empty())
+                    return "Nothing. You can't afford your new spells yet (about " + Money(cost) + ", you have " + Money(bot->GetMoney()) +
+                           "); tell them.";
+                return "You learned " + NameList(learned) + " from " + c->GetName() + " for " + Money(paid) + "." +
+                       (tooExpensive ? " " + std::to_string(tooExpensive) + " more cost more than you have." : "") + " Tell them.";
+            }
+        if (bot->GetMoney() == 0)
+            return "Nothing. You have no money to pay your trainer (" + NameList(names) + " cost about " + Money(cost) + "); tell them.";
+        // the nearest trainer of her class around: walk there alone and come back
+        QuestSpawn const* best = nullptr;
+        float bestDist = 0;
+        for (QuestSpawn const& sp : ClassTrainerSpawns(bot->GetMapId()))
+        {
+            float d = bot->GetDistance2d(sp.posX, sp.posY);
+            if (d > 800.0f || (best && d >= bestDist) || !IsHerTrainer(bot, sp.id))
+                continue;
+            best = &sp;
+            bestDist = d;
+        }
+        if (!best)
+            return "Nothing. There is no trainer for your class around here (" + NameList(names) + " are waiting for you, about " +
+                   Money(cost) + "); the big cities have one. Tell them.";
+        CreatureTemplate const* ct = sObjectMgr->GetCreatureTemplate(best->id);
+        std::string trainerName = ct ? ct->Name : "your trainer";
+        if (!BeginErrand(owner, bot, best->id, trainerName, best->posX, best->posY, best->posZ, false, "", false, now))
+            return "Nothing. You can't walk over there right now; tell them.";
+        _leads[bot->GetGUID()].train = true;
+        LOG_INFO("module", "[mod-true-companion] {} goes to {} to learn {} spells", bot->GetName(), trainerName, names.size());
+        return "You go to " + trainerName + " (about " + std::to_string(int(bestDist)) + " yards " + Direction(bot, best->posX, best->posY) +
+               ") to learn " + NameList(names) + " (about " + Money(cost) + "), then you come back to them. Tell them.";
+    }
+
     std::string CompanionControl::StartLead(Player* owner, Player* bot, CompanionCommand const& cmd, time_t now)
     {
         if (!_cfg.leadMode || !PlayerbotsBridge::Available())
@@ -1800,7 +1978,7 @@ namespace truecompanion::ac
             // on an errand: a lead to a named quest, or one told to her directly, takes over (the errand can wait;
             // finished quests are still turned in later). Only a plain "lead the way" to everyone waits for it.
             if (cur->second.fetch && cmd.arg.empty() && !cmd.direct)
-                return "Nothing yet. You are still on your way to " + cur->second.title + (cur->second.turnIn ? " to turn in quests" : " to pick up quests") +
+                return "Nothing yet. You are still on your way to " + cur->second.title + ErrandPurpose(cur->second.sell, cur->second.train, cur->second.turnIn) +
                        "; you can lead them as soon as you are back. Tell them.";
             if (cur->second.fetch)
                 LOG_INFO("module", "[mod-true-companion] {} drops the errand to {}: told to lead", bot->GetName(), cur->second.title);
@@ -2150,6 +2328,8 @@ namespace truecompanion::ac
                 return l.quest ? "quest" : "grind";
             if (l.sell)
                 return "merchant";
+            if (l.train)
+                return "trainer";
             if (l.turnIn)
                 return "turn_in";
             return l.onlyQuest ? "take" : "pick_up";
@@ -2716,8 +2896,25 @@ namespace truecompanion::ac
                 return;
             if (now - lead.since > (lead.group ? 600 : 240))
             {
-                FinishLead(owner, bot, "You could not reach " + lead.title + (lead.turnIn ? " to turn in your quests" : " to pick up quests") +
+                FinishLead(owner, bot, "You could not reach " + lead.title + ErrandPurpose(lead.sell, lead.train, lead.turnIn) +
                                        " and come back to them; tell them.");
+                return;
+            }
+            if (lead.train && bot->GetDistance2d(lead.x, lead.y) < 12.0f)
+            {
+                Creature* npc = nullptr;
+                for (Creature* c : NearbyCreatures(bot, 25.0f))
+                    if (c->GetEntry() == lead.fetchEntry && c->IsAlive())
+                        npc = c;
+                uint32 paid = 0, tooExpensive = 0;
+                std::vector<std::string> learned = LearnFrom(bot, npc, paid, tooExpensive);
+                LOG_INFO("module", "[mod-true-companion] {} learned {} spells at {} for {}", bot->GetName(), learned.size(), lead.title, Money(paid));
+                std::string said = !npc ? "You reached the place of " + lead.title + ", but the trainer isn't there right now."
+                                 : learned.empty() ? "You reached " + lead.title + " but couldn't learn anything" +
+                                                         (tooExpensive ? " (you can't afford it yet)." : ".")
+                                                   : "You learned " + NameList(learned) + " from " + lead.title + " for " + Money(paid) + "." +
+                                                         (tooExpensive ? " " + std::to_string(tooExpensive) + " more cost more than you have." : "");
+                FinishLead(owner, bot, said + " You are coming back to them. Tell them briefly.");
                 return;
             }
             if (lead.sell && bot->GetDistance2d(lead.x, lead.y) < 12.0f)

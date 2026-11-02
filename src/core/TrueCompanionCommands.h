@@ -44,6 +44,7 @@ namespace truecompanion
         StopLead,      // back to following
         PauseLead,     // "wait" while she leads: stop and wait, keep the lead (else it is the normal "stay")
         ResumeLead,    // "go on", "lead again": continue a paused lead (ignored when she isn't leading)
+        LearnSpells,   // "learn your spells": walk to her class trainer and learn what she can afford
     };
 
     struct CompanionCommand
