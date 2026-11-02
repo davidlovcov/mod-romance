@@ -938,6 +938,52 @@ TEST(Service, InFlightRequestIsCancelledAcrossDismissal)
     CHECK(h.WaitSpeak(h.Key()));
 }
 
+TEST(Service, SameCommandPathForWhisperPartyAndAddon)
+{
+    // The game layer asks PrepareControl for every channel; the answer depends on the text and the
+    // companion's settings only, never on where the line was typed.
+    Harness h;
+    h.Activate(h.Key());
+    auto give = h.svc->PrepareControl(h.Key(), "Elara, give me 10 gold please", "Elara");
+    CHECK(give.active);
+    CHECK(give.command && give.command->kind == CompanionCommandKind::GiveGold && give.command->amount == 100000);
+    auto ask = h.svc->PrepareControl(h.Key(), "what's in your bags?", "Elara");
+    CHECK(ask.active && !ask.command && (ask.knowledgeTopics & knowledge::Inventory));
+    // raw Playerbots commands are forwarded by the caller, never executed twice as companion commands
+    CHECK(!h.svc->PrepareControl(h.Key(), "!follow", "Elara").command);
+    CHECK(!h.svc->PrepareControl(h.Key(), "co +dps", "Elara").command);
+    // the character name works as well as the chosen name
+    PersonalityProfile p;
+    p.name = "Seren";
+    h.svc->SavePersonality(h.Key(), kAccount, "Elara", p, h.now);
+    CHECK(h.svc->PrepareControl(h.Key(), "Seren, attack the wolf", "Elara").command);
+    CHECK(h.svc->PrepareControl(h.Key(), "Elara, attack the wolf", "Elara").command);
+
+    // a command carried out by the game layer suppresses the legacy movement word on every channel
+    for (ChatChannel ch : { ChatChannel::Whisper, ChatChannel::Party, ChatChannel::Addon })
+    {
+        WorldContext ctx = h.ctx;
+        ctx.commandOutcome = "You attack the wolf.";
+        ctx.commandHandled = true;
+        h.now += 30;
+        h.llm->QueueReply(ReplyJson("On it!"));
+        auto r = h.svc->OnPlayerMessage(h.Key(), "Seren, attack the wolf", ch, ctx, h.now, ch == ChatChannel::Party);
+        CHECK(r.result == RomanceService::MessageResult::Accepted);
+        CHECK(!r.command.has_value());
+        h.PumpUntil([](auto const&) { return false; }, 100);
+    }
+
+    // natural commands off: knowledge only; AI off: nothing
+    CompanionSettings st;
+    st.naturalCommands = false;
+    h.svc->SaveSettings(h.Key(), kAccount, "Elara", st, h.now);
+    auto off = h.svc->PrepareControl(h.Key(), "give me 10 gold and show me your bags", "Elara");
+    CHECK(off.active && !off.command && off.knowledgeTopics != 0);
+    st.aiEnabled = false;
+    h.svc->SaveSettings(h.Key(), kAccount, "Elara", st, h.now);
+    CHECK(!h.svc->PrepareControl(h.Key(), "give me 10 gold", "Elara").active);
+}
+
 TEST(Service, SettingsValidation)
 {
     Harness h;

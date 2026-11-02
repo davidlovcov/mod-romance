@@ -19,6 +19,7 @@
 #ifndef MOD_ROMANCE_SERVICE_H
 #define MOD_ROMANCE_SERVICE_H
 
+#include "RomanceCommands.h"
 #include "RomanceConfig.h"
 #include "RomanceGift.h"
 #include "RomanceLlm.h"
@@ -172,9 +173,16 @@ namespace romance
         TimePoint LastActivity(CompanionKey const& key) const;
         // The name an active companion goes by (personality name, else character name).
         std::string DisplayName(CompanionKey const& key) const;
-        // For the game layer: true if `text` would reach the AI as roleplay (not a raw Playerbots command)
-        // and the companion accepts natural-language commands. `displayName` = the name she goes by.
-        bool WantsCompanionCommand(CompanionKey const& key, std::string const& text, std::string* displayName);
+        // What the game layer must do for a player line before it reaches the AI - the same for whisper, party and
+        // addon chat: which game knowledge to add, and which companion command (if any) to carry out.
+        // No command for raw Playerbots commands ("!follow"), with natural commands off, or with the AI off.
+        struct ControlRequest
+        {
+            bool active = false;                       // an active AI companion: knowledge may be added
+            uint32_t knowledgeTopics = 0;              // see romance::knowledge
+            std::optional<CompanionCommand> command;
+        };
+        ControlRequest PrepareControl(CompanionKey const& key, std::string const& text, std::string const& characterName);
         // Relationship stage of an active companion (nullopt if not active).
         std::optional<Stage> StageOf(CompanionKey const& key) const;
         void OnGameEvent(CompanionKey const& key, GameEvent const& ev, TimePoint now);

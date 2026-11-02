@@ -335,18 +335,21 @@ namespace romance
 
     // ================================================================= configuration
 
-    bool RomanceService::WantsCompanionCommand(CompanionKey const& key, std::string const& text, std::string* displayName)
+    RomanceService::ControlRequest RomanceService::PrepareControl(CompanionKey const& key, std::string const& text,
+                                                                  std::string const& characterName)
     {
+        ControlRequest r;
         Session* s = Find(key);
         if (!s || _shutdown || !s->rec.settings.aiEnabled)
-            return false;
+            return r;
+        r.active = true;
+        r.knowledgeTopics = DetectKnowledgeTopics(text);
         std::string cname = s->rec.personality.name.empty() ? s->rec.companionName : s->rec.personality.name;
-        if (displayName)
-            *displayName = cname;
         bool natural = _cfg.naturalLanguageCommands && s->rec.settings.naturalCommands;
-        if (!natural)
-            return false;
-        return _classifier.Classify(text, cname, natural).route == MessageRoute::Roleplay;
+        if (!natural || _classifier.Classify(text, cname, natural).route != MessageRoute::Roleplay)
+            return r;
+        r.command = ParseCompanionCommand(text, characterName.empty() ? cname : characterName, cname);
+        return r;
     }
 
     std::optional<Stage> RomanceService::StageOf(CompanionKey const& key) const

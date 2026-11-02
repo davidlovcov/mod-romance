@@ -770,9 +770,7 @@ namespace romance::ac
         if (!_service->IsActive(key) && !EnsureActive(sender, receiver, true))
             return true;        // not a romance companion: Playerbots handles it as usual
 
-        auto ctx = BuildContext(key).value_or(WorldContext{});
-        ApplyControl(sender, receiver, key, msg, ctx);
-        auto res = _service->OnPlayerMessage(key, msg, ChatChannel::Whisper, ctx, Now());
+        auto res = TalkTo(sender, receiver, key, msg, ChatChannel::Whisper, false);
         switch (res.result)
         {
             case RomanceService::MessageResult::NotForUs:
@@ -786,13 +784,6 @@ namespace romance::ac
                 return false;
             case RomanceService::MessageResult::Accepted:
             {
-                if (res.command)
-                {
-                    static char const* const cmds[] = { "", "follow", "stay", "attack", "flee" };
-                    int idx = int(*res.command);
-                    if (idx >= 1 && idx <= 4)
-                        PlayerbotsBridge::Command(receiver, sender, cmds[idx]);
-                }
                 // Show the player their own whisper (Player::Whisper would have done this), but keep the
                 // conversational text away from the Playerbots command parser.
                 WorldPacket data;
@@ -805,20 +796,35 @@ namespace romance::ac
         return true;
     }
 
+    RomanceService::HandleResult RomanceManager::TalkTo(Player* owner, Player* bot, CompanionKey const& key, std::string const& text,
+                                                        ChatChannel channel, bool partyTarget)
+    {
+        // The one path for whisper, party and addon chat: game knowledge and companion commands first,
+        // then the AI; plain movement words ("follow me") go to Playerbots once the line is accepted.
+        auto ctx = BuildContext(key).value_or(WorldContext{});
+        if (bot)
+            ApplyControl(owner, bot, key, text, ctx);
+        auto res = _service->OnPlayerMessage(key, text, channel, ctx, Now(), partyTarget);
+        if (res.result == RomanceService::MessageResult::Accepted && res.command && bot)
+        {
+            static char const* const cmds[] = { "", "follow", "stay", "attack", "flee" };
+            int idx = int(*res.command);
+            if (idx >= 1 && idx <= 4)
+                PlayerbotsBridge::Command(bot, owner, cmds[idx]);
+        }
+        return res;
+    }
+
     void RomanceManager::ApplyControl(Player* owner, Player* bot, CompanionKey const& key, std::string const& text, WorldContext& ctx)
     {
-        if (!_cfg.controlEnabled || !owner || !bot || !_service->IsActive(key))
+        if (!_cfg.controlEnabled || !owner || !bot)
             return;
-        std::string displayName;
-        if (!_service->WantsCompanionCommand(key, text, &displayName))
-        {
-            // Knowledge questions still get real data when commands are off ("what's in your bags?").
-            if (!displayName.empty())
-                _control->AddKnowledge(ctx, owner, bot, DetectKnowledgeTopics(text));
+        RomanceService::ControlRequest req = _service->PrepareControl(key, text, bot->GetName());
+        if (!req.active)
             return;
-        }
-        _control->AddKnowledge(ctx, owner, bot, DetectKnowledgeTopics(text));
-        if (auto cmd = ParseCompanionCommand(text, bot->GetName(), displayName))
+        // Knowledge questions get real data even with natural commands off ("what's in your bags?").
+        _control->AddKnowledge(ctx, owner, bot, req.knowledgeTopics);
+        if (auto const& cmd = req.command)
         {
             ctx.commandOutcome = _control->Execute(owner, bot, *cmd, _service->StageOf(key), Now());
             ctx.commandHandled = !ctx.commandOutcome.empty();
@@ -908,20 +914,7 @@ namespace romance::ac
         }
 
         for (CompanionKey const& key : addressed)
-        {
-            auto ctx = BuildContext(key).value_or(WorldContext{});
-            if (Player* bot = ObjectAccessor::FindConnectedPlayer(PlayerGuid(uint32(key.companion))))
-                ApplyControl(sender, bot, key, msg, ctx);
-            auto res = _service->OnPlayerMessage(key, msg, ChatChannel::Party, ctx, Now(), picked);
-            if (res.result == RomanceService::MessageResult::Accepted && res.command)
-            {
-                Player* bot = ObjectAccessor::FindConnectedPlayer(PlayerGuid(uint32(key.companion)));
-                static char const* const cmds[] = { "", "follow", "stay", "attack", "flee" };
-                int idx = int(*res.command);
-                if (bot && idx >= 1 && idx <= 4)
-                    PlayerbotsBridge::Command(bot, sender, cmds[idx]);
-            }
-        }
+            TalkTo(sender, ObjectAccessor::FindConnectedPlayer(PlayerGuid(uint32(key.companion))), key, msg, ChatChannel::Party, picked);
         Execute(_service->TakeOutgoing());
         return true;            // party chat is always shown to the party
     }
@@ -1454,17 +1447,9 @@ namespace romance::ac
                 ReplyError(player, msg, "not_active", name + " is not with you right now.");
                 return;
             }
-            auto ctx = BuildContext(key).value_or(WorldContext{});
-            auto res = _service->OnPlayerMessage(key, text, ChatChannel::Addon, ctx, now);
+            auto res = TalkTo(player, bot, key, text, ChatChannel::Addon, false);
             if (res.result == RomanceService::MessageResult::PassToPlayerbots)
                 PlayerbotsBridge::Command(bot, player, res.rewritten);
-            else if (res.result == RomanceService::MessageResult::Accepted && res.command)
-            {
-                static char const* const cmds[] = { "", "follow", "stay", "attack", "flee" };
-                int idx = int(*res.command);
-                if (idx >= 1 && idx <= 4)
-                    PlayerbotsBridge::Command(bot, player, cmds[idx]);
-            }
             else if (res.result == RomanceService::MessageResult::Busy)
                 ReplyError(player, msg, "busy", name + " is still answering.");
             else if (res.result == RomanceService::MessageResult::AiDisabled)

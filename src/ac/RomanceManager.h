@@ -161,6 +161,9 @@ namespace romance::ac
         void ProcessInbox();
         void ProcessTrades();
         void Execute(std::vector<OutgoingAction> const& actions);
+        // Sends a player line to a companion (whisper, party, addon chat): knowledge, commands, AI, movement words.
+        RomanceService::HandleResult TalkTo(Player* owner, Player* bot, CompanionKey const& key, std::string const& text,
+                                            ChatChannel channel, bool partyTarget);
         // Game knowledge + natural-language companion commands for one incoming message.
         void ApplyControl(Player* owner, Player* bot, CompanionKey const& key, std::string const& text, WorldContext& ctx);
         void PollControl();
