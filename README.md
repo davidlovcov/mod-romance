@@ -14,9 +14,13 @@ The in-game interface is the companion addon: **[azerothcore-true-companion-addo
 
 ## Screenshots
 
-| Companion | Chat | Character |
+| Companion | Quests | Character |
 |---|---|---|
-| ![Companion tab](docs/images/companion.jpg) | ![Chat tab](docs/images/chat.jpg) | ![Character tab](docs/images/character.jpg) |
+| ![Companion tab](docs/images/companion.jpg) | ![Quests tab](docs/images/quests.jpg) | ![Character tab](docs/images/character.jpg) |
+
+Two companions in party chat, each answering for themselves:
+
+![Party chat](docs/images/party-chat.jpg)
 
 A companion's memory after a short questing session (editable in the addon):
 
