@@ -885,6 +885,59 @@ TEST(Service, SheLeavesAfterTooMuchAbuseAndRefusesToComeBack)
     CHECK_CONTAINS(sys, "You left them because of how they treated you");
 }
 
+TEST(Service, QueuedResultNeverReachesAReactivatedSession)
+{
+    Harness h;
+    h.Activate(h.Key());
+    auto before = h.repo.LoadCompanion(h.Key())->relationship.v;
+    h.llm->QueueReply(ReplyJson("OLD SESSION REPLY", "happy", "very_positive", { "compliment", "kindness" }));
+    CHECK(h.svc->OnPlayerMessage(h.Key(), "You are wonderful", ChatChannel::Whisper, h.ctx, h.now).result ==
+          RomanceService::MessageResult::Accepted);
+    // the backend finishes, but the service is not ticked: the result waits in the queue
+    for (int i = 0; i < 200 && h.llm->CallCount() == 0; ++i)
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+
+    h.svc->Deactivate(h.Key(), h.now);
+    h.Activate(h.Key());
+    h.PumpUntil([](auto const&) { return false; }, 200);
+
+    CHECK(h.Spoken(h.Key()).empty());
+    for (auto const& t : h.svc->RecentChat(h.Key(), 50))
+        CHECK(t.text.find("OLD SESSION REPLY") == std::string::npos);
+    auto after = h.repo.LoadCompanion(h.Key())->relationship.v;
+    CHECK_EQ(after.affection, before.affection);
+    CHECK_EQ(after.friendship, before.friendship);
+
+    // the new session works normally and is not blocked by a leftover pending slot
+    h.llm->QueueReply(ReplyJson("New session reply."));
+    CHECK(h.svc->OnPlayerMessage(h.Key(), "Hello again", ChatChannel::Whisper, h.ctx, h.now + 60).result ==
+          RomanceService::MessageResult::Accepted);
+    CHECK(h.WaitSpeak(h.Key()));
+    CHECK_EQ(h.Spoken(h.Key()).back(), std::string("New session reply."));
+}
+
+TEST(Service, InFlightRequestIsCancelledAcrossDismissal)
+{
+    Harness h;
+    h.Activate(h.Key());
+    h.llm->SetDelayMs(150);
+    h.llm->QueueReply(ReplyJson("IN FLIGHT REPLY"));
+    h.svc->OnPlayerMessage(h.Key(), "Tell me a story", ChatChannel::Whisper, h.ctx, h.now);
+    for (int i = 0; i < 200 && h.llm->CallCount() == 0; ++i)
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    h.svc->Deactivate(h.Key(), h.now);
+    h.Activate(h.Key());
+    h.llm->SetDelayMs(0);
+    h.PumpUntil([](auto const&) { return false; }, 400);
+    CHECK(h.Spoken(h.Key()).empty());
+    for (auto const& t : h.svc->RecentChat(h.Key(), 50))
+        CHECK(t.text.find("IN FLIGHT REPLY") == std::string::npos);
+    h.llm->QueueReply(ReplyJson("Fresh reply."));
+    h.svc->OnPlayerMessage(h.Key(), "Hi", ChatChannel::Whisper, h.ctx, h.now + 60);
+    CHECK(h.WaitSpeak(h.Key()));
+}
+
 TEST(Service, SettingsValidation)
 {
     Harness h;

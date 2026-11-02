@@ -344,6 +344,9 @@ namespace romance
         bool _healthInFlight = false;
         bool _shutdown = false;
         std::mt19937 _rng;
+        // Every activation, reset and reconfigure gets a new generation: results that were queued or in flight
+        // for an earlier session of the same companion can never be applied to a later one.
+        uint64_t _nextGeneration = 0;
     };
 }
 

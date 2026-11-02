@@ -131,7 +131,7 @@ namespace romance
             s->tokens.clear();
             s->pending = 0;
             s->summarizing = false;
-            ++s->generation;   // results of the old pool are ignored
+            s->generation = ++_nextGeneration;   // results of the old pool are ignored
         }
         if (_pool)
             _pool->Shutdown();
@@ -249,6 +249,7 @@ namespace romance
             r.error = "estranged";
             return r;
         }
+        s->generation = ++_nextGeneration;
         s->ownerName = ownerName;
         s->memories.Load(_repo.LoadMemories(key));
         if (_cfg.memoryEnabled)
@@ -1263,12 +1264,15 @@ namespace romance
 
         Session* s = Find(r.ctx.key);
         if (!s || s->generation != r.ctx.generation)
-            return; // companion dismissed or service reconfigured meanwhile
+            return; // companion dismissed (and maybe called again), reset or service reconfigured meanwhile
         s->tokens.erase(std::remove(s->tokens.begin(), s->tokens.end(), r.ctx.token), s->tokens.end());
         if (r.ctx.summary)
             s->summarizing = false;
         else if (s->pending > 0)
             --s->pending;
+        // A cancelled request only frees its slot: no history, memory or relationship changes.
+        if (r.ctx.token && r.ctx.token->load())
+            return;
 
         s->debug.lastLatencyMs = r.llm.latencyMs;
         s->debug.lastStatus = LlmStatusId(r.llm.status);
@@ -2060,7 +2064,7 @@ namespace romance
                 t->store(true);
             s->tokens.clear();
             s->pending = 0;
-            ++s->generation;
+            s->generation = ++_nextGeneration;
             name = s->rec.companionName;
             account = s->rec.ownerAccount;
         }
