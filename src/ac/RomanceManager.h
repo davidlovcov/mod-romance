@@ -58,6 +58,8 @@ namespace romance::ac
         // inbox (any thread)
         void QueueLogin(ObjectGuid guid);
         void QueueLogout(ObjectGuid guid);
+        // A member left the group (kicked, left, group disbanded): an active companion among them is dismissed.
+        void QueueGroupRemoval(ObjectGuid guid);
         void QueueKill(ObjectGuid killer, std::string const& creatureName, bool notable);
         void QueueQuestComplete(ObjectGuid player, std::string const& questTitle, uint32 questId = 0);
         void QueueQuestAccept(ObjectGuid player, uint32 questId);
@@ -182,6 +184,8 @@ namespace romance::ac
         std::map<CompanionKey, time_t> _pendingLeaves;   // estranged companions about to leave
 
         std::mutex _inboxMutex;
+
+        std::vector<uint32> _groupRemovals;   // guarded by _inboxMutex
         std::vector<InboxEvent> _inbox;
         std::mutex _tradeMutex;
         std::map<uint32, TradeSnapshot> _trades;    // by owner guid

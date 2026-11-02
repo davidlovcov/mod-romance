@@ -10,6 +10,8 @@
 #include "Chat.h"
 #include "CommandScript.h"
 #include "Creature.h"
+#include "Group.h"
+#include "GroupScript.h"
 #include "Item.h"
 #include "Opcodes.h"
 #include "Player.h"
@@ -173,8 +175,33 @@ namespace
     };
 }
 
+namespace
+{
+    // Kicking a companion from the party (or disbanding it) dismisses her; before she stayed and kept following.
+    class RomanceGroupScript : public GroupScript
+    {
+    public:
+        RomanceGroupScript() : GroupScript("mod_romance_group", { GROUPHOOK_ON_REMOVE_MEMBER, GROUPHOOK_ON_DISBAND }) { }
+
+        void OnRemoveMember(Group* /*group*/, ObjectGuid guid, RemoveMethod /*method*/, ObjectGuid /*kicker*/, char const* /*reason*/) override
+        {
+            if (sRomanceMgr.Enabled())
+                sRomanceMgr.QueueGroupRemoval(guid);
+        }
+
+        void OnDisband(Group* group) override
+        {
+            if (!sRomanceMgr.Enabled() || !group)
+                return;
+            for (auto const& slot : group->GetMemberSlots())
+                sRomanceMgr.QueueGroupRemoval(slot.guid);
+        }
+    };
+}
+
 void Addmod_romanceScripts()
 {
+    new RomanceGroupScript();
     new RomanceWorldScript();
     new RomancePlayerScript();
     new RomanceServerScript();

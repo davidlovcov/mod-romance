@@ -198,6 +198,21 @@ namespace romance::ac
         _tickTimer += diff;
         _controlTimer += diff;
         ProcessInbox();
+        {
+            // companions removed from the group (kicked, group disbanded) are dismissed, like "dismiss" in the addon
+            std::vector<uint32> removed;
+            {
+                std::lock_guard<std::mutex> g(_inboxMutex);
+                removed.swap(_groupRemovals);
+            }
+            for (uint32 low : removed)
+                for (CompanionKey const& key : _service->ActiveKeys())
+                    if (uint32(key.companion) == low && !_pendingLeaves.count(key))
+                    {
+                        LOG_INFO("module", "[mod-romance] companion {} left the group: dismissing", low);
+                        _pendingLeaves[key] = Now();
+                    }
+        }
         ProcessPendingLogins();
         ProcessTrades();
         _control->Update(Now());
@@ -252,6 +267,12 @@ namespace romance::ac
     {
         std::lock_guard<std::mutex> g(_inboxMutex);
         _inbox.push_back({ InboxEvent::Kind::Logout, guid.GetCounter(), "", false });
+    }
+
+    void RomanceManager::QueueGroupRemoval(ObjectGuid guid)
+    {
+        std::lock_guard<std::mutex> g(_inboxMutex);
+        _groupRemovals.push_back(guid.GetCounter());
     }
 
     void RomanceManager::QueueKill(ObjectGuid killer, std::string const& creatureName, bool notable)

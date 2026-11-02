@@ -31,6 +31,7 @@
 
 class Player;
 class Unit;
+class Quest;
 
 namespace romance::ac
 {
@@ -106,6 +107,7 @@ namespace romance::ac
             std::set<ObjectGuid> unfollowed;          // bots whose Playerbots "follow" is off while they walk closer
             ObjectGuid only;                          // a single attack: just this enemy
             uint32 seen = 0, tapped = 0, other = 0;   // last search (for the log): enemies around, tagged by others, not wanted
+            time_t lootUntil = 0;                     // after a kill: a few quiet seconds so the bots loot (quest items!)
             time_t chaseSince = 0, lastChase = 0;
         };
         // Lead mode: she walks to the quest area (you follow), then hunts the quest mobs there.
@@ -130,6 +132,8 @@ namespace romance::ac
             std::string fetchFilter;       // quest title words, "class" = class quests only
             bool turnIn = false;           // fetch mode, but turn finished quests in at fetchEntry
             bool fetchAll = false;         // pick up from every giver around (else only one quest)
+            bool group = false;            // "lead the way" without a quest: the player and the other companions come
+                                           // along, everyone picks up quests, then she leads to them (or grinds)
             std::set<uint32> visited;      // givers already visited on this errand
             std::vector<std::string> taken;   // quests picked up so far on this errand
             uint32 moves = 0;              // lead: spots tried after one had no free quest mobs
@@ -156,6 +160,11 @@ namespace romance::ac
         std::string StartLead(Player* owner, Player* bot, CompanionCommand const& cmd, time_t now);
         std::string StopLead(Player* owner, Player* bot);
         std::string ResumeLead(Player* owner, Player* bot);
+        std::string BeginQuestLead(Player* owner, Player* bot, Quest const* pick, time_t now);
+        std::string QuestRound(Player* owner, Player* bot, time_t now);
+        std::string Grind(Player* owner, Player* bot, time_t now);
+        Quest const* NextQuest(Player* owner, Player* bot) const;
+        std::vector<Player*> OtherCompanions(Player* owner, Player* bot) const;
         void Trade(Player* owner, Player* bot, std::string const& command, time_t now);
 
         RomanceConfig const& _cfg;

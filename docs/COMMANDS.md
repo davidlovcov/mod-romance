@@ -16,7 +16,7 @@ Everything you can say or type to control your companion. Examples use a female 
 |---|---|
 | `.romance status` | Module and Ollama status, your active companions. |
 | `.romance summon <name>` | Calls one of your characters as an AI companion (same as "Call companion" in the addon). |
-| `.romance dismiss` | Sends all your active companions home (they log out). |
+| `.romance dismiss` | Sends all your active companions home (they log out). Kicking a companion from the party, or disbanding it, does the same for her. |
 | `.romance on` / `.romance off` | Turns the AI on or off for the bot you have **targeted**. With the AI off, it is a normal Playerbot. |
 
 ## Addon slash commands
@@ -67,7 +67,7 @@ The **Character** tab in the addon shows the same data at a glance.
 | Turn in quests | "Turn in your quests", "Hand in the quest" | Turns in finished quests at quest enders nearby. If the quest ender is further away (up to about 250 yards), she walks there, turns them in and comes back. |
 | Automatic | (nothing to say) | When you take a quest, companions near you take it too; when you turn one in, they turn theirs in as well (`Romance.Control.QuestSync`). |
 | Share quests | "Share your quests", "Share the quest Kobold Camp Cleanup" | Shares the quests you don't have yet and can take, one per second. |
-| Lead | "Lead the way", "Lead me to Kobold Camp Cleanup", "Let's do the Fargodeep Mine quest" | She walks to the area of one of her quests and you follow (you don't need to make her group leader). Without a quest name she picks one you both have. She waits when you fall behind, fights the quest creatures when she arrives, and follows you again when the objectives are done, telling you to turn it in. Quests without creatures to kill: she takes you to the area and tells you what to look for. |
+| Lead | "Lead the way", "Lead me to Kobold Camp Cleanup", "Let's do the Fargodeep Mine quest" | She walks to the area of one of her quests and you follow (you don't need to make her group leader). Without a quest name she picks one you both have. She waits when you fall behind, fights the quest creatures when she arrives, and follows you again when the objectives are done, telling you to turn it in. Quests without creatures to kill: she takes you to the area and tells you what to look for. Without a quest she leads you and the other companions to the quest givers around (everyone picks up what they can), then to one of the new quests; with nothing to pick up she turns in finished quests or fights the creatures around (grinding). Quests that need item drops work too: after every kill there is a short pause to loot. |
 | Pause / continue | "Wait", "Hold on" … "Lead again", "Go on", "Keep going" | While leading, "wait" makes her stop where she is without giving up the lead; "lead again" (or "go on") continues to the same quest. When she isn't leading, "wait" is the normal Playerbots stay. |
 | Stop leading | "I'll lead", "Stop leading" | She follows you again. |
 
