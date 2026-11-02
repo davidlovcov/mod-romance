@@ -169,7 +169,7 @@ namespace romance::ac
         RomanceService::HandleResult TalkTo(Player* owner, Player* bot, CompanionKey const& key, std::string const& text,
                                             ChatChannel channel, bool partyTarget);
         // Game knowledge + natural-language companion commands for one incoming message.
-        void ApplyControl(Player* owner, Player* bot, CompanionKey const& key, std::string const& text, WorldContext& ctx);
+        void ApplyControl(Player* owner, Player* bot, CompanionKey const& key, std::string const& text, WorldContext& ctx, bool direct);
         void PollControl();
         int64 EstrangedHours(Player* owner, uint32 guidLow);
         GiftItem DescribeItem(Item* item, Player* receiver) const;

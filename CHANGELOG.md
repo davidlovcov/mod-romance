@@ -3,6 +3,9 @@
 ## Unreleased
 
 ### Added
+- Group quests (for the addon's new Quests tab): the party's quests with who has which, the quests available around, a quest order for the whole group ("Apply" switches the leading companion right away), ignored quests (never picked up or led to) and "abandon for all companions".
+- "Lead me to <quest>" for a quest that is already done: she leads you to turn it in.
+- A lead you give one companion directly (whisper, the addon, or her name in party chat) takes over from the companion leading now; "lead the way" to everyone still picks just one.
 - Quest level: "lead the way" and "pick up your quests" leave quests far above the group for later (the group's average level +2, +3 with three, +4 with five or more); grinding leaves such enemies alone too. A quest you name ("lead me to ...") or put first in the addon's quest order is always done.
 - Quest order (addon Character tab): she leads to the first unfinished quest of your order. "Lead me to <quest>" while she leads switches to that quest.
 - Companion setting "Wait for me to loot" (off by default): after a fight she also waits for your loot; off, she only loots her own and goes on.

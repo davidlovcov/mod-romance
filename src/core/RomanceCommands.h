@@ -52,7 +52,8 @@ namespace romance
         std::string arg;
         uint64_t amount = 0;
         bool onMe = false;
-        bool all = false;   // AcceptQuests: "all your quests" / "your quests" (every giver around), not just the nearest quest
+        bool all = false;
+        bool direct = false;   // addressed to her alone (whisper, addon, or her name in party chat), not to everyone   // AcceptQuests: "all your quests" / "your quests" (every giver around), not just the nearest quest
     };
 
     char const* CompanionCommandId(CompanionCommandKind k);

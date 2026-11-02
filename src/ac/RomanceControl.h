@@ -65,8 +65,15 @@ namespace romance::ac
 
         bool IsLeading(ObjectGuid bot) const { return _leads.count(bot) > 0; }
 
-        // Quest order chosen in the addon (quest ids, first = next); she leads to the first unfinished one.
-        void SetQuestOrder(ObjectGuid bot, std::vector<uint32> order) { _questOrder[bot] = std::move(order); }
+        // The player's quest order for the group (quest ids, first = next). `apply`: a companion leading right now
+        // switches to the new first quest.
+        void SetQuestOrder(Player* owner, std::vector<uint32> order, bool apply, time_t now);
+        // Quests the player never wants done: not picked up, not led to.
+        void SetIgnoredQuests(ObjectGuid owner, std::set<uint32> ids) { _ignored[owner] = std::move(ids); }
+        // Abandons the quest for every companion in the player's group; returns how many dropped it.
+        uint32 AbandonForCompanions(Player* owner, uint32 questId);
+        // Everything for the addon's group quest tab: the party's quests (who has which), quests available around.
+        Json GroupQuests(Player* owner) const;
         // "Wait for me to loot" (companion setting): after a fight she also waits for the player's loot.
         void SetWaitForPlayerLoot(ObjectGuid bot, bool on) { if (on) _waitLoot.insert(bot); else _waitLoot.erase(bot); }
 
@@ -200,7 +207,9 @@ namespace romance::ac
         std::map<ObjectGuid, Lead> _leads;               // by companion
         std::map<ObjectGuid, Hunt> _hunts;               // by owner
         std::vector<std::pair<ObjectGuid, std::string>> _notices;
-        std::map<ObjectGuid, std::vector<uint32>> _questOrder;   // by companion
+        std::map<ObjectGuid, std::vector<uint32>> _questOrder;   // by player
+        std::map<ObjectGuid, std::set<uint32>> _ignored;          // by player
+        std::set<uint32> const* Ignored(Player* owner) const;
         std::set<ObjectGuid> _waitLoot;
         std::map<ObjectGuid, time_t> _lastSellTrip;
         time_t _lastStep = 0;

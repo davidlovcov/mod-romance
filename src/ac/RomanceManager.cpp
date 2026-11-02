@@ -865,7 +865,7 @@ namespace romance::ac
         // then the AI; plain movement words ("follow me") go to Playerbots once the line is accepted.
         auto ctx = BuildContext(key).value_or(WorldContext{});
         if (bot)
-            ApplyControl(owner, bot, key, text, ctx);
+            ApplyControl(owner, bot, key, text, ctx, channel != ChatChannel::Party || !partyTarget);
         auto res = _service->OnPlayerMessage(key, text, channel, ctx, Now(), partyTarget);
         if (res.result == RomanceService::MessageResult::Accepted && res.command && bot)
         {
@@ -879,7 +879,8 @@ namespace romance::ac
         return res;
     }
 
-    void RomanceManager::ApplyControl(Player* owner, Player* bot, CompanionKey const& key, std::string const& text, WorldContext& ctx)
+    void RomanceManager::ApplyControl(Player* owner, Player* bot, CompanionKey const& key, std::string const& text, WorldContext& ctx,
+                                      bool direct)
     {
         if (!_cfg.controlEnabled || !owner || !bot)
             return;
@@ -891,7 +892,9 @@ namespace romance::ac
         if (auto const& cmd = req.command)
         {
             auto stage = _service->StageOf(key);
-            ctx.commandOutcome = _control->Execute(owner, bot, *cmd, stage, Now());
+            CompanionCommand c = *cmd;
+            c.direct = direct;   // in party chat: only when addressed by name
+            ctx.commandOutcome = _control->Execute(owner, bot, c, stage, Now());
             // The model may still say "here you go"; the player sees the real reason in the chat.
             bool giving = cmd->kind == CompanionCommandKind::GiveItem || cmd->kind == CompanionCommandKind::GiveGold;
             if (giving && stage && uint32(*stage) < _cfg.giveMinStage)
@@ -1449,6 +1452,46 @@ namespace romance::ac
             return;
         }
 
+        // ---- the player's group: quest order, ignored quests, abandoning (all companions at once)
+        if (op == "get_group_quests" || op == "set_group_quest_order" || op == "set_ignored_quests" || op == "abandon_quest")
+        {
+            auto ids = [&]()
+            {
+                std::vector<uint32> out;
+                if (msg["quests"].IsArray())
+                    for (Json const& q : msg["quests"].AsArray())
+                        if (int64_t id = q.AsInt(0); id > 0 && out.size() < 100)
+                            out.push_back(uint32(id));
+                return out;
+            };
+            Json p = Json::MakeObject();
+            if (op == "get_group_quests")
+            {
+                p = _control->GroupQuests(player);
+                p.Set("op", "group_quests");
+            }
+            else
+            {
+                if (op == "set_group_quest_order")
+                    _control->SetQuestOrder(player, ids(), msg.GetBool("apply", false), now);
+                else if (op == "set_ignored_quests")
+                {
+                    auto list = ids();
+                    _control->SetIgnoredQuests(player->GetGUID(), std::set<uint32>(list.begin(), list.end()));
+                }
+                else
+                {
+                    int64_t quest = msg.GetInt("quest", 0);
+                    p.Set("abandoned", int64_t(quest > 0 ? _control->AbandonForCompanions(player, uint32(quest)) : 0));
+                }
+                p.Set("op", "ack");
+                p.Set("for", op);
+                p.Set("ok", true);
+            }
+            Reply(player, msg, p);
+            return;
+        }
+
         // ---- everything below addresses one companion and requires ownership
         uint32 guid = JsonGuid(msg);
         std::string name, error;
@@ -1517,7 +1560,7 @@ namespace romance::ac
                 for (Json const& q : msg["quests"].AsArray())
                     if (int64_t id = q.AsInt(0); id > 0 && order.size() < 25)
                         order.push_back(uint32(id));
-            _control->SetQuestOrder(PlayerGuid(guid), order);
+            _control->SetQuestOrder(player, order, msg.GetBool("apply", false), now);
             ack(true);
         }
         else if (op == "apply_preset")
