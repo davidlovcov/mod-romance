@@ -120,6 +120,7 @@ namespace romance::ac
             RateLimiter limiter{ 15.0, 60.0 };
             uint32 nextMessageId = 1;
             uint32 rejected = 0;
+            std::map<uint32, ImportAssembler> imports;   // multi-part imports in progress, by companion guid
         };
 
         struct PendingSummon

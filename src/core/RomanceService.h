@@ -21,6 +21,7 @@
 
 #include "RomanceCommands.h"
 #include "RomanceConfig.h"
+#include "RomanceTransfer.h"
 #include "RomanceGift.h"
 #include "RomanceLlm.h"
 #include "RomanceMemory.h"
@@ -212,6 +213,8 @@ namespace romance
         std::vector<ChatTurn> RecentChat(CompanionKey const& key, size_t limit);
 
         Json ExportCompanion(CompanionKey const& key, uint32_t ownerAccount);
+        // The export split into pages for the addon (empty if export is disabled).
+        std::vector<std::string> ExportPages(CompanionKey const& key, uint32_t ownerAccount, size_t maxPageBytes = kExportPageBytes);
         SaveResult ImportCompanion(CompanionKey const& key, uint32_t ownerAccount, std::string const& companionName,
                                    Json const& data, TimePoint now);
 

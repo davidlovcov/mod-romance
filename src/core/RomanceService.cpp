@@ -2128,6 +2128,14 @@ namespace romance
         return j;
     }
 
+    std::vector<std::string> RomanceService::ExportPages(CompanionKey const& key, uint32_t ownerAccount, size_t maxPageBytes)
+    {
+        Json full = ExportCompanion(key, ownerAccount);
+        if (full.Has("error"))
+            return {};
+        return SplitExportPages(full, maxPageBytes);
+    }
+
     RomanceService::SaveResult RomanceService::ImportCompanion(CompanionKey const& key, uint32_t ownerAccount, std::string const& companionName,
                                                                Json const& data, TimePoint now)
     {
@@ -2156,7 +2164,9 @@ namespace romance
             if (AddUserMemory(key, m->kind, m->text, std::min(m->importance, 80), now))
                 ++imported;
         }
-        r.notes.push_back(std::to_string(imported) + " memories imported");
+        size_t offered = data["memories"].AsArray().size();
+        r.notes.push_back(std::to_string(imported) + " of " + std::to_string(offered) + " memories imported" +
+                          (imported < offered ? " (duplicates merged, summaries skipped or the memory limit reached)" : ""));
         r.notes.push_back("relationship values are server-authoritative and were not imported");
         r.ok = true;
         return r;

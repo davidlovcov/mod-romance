@@ -105,6 +105,10 @@ namespace romance::ac
             if (code == "module_disabled") return "The romance module is disabled.";
             if (code == "unknown_preset") return "That preset does not exist (anymore).";
             if (code == "not_online") return "This companion is not in the world right now. Call them first.";
+            if (code == "import_incomplete") return "Not every part of the import arrived; nothing was changed. Try again.";
+            if (code == "import_too_large") return "That import is too large.";
+            if (code == "import_not_started" || code == "import_bad_part") return "The import was interrupted; nothing was changed. Try again.";
+            if (code == "invalid_json") return "That is not a valid mod-romance export.";
             if (code == "preset_label_required") return "Give the preset a name first.";
             if (code == "preset_limit_reached") return "You have reached the maximum number of custom presets. Delete one first.";
             if (code == "activation_failed") return "The companion joined, but the AI could not be activated.";
@@ -1535,12 +1539,47 @@ namespace romance::ac
         }
         else if (op == "export")
         {
-            Json data = _service->ExportCompanion(key, account);
+            // Paged: the addon asks for part 0, 1, ... until `parts`; each page stays far below its receive limit.
+            std::vector<std::string> pages = _service->ExportPages(key, account);
+            if (pages.empty())
+            {
+                ReplyError(player, msg, "export_disabled", "Exporting memories is disabled on this server.");
+                return;
+            }
+            int64_t part = msg.GetInt("part", 0);
+            if (part < 0 || part >= int64_t(pages.size()))
+            {
+                ReplyError(player, msg, "bad_part");
+                return;
+            }
             Json p = Json::MakeObject();
             p.Set("op", "export_data");
             p.Set("guid", int64_t(guid));
-            p.Set("data", data.Dump());
+            p.Set("part", part);
+            p.Set("parts", int64_t(pages.size()));
+            p.Set("data", pages[size_t(part)]);
             Reply(player, msg, p);
+        }
+        else if (op == "import_begin" || op == "import_part" || op == "import_end")
+        {
+            ImportAssembler& imp = _peers[player->GetGUID().GetCounter()].imports[guid];
+            std::string err;
+            if (op == "import_begin")
+                err = imp.Begin(size_t(std::max<int64_t>(0, msg.GetInt("parts", 0))), now);
+            else if (op == "import_part")
+                err = imp.Add(size_t(std::max<int64_t>(0, msg.GetInt("index", -1))), msg.GetString("data"), now);
+            else
+            {
+                auto full = imp.Finish(err);
+                if (full)
+                {
+                    auto res = _service->ImportCompanion(key, account, name, *full, now);
+                    ack(res.ok, res.error, res.notes);
+                    sendCompanion();
+                    return;
+                }
+            }
+            ack(err.empty(), err);
         }
         else if (op == "import")
         {

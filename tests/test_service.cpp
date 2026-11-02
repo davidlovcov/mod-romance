@@ -11,7 +11,9 @@
 
 #include "MockLlm.h"
 #include "RomancePresets.h"
+#include "RomanceProtocol.h"
 #include "RomanceService.h"
+#include "RomanceTransfer.h"
 
 #include <chrono>
 #include <thread>
@@ -982,6 +984,99 @@ TEST(Service, SameCommandPathForWhisperPartyAndAddon)
     st.aiEnabled = false;
     h.svc->SaveSettings(h.Key(), kAccount, "Elara", st, h.now);
     CHECK(!h.svc->PrepareControl(h.Key(), "give me 10 gold", "Elara").active);
+}
+
+TEST(Service, ExportImportRoundTripAtMemoryCapacity)
+{
+    Harness h;
+    h.Activate(h.Key());
+    static char const* const adj[] = { "silver", "broken", "ancient", "tiny", "glowing", "cursed", "golden", "wooden", "frozen", "burning" };
+    static char const* const noun[] = { "lantern", "compass", "dagger", "amulet", "scroll", "kettle", "flute", "helmet", "feather", "map" };
+    static char const* const place[] = { "Goldshire", "Westfall", "Duskwood", "Ironforge", "Darnassus", "Stormwind", "Menethil", "Redridge" };
+    // distinct memories up to the configured capacity (similar ones would be merged by de-duplication)
+    size_t want = h.cfg.maxMemoriesPerCompanion;
+    size_t total = 0;
+    auto word = [](size_t n) { std::string w; for (int k = 0; k < 4; ++k) { w += char('a' + n % 26); n /= 26; } return w; };
+    for (size_t i = 0; total < want && i < want * 4; ++i)
+    {
+        std::string text = std::string("Madox kept a ") + adj[i % 10] + " " + noun[(i / 10) % 10] + " from " + place[(i / 100) % 8] +
+                           " called \"" + word(i * 7919 + 13) + " " + word(i * 104729 + 7) + "\" \xc3\xa4\xc3\xb6\xc3\xbc";
+        h.svc->AddUserMemory(h.Key(), MemoryKind::Fact, text, 40, h.now);
+        h.svc->ListMemories(h.Key(), std::nullopt, "", 0, 1, &total);
+    }
+    CHECK_EQ(total, want);
+
+    // export: every page, wrapped in its reply, fits the addon's receive limits (64 KiB, 400 chunks)
+    auto pages = h.svc->ExportPages(h.Key(), kAccount);
+    CHECK(pages.size() > 1);
+    for (size_t i = 0; i < pages.size(); ++i)
+    {
+        CHECK(pages[i].size() <= kExportPageBytes);
+        Json reply = Json::MakeObject();
+        reply.Set("op", "export_data");
+        reply.Set("guid", int64_t(kElara));
+        reply.Set("part", int64_t(i));
+        reply.Set("parts", int64_t(pages.size()));
+        reply.Set("data", pages[i]);
+        auto chunks = EncodeAddonMessage(reply, uint32_t(i + 1));
+        size_t bytes = 0;
+        for (auto const& c : chunks)
+            bytes += c.size();
+        CHECK(chunks.size() <= 400);
+        CHECK(bytes <= 64 * 1024);
+    }
+    auto full = JoinExportPages(pages);
+    CHECK(full.has_value());
+    CHECK_EQ((*full)["memories"].AsArray().size(), want);
+
+    // import: split into parts whose requests pass the server's real reassembler (16 KiB, 96 chunks)
+    auto parts = SplitExportPages(*full, 9000);
+    ImportAssembler imp;
+    CHECK(imp.Begin(parts.size(), h.now).empty());
+    AddonReassembler server;
+    for (size_t i = 0; i < parts.size(); ++i)
+    {
+        Json req = Json::MakeObject();
+        req.Set("op", "import_part");
+        req.Set("guid", int64_t(kLyra));
+        req.Set("index", int64_t(i));
+        req.Set("data", parts[i]);
+        req.Set("req", int64_t(100 + i));
+        CHECK(req.Dump().size() <= kMaxInboundMessageBytes);
+        AddonReassembler::Result got;
+        for (auto const& chunk : EncodeAddonMessage(req, uint32_t(200 + i)))
+            got = server.Feed(chunk, 1000);
+        CHECK(got.status == AddonReassembler::Status::Complete);
+        CHECK(imp.Add(size_t(got.message.GetInt("index")), got.message.GetString("data"), h.now).empty());
+    }
+    std::string err;
+    auto joined = imp.Finish(err);
+    CHECK(joined.has_value());
+    auto res = h.svc->ImportCompanion(h.Key(kArthas, kLyra), kAccount, "Lyra", *joined, h.now);
+    CHECK(res.ok);
+    h.svc->ListMemories(h.Key(kArthas, kLyra), std::nullopt, "", 0, 100000, &total);
+    CHECK_EQ(total, want);
+    CHECK_CONTAINS(res.notes.front(), std::to_string(want) + " of " + std::to_string(want));
+}
+
+TEST(Service, IncompleteImportChangesNothing)
+{
+    Harness h;
+    ImportAssembler imp;
+    CHECK(imp.Begin(3, h.now).empty());
+    CHECK(imp.Add(0, "{}", h.now).empty());
+    CHECK(imp.Add(2, "{}", h.now).empty());
+    CHECK_EQ(imp.Add(5, "{}", h.now), std::string("import_bad_part"));
+    std::string err;
+    CHECK(!imp.Finish(err).has_value());
+    CHECK_EQ(err, std::string("import_incomplete"));
+    // timed out between parts
+    CHECK(imp.Begin(2, h.now).empty());
+    CHECK_EQ(imp.Add(0, "{}", h.now + kImportTimeoutSec + 1), std::string("import_not_started"));
+    CHECK_EQ(imp.Begin(kMaxImportParts + 1, h.now), std::string("import_too_large"));
+    CHECK_EQ(imp.Begin(0, h.now), std::string("import_too_large"));
+    // pages out of order or from another format are rejected when joining
+    CHECK(!JoinExportPages({ "{\"format\":\"other\",\"page\":0,\"pages\":1,\"memories\":[]}" }).has_value());
 }
 
 TEST(Service, SettingsValidation)

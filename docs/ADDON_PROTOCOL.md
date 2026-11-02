@@ -61,8 +61,11 @@ The server **never** takes identity from the payload. The owner is always the se
 | `clear_memories` | `guid`, `kind?` (absent = all) | `ack` {notes} |
 | `clear_history` | `guid` | `ack` |
 | `reset_companion` | `guid`, `confirm: "RESET"` | `ack`, `companion` |
-| `export` | `guid` | `export_data` {data: JSON string} |
-| `import` | `guid`, `data` (JSON string) | `ack` {notes}. Relationship values are never imported. |
+| `export` | `guid`, `part` (0-based, default 0) | `export_data` {data: JSON text of one page, part, parts}. Each page is at most 8 KiB; page 0 carries personality, settings and relationship, every page a slice of the memories. Ask for part 0, 1, … until `parts`, then join the pages. |
+| `import_begin` | `guid`, `parts` (1–128) | `ack` |
+| `import_part` | `guid`, `index`, `data` (JSON text of one page, same format as export pages) | `ack`. Each request must stay below 16 KiB (the addon keeps it under 14,000 bytes). |
+| `import_end` | `guid` | `ack` {notes}, then `companion`. Applied only if every part arrived (`import_incomplete` otherwise; nothing changes). An unfinished import expires 60 s after its last part. Relationship values are never imported. |
+| `import` | `guid`, `data` (JSON string) | Legacy single-message import for small exports (under 16 KiB). |
 | `get_debug` | `guid` | `debug` {status…, debug{promptChars, latencyMs, status, error, warnings[], raw, requests, failures}} or `error/forbidden` |
 
 `MemoryEntry` = `{id, kind, source, importance, text, createdAt, updatedAt, lastRecalledAt, recallCount, pinned}`.
