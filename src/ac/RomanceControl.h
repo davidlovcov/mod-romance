@@ -112,6 +112,7 @@ namespace romance::ac
             bool fetch = false;
             uint32 fetchEntry = 0;
             std::string fetchFilter;       // quest title words, "class" = class quests only
+            bool turnIn = false;           // fetch mode, but turn finished quests in at fetchEntry
         };
 
         std::string GiveItem(Player* owner, Player* bot, CompanionCommand const& cmd, time_t now);
@@ -123,7 +124,7 @@ namespace romance::ac
         std::string AttackAll(Player* owner, Player* bot, CompanionCommand const& cmd, time_t now);
         std::string StopAttack(Player* owner, Player* bot);
         std::string AcceptQuests(Player* owner, Player* bot, CompanionCommand const& cmd, time_t now);
-        std::string TurnInQuests(Player* owner, Player* bot, CompanionCommand const& cmd);
+        std::string TurnInQuests(Player* owner, Player* bot, CompanionCommand const& cmd, time_t now);
         bool HuntStep(Hunt& h, time_t now);           // false = finished
         void LeadStep(Player* owner, Player* bot, Lead& lead, time_t now);
         void FinishLead(Player* owner, Player* bot, std::string const& notice);

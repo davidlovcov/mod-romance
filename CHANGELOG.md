@@ -7,6 +7,14 @@
 - "Pick up your quests" / "go get your class quest": the companion walks to the nearest quest giver with something for them (e.g. their class trainer), picks the quests up and comes back.
 
 ### Fixed
+- Companion commands that start with a Playerbots command word ("sell your junk", "Vendor, sell trash", "attack", "accept the quest", "go on") went to Playerbots instead: nothing was sold or accepted and the companion didn't answer. mod-romance now handles them; `!` still sends a line to Playerbots unchanged.
+- "Give me 1 gold" said yes but gave nothing: gold is now handed over directly (within 30 yards), no trade window.
+- "Turn in your quests" only worked right at the quest ender: she now walks to the quest ender (up to ~250 yards), turns the quests in and comes back.
+- Lead mode: only one companion leads (the others follow the group), every bot of the group fights at the destination, quests that need item drops ("bring 8 Lynx Collars") send her to the creatures that drop them, and she no longer "arrives" at the turn-in marker instead of the quest area. A quest errand (fetching or turning in) is no longer mistaken for a lead.
+- Clearing an area / attacking no longer whispers "rti set to: skull" (the raid icon is set directly).
+- Companions in the same party were sometimes given the wrong gender: each companion now knows the others' gender, race and class.
+- Duplicate memories that were stated by you or imported were never tidied up: identical ones are merged now, and an automatic memory that repeats one of yours is merged into yours.
+- Large imports ran into "Too many requests, slow down": the addon now sends at a steady pace below the server's limit (and the limit is a bit higher).
 - Characters of the other faction could be called as companions (a Horde player could take an Alliance character into the group). They are now shown as "Other faction" and can't be called, unless `AllowTwoSide.Interaction.Group` is on in worldserver.conf.
 - A reply that was still queued (or in flight) when a companion was dismissed could appear in the next session after the companion was called again, and change the relationship. Every activation now gets its own generation, and cancelled requests never change anything.
 - The addon Chat tab skipped companion commands (give, cast, sell, quests, ...) and game knowledge; whisper, party and addon chat now share one path.

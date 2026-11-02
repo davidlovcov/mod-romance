@@ -570,6 +570,43 @@ TEST(Memory, CompactTidiesOldMemories)
     CHECK(store.Compact(kNow).removed.empty());   // idempotent
 }
 
+TEST(Memory, CompactMergesDuplicatesOfPlayerMemories)
+{
+    RomanceConfig cfg;
+    MemoryStore store(cfg);
+    std::vector<MemoryEntry> old;
+    auto add = [&](uint32_t id, MemorySource src, std::string const& text, bool pinned = false)
+    {
+        MemoryEntry m;
+        m.id = id;
+        m.kind = MemoryKind::Preference;
+        m.source = src;
+        m.importance = 40 + int(id);
+        m.text = text;
+        m.pinned = pinned;
+        old.push_back(m);
+    };
+    add(1, MemorySource::PlayerStated, "Devid likes cats and long walks.");
+    add(2, MemorySource::PlayerStated, "Devid likes cats and long walks.");          // "you said" twice
+    add(3, MemorySource::UserEdited, "Devid loves strawberry cake.");
+    add(4, MemorySource::UserEdited, "Devid loves strawberry cake.");                // imported twice
+    add(5, MemorySource::Interpretation, "Devid likes fishing by the lake.");
+    add(6, MemorySource::UserEdited, "Devid likes fishing by the lake!");             // written by the player later
+    add(7, MemorySource::UserEdited, "Devid loves strawberry cake with cream on top.", true);
+    store.Load(old);
+    auto r = store.Compact(kNow);
+    CHECK(store.Find(1) != nullptr);
+    CHECK(store.Find(2) == nullptr);              // "you said" duplicates merge
+    CHECK(store.Find(3) != nullptr);
+    CHECK(store.Find(4) == nullptr);              // identical player memories merge
+    CHECK(store.Find(5) == nullptr);              // the automatic one gives way...
+    CHECK(store.Find(6) != nullptr);              // ...to the player's own wording
+    CHECK(store.Find(6)->importance == 46);
+    CHECK(store.Find(7) != nullptr);              // pinned, different enough: kept
+    CHECK_EQ(store.Size(), size_t(4));
+    CHECK(store.Compact(kNow).removed.empty());
+}
+
 TEST(Memory, RetrievalFindsRelevantMemory)
 {
     RomanceConfig cfg;

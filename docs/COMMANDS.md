@@ -30,7 +30,7 @@ Everything you can say or type to control your companion. Examples use a female 
 
 ## Things to say in chat
 
-You don't need exact wording. "can you", "please", her name and similar are ignored. Questions ("what spells do you have?") are answered and never run as commands. Negations ("don't attack") never trigger anything.
+You don't need exact wording. "can you", "please", her name and similar are ignored. Questions ("what spells do you have?") are answered and never run as commands. Negations ("don't attack") never trigger anything. Lines that start like a Playerbots command but are companion commands ("sell your junk", "attack", "accept the quest") are handled by mod-romance; start a line with `!` to send it to Playerbots unchanged.
 
 ### Ask about her
 
@@ -54,7 +54,7 @@ The **Character** tab in the addon shows the same data at a glance.
 |---|---|---|
 | Follow / stay | "Follow me", "Wait here" | Playerbots `follow` / `stay`. |
 | Give an item | "Give me your linen cloth", "Can I have 5 copper ore?" | She opens a trade and puts the item in. You only accept. Soulbound items can't be traded. |
-| Give gold | "Give me 10 gold", "I need 2g 50s" | Trade with the gold. Limited per request (`Romance.Control.MaxGoldPerRequest`). |
+| Give gold | "Give me 10 gold", "I need 2g 50s" | She hands it over directly (no trade window) when you are within 30 yards. Limited per request (`Romance.Control.MaxGoldPerRequest`). |
 | Cast a spell | "Cast Power Word: Fortitude on me", "Use Frost Nova" | Casts on you ("on me"), on your target, or on herself. She tells you if she doesn't know the spell or it is on cooldown. |
 | Attack | "Attack the wolf", "Kill those murlocs", "Attack beasts", "Attack my target", "Attack that" | Finds the nearest matching enemy by name or creature type (beast, undead, humanoid, demon, elemental, dragonkin, giant, mechanical, critter), marks it with a skull and attacks it. You don't need to target anything: without a target she takes the nearest enemy. |
 | Clear the area | "Attack all here", "Kill everything nearby", "Clear the area", "Kill all wolves", "Everyone, kill them all" | One enemy after another (skull mark), until none are left around you; then she tells you. All companions you addressed fight the same target. Critters and other players' fights are left alone. Enemies she can see come first; one nobody can reach (behind a wall) is skipped after 15 seconds. **Healers** (bots with a heal strategy) don't attack; Playerbots doesn't allow it. They keep everyone alive instead. |
@@ -64,7 +64,7 @@ The **Character** tab in the addon shows the same data at a glance.
 | Take quests | "Accept the quest", "Everyone, take the quests too", "Accept the quest Kobold Camp Cleanup" | Takes quests from quest givers within about 30 yards, no targeting needed: first the ones you have taken, otherwise everything offered there. She tells you if she can't take one (level, class, earlier quest missing). |
 | Pick up her own quests | "Pick up your quests", "Go get your class quest", "Fetch your quests" | If no quest giver right here has something for her, she walks to the nearest one within about 250 yards that does (e.g. her class trainer), picks the quests up and comes back to you. "class quest" only takes class quests. |
 | What's available | "What quests can you pick up here?" | She lists quest givers around you with quests *she* can take, with direction and distance; class quests are marked. The Character tab shows the same list under "Available nearby". |
-| Turn in quests | "Turn in your quests", "Hand in the quest" | Turns in finished quests at quest enders nearby. |
+| Turn in quests | "Turn in your quests", "Hand in the quest" | Turns in finished quests at quest enders nearby. If the quest ender is further away (up to about 250 yards), she walks there, turns them in and comes back. |
 | Automatic | (nothing to say) | When you take a quest, companions near you take it too; when you turn one in, they turn theirs in as well (`Romance.Control.QuestSync`). |
 | Share quests | "Share your quests", "Share the quest Kobold Camp Cleanup" | Shares the quests you don't have yet and can take, one per second. |
 | Lead | "Lead the way", "Lead me to Kobold Camp Cleanup", "Let's do the Fargodeep Mine quest" | She walks to the area of one of her quests and you follow (you don't need to make her group leader). Without a quest name she picks one you both have. She waits when you fall behind, fights the quest creatures when she arrives, and follows you again when the objectives are done, telling you to turn it in. Quests without creatures to kill: she takes you to the area and tells you what to look for. |

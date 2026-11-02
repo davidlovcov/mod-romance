@@ -10,6 +10,7 @@
 
 #if __has_include("Playerbots.h") && __has_include("PlayerbotMgr.h")
 #  define ROMANCE_WITH_PLAYERBOTS 1
+#  include "AiObjectContext.h"
 #  include "PlayerbotAI.h"
 #  include "PlayerbotAIConfig.h"
 #  include "PlayerbotMgr.h"
@@ -145,6 +146,15 @@ namespace romance::ac
         return ai && ai->ContainsStrategy(STRATEGY_TYPE_HEAL);
     }
 
+    bool PlayerbotsBridge::SetRti(Player* bot, std::string const& icon)
+    {
+        PlayerbotAI* ai = bot ? GET_PLAYERBOT_AI(bot) : nullptr;
+        if (!ai || !ai->GetAiObjectContext())
+            return false;
+        ai->GetAiObjectContext()->GetValue<std::string>("rti")->Set(icon);
+        return true;
+    }
+
     bool PlayerbotsBridge::StartLead(Player* bot, Player* master)
     {
         PlayerbotAI* ai = bot ? GET_PLAYERBOT_AI(bot) : nullptr;
@@ -178,6 +188,7 @@ namespace romance::ac
     bool PlayerbotsBridge::SayToParty(Player*, std::string const&) { return false; }
     std::string PlayerbotsBridge::FollowState(Player*) { return "unknown"; }
     bool PlayerbotsBridge::IsHealer(Player*) { return false; }
+    bool PlayerbotsBridge::SetRti(Player*, std::string const&) { return false; }
     bool PlayerbotsBridge::StartLead(Player*, Player*) { return false; }
     bool PlayerbotsBridge::StopLead(Player*, Player*) { return false; }
 #endif

@@ -196,6 +196,35 @@ TEST(Service, AddonGetsTheReplyBeforeTheChatLine)
     CHECK(push < speak);
 }
 
+TEST(Service, CompanionCommandsWinOverPlayerbotsCommandWords)
+{
+    Harness h;
+    h.Activate(h.Key());
+    // these start with Playerbots command words but are companion commands
+    for (char const* line : { "sell your junk", "Vendor, sell trash", "attack", "accept the quest", "Elara, attack all here",
+                              "give me 1 gold" })
+    {
+        auto req = h.svc->PrepareControl(h.Key(), line, "Elara");
+        CHECK(req.command.has_value());
+    }
+    CHECK(h.svc->PrepareControl(h.Key(), "sell your junk", "Elara").command->kind == CompanionCommandKind::SellJunk);
+    CHECK(h.svc->PrepareControl(h.Key(), "Vendor, sell trash", "Elara").command->kind == CompanionCommandKind::SellJunk);
+    CHECK(h.svc->PrepareControl(h.Key(), "attack", "Elara").command->kind == CompanionCommandKind::AttackTarget);
+    CHECK(h.svc->PrepareControl(h.Key(), "accept the quest", "Elara").command->kind == CompanionCommandKind::AcceptQuests);
+    // real Playerbots commands still pass through
+    for (char const* line : { "!sell your junk", "stats", "co +dps", "nc ?" })
+    {
+        auto r = h.svc->OnPlayerMessage(h.Key(), line, ChatChannel::Whisper, h.ctx, h.now);
+        CHECK(r.result == RomanceService::MessageResult::PassToPlayerbots);
+        CHECK(!h.svc->PrepareControl(h.Key(), line, "Elara").command.has_value());
+    }
+    // and the companion command gets an AI answer instead of going to Playerbots
+    h.llm->QueueReply(ReplyJson("Sold it all!", "happy", "neutral", {}));
+    auto r = h.svc->OnPlayerMessage(h.Key(), "sell your junk", ChatChannel::Whisper, h.ctx, h.now);
+    CHECK(r.result == RomanceService::MessageResult::Accepted);
+    CHECK(!r.command.has_value());
+}
+
 TEST(Service, PlayerbotCommandsPassThroughAndNaturalCommandsExecute)
 {
     Harness h;

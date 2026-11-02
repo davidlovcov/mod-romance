@@ -42,6 +42,8 @@ namespace romance::ac
         static std::string FollowState(Player* bot);
         // Bot runs a healing strategy: Playerbots refuses attack orders for healers ("attack rti target: useless").
         static bool IsHealer(Player* bot);
+        // Sets the bot's raid target icon ("skull") directly, without the chat reply of the "rti" command.
+        static bool SetRti(Player* bot, std::string const& icon);
 
         // Lead mode: Playerbots stops following so mod-romance can walk the companion itself
         // (see CompanionControl); StopLead switches back to following.

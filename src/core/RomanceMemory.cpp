@@ -247,40 +247,67 @@ namespace romance
         // oldest first, so merged duplicates keep the original id
         std::vector<MemoryEntry> entries = _entries;
         std::stable_sort(entries.begin(), entries.end(), [](MemoryEntry const& a, MemoryEntry const& b) { return a.id < b.id; });
+        auto noteChanged = [&](MemoryEntry const& m)
+        {
+            for (auto& c : r.changed)
+                if (c.id == m.id)
+                {
+                    c = m;
+                    return;
+                }
+            r.changed.push_back(m);
+        };
         for (MemoryEntry const& e : entries)
         {
-            bool protectedEntry = e.pinned || e.source == MemorySource::UserEdited || e.source == MemorySource::PlayerStated;
-            if (!protectedEntry && e.source == MemorySource::Interpretation && IsTransientMemory(e.text))
+            // Pinned and player-written memories are never dropped; their duplicates are merged into them.
+            bool eProtected = e.pinned || e.source == MemorySource::UserEdited;
+            if (!eProtected && e.source == MemorySource::Interpretation && IsTransientMemory(e.text))
             {
                 r.removed.push_back(e.id);
                 continue;
             }
             std::vector<std::string> tokens = Tokenize(e.text);
             bool merged = false;
-            for (size_t i = 0; i < kept.size() && !protectedEntry; ++i)
+            for (size_t i = 0; i < kept.size(); ++i)
             {
                 MemoryEntry& k = kept[i];
                 if ((k.kind == MemoryKind::Summary) != (e.kind == MemoryKind::Summary) || k.kind == MemoryKind::Promise ||
                     e.kind == MemoryKind::Promise)
                     continue;
-                if (TokenJaccard(tokens, keptTokens[i]) < _cfg.dedupeThreshold && TokenContainment(tokens, keptTokens[i]) < 0.8)
+                double jaccard = TokenJaccard(tokens, keptTokens[i]);
+                double contained = TokenContainment(tokens, keptTokens[i]);
+                if (jaccard < _cfg.dedupeThreshold && contained < 0.8)
                     continue;
+                bool kProtected = k.pinned || k.source == MemorySource::UserEdited;
+                if (eProtected && kProtected && jaccard < 0.9)
+                    continue;   // two of the player's own memories: only (nearly) the same text counts as a duplicate
+                if (eProtected && !kProtected)
+                {
+                    // the player's own memory replaces the older automatic one
+                    MemoryEntry m = e;
+                    m.importance = std::max(k.importance, e.importance);
+                    m.recallCount += k.recallCount;
+                    m.updatedAt = now;
+                    r.removed.push_back(k.id);
+                    r.changed.erase(std::remove_if(r.changed.begin(), r.changed.end(),
+                                                   [&](MemoryEntry const& c) { return c.id == k.id; }), r.changed.end());
+                    k = m;
+                    keptTokens[i] = tokens;
+                    noteChanged(k);
+                    merged = true;
+                    break;
+                }
                 k.importance = std::max(k.importance, e.importance);
                 k.recallCount += e.recallCount;
                 k.pinned = k.pinned || e.pinned;
-                if (SourceWeight(e.source) > SourceWeight(k.source) && k.source != MemorySource::UserEdited)
+                if (!kProtected && SourceWeight(e.source) > SourceWeight(k.source))
                 {
                     k.source = e.source;
                     k.text = e.text;
                     keptTokens[i] = tokens;
                 }
                 k.updatedAt = now;
-                if (std::none_of(r.changed.begin(), r.changed.end(), [&](MemoryEntry const& c) { return c.id == k.id; }))
-                    r.changed.push_back(k);
-                else
-                    for (auto& c : r.changed)
-                        if (c.id == k.id)
-                            c = k;
+                noteChanged(k);
                 r.removed.push_back(e.id);
                 merged = true;
                 break;

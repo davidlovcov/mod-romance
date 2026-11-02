@@ -608,7 +608,19 @@ namespace romance::ac
             if (Group* g = owner->GetGroup())
                 for (CompanionKey const& other : _service->ActiveForOwner(key.owner))
                     if (other.companion != key.companion && g->IsMember(PlayerGuid(uint32(other.companion))))
-                        c.partyCompanions.push_back(_service->DisplayName(other));
+                    {
+                        // name plus who they are, so she doesn't guess their gender
+                        auto [gender, pronouns] = _service->GenderOf(other);
+                        Player* ob = ObjectAccessor::FindConnectedPlayer(PlayerGuid(uint32(other.companion)));
+                        if (gender.empty() && ob)
+                            gender = ob->getGender() == GENDER_FEMALE ? "female" : "male";
+                        std::string who = gender;
+                        if (ob)
+                            who += (who.empty() ? "" : " ") + RaceName(ob->getRace()) + " " + ClassName(ob->getClass());
+                        if (!pronouns.empty())
+                            who += ", " + pronouns;
+                        c.partyCompanions.push_back(_service->DisplayName(other) + (who.empty() ? "" : " (" + who + ")"));
+                    }
             uint32 total = 0, count = 0;
             for (uint8 slot = EQUIPMENT_SLOT_START; slot < EQUIPMENT_SLOT_END; ++slot)
                 if (Item* it = bot->GetItemByPos(INVENTORY_SLOT_BAG_0, slot))
@@ -929,11 +941,14 @@ namespace romance::ac
             }
         }
 
-        std::vector<CompanionKey> answering;
+        std::vector<CompanionKey> answering;   // replying with the AI, or still busy with an AI reply
         for (CompanionKey const& key : addressed)
-            if (TalkTo(sender, ObjectAccessor::FindConnectedPlayer(PlayerGuid(uint32(key.companion))), key, msg, ChatChannel::Party, picked)
-                    .result == RomanceService::MessageResult::Accepted)
+        {
+            auto result = TalkTo(sender, ObjectAccessor::FindConnectedPlayer(PlayerGuid(uint32(key.companion))), key, msg,
+                                 ChatChannel::Party, picked).result;
+            if (result == RomanceService::MessageResult::Accepted || result == RomanceService::MessageResult::Busy)
                 answering.push_back(key);
+        }
         // Playerbots also reads party lines as commands. Its answers are only wanted from companions
         // that won't reply with the AI to this line.
         for (CompanionKey const& key : inGroup)

@@ -174,6 +174,8 @@ namespace romance
         TimePoint LastActivity(CompanionKey const& key) const;
         // The name an active companion goes by (personality name, else character name).
         std::string DisplayName(CompanionKey const& key) const;
+        // Gender / pronouns from the personality ("female", "she/her"), empty if not set.
+        std::pair<std::string, std::string> GenderOf(CompanionKey const& key) const;
         // What the game layer must do for a player line before it reaches the AI - the same for whisper, party and
         // addon chat: which game knowledge to add, and which companion command (if any) to carry out.
         // No command for raw Playerbots commands ("!follow"), with natural commands off, or with the AI off.
@@ -303,6 +305,9 @@ namespace romance
             std::optional<std::string> version;
         };
 
+        // Classifier route, except that a companion command ("sell your junk", "attack", "accept the quest")
+        // is handled by mod-romance even when it starts with a Playerbots command word. "!" still forces Playerbots.
+        ClassifiedMessage Route(Session const& s, std::string const& text, std::string const& characterName) const;
         Session* Find(CompanionKey const& key);
         Session const* Find(CompanionKey const& key) const;
         CompanionRecord LoadOrDefault(CompanionKey const& key, uint32_t ownerAccount, std::string const& companionName, TimePoint now);

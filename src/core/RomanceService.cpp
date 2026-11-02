@@ -346,10 +346,34 @@ namespace romance
         r.knowledgeTopics = DetectKnowledgeTopics(text);
         std::string cname = s->rec.personality.name.empty() ? s->rec.companionName : s->rec.personality.name;
         bool natural = _cfg.naturalLanguageCommands && s->rec.settings.naturalCommands;
-        if (!natural || _classifier.Classify(text, cname, natural).route != MessageRoute::Roleplay)
+        if (!natural || Route(*s, text, characterName).route != MessageRoute::Roleplay)
             return r;
         r.command = ParseCompanionCommand(text, characterName.empty() ? cname : characterName, cname);
         return r;
+    }
+
+    ClassifiedMessage RomanceService::Route(Session const& s, std::string const& text, std::string const& characterName) const
+    {
+        std::string cname = s.rec.personality.name.empty() ? s.rec.companionName : s.rec.personality.name;
+        bool natural = _cfg.naturalLanguageCommands && s.rec.settings.naturalCommands;
+        ClassifiedMessage cm = _classifier.Classify(text, cname, natural);
+        if (!natural || cm.route != MessageRoute::PlayerbotCommand)
+            return cm;
+        std::string trimmed = Trim(text);
+        if (trimmed.empty() || trimmed[0] == '!')
+            return cm;
+        std::string world = characterName.empty() ? s.rec.companionName : characterName;
+        auto cmd = ParseCompanionCommand(trimmed, world.empty() ? cname : world, cname);
+        if (!cmd)
+            return cm;
+        // "cast X on Y" has its own exact Playerbots syntax; leave it alone.
+        std::string lower = ToLower(trimmed);
+        if (cmd->kind == CompanionCommandKind::Cast && lower.compare(0, 5, "cast ") == 0)
+            return cm;
+        cm.route = MessageRoute::Roleplay;
+        cm.text = trimmed;
+        cm.action.reset();      // mod-romance runs the command; no extra Playerbots order
+        return cm;
     }
 
     std::optional<Stage> RomanceService::StageOf(CompanionKey const& key) const
@@ -789,6 +813,14 @@ namespace romance
         return s->rec.personality.name.empty() ? s->rec.companionName : s->rec.personality.name;
     }
 
+    std::pair<std::string, std::string> RomanceService::GenderOf(CompanionKey const& key) const
+    {
+        Session const* s = Find(key);
+        if (!s)
+            return {};
+        return { s->rec.personality.gender, s->rec.personality.pronouns };
+    }
+
     TimePoint RomanceService::LastActivity(CompanionKey const& key) const
     {
         Session const* s = Find(key);
@@ -804,8 +836,7 @@ namespace romance
             return hr;
 
         std::string cname = s->rec.personality.name.empty() ? s->rec.companionName : s->rec.personality.name;
-        bool natural = _cfg.naturalLanguageCommands && s->rec.settings.naturalCommands;
-        ClassifiedMessage cm = _classifier.Classify(text, cname, natural);
+        ClassifiedMessage cm = Route(*s, text, "");
         if (cm.route == MessageRoute::Ignore)
             return hr;
 
