@@ -1729,7 +1729,11 @@ namespace romance::ac
         lead.lastY = bot->GetPositionY();
         float dist = bot->GetDistance2d(lead.x, lead.y);
         if (auto prev = _leads.find(bot->GetGUID()); prev != _leads.end())
+        {
             lead.escort = prev->second.escort;
+            lead.round = prev->second.round;   // a "lead the way" round goes on after this quest
+            lead.group = prev->second.group;
+        }
         _leads[bot->GetGUID()] = lead;
         LOG_INFO("module", "[mod-romance] {} leads to \"{}\": {} yards, {} target kinds, {}", bot->GetName(), pick->GetTitle(), int(dist),
                  TargetEntries(bot, pick).size(), lead.haveZ ? "nearest spawn" : "quest map marker");
@@ -2125,6 +2129,7 @@ namespace romance::ac
         {
             // walk to the quest ender (if one is around), turn the quest in and come back
             std::string title = lead.title;
+            bool round = lead.round;
             auto enders = QuestEnders(bot, kAreaRadius, { q });
             if (!enders.empty())
             {
@@ -2139,6 +2144,7 @@ namespace romance::ac
                 if (BeginErrand(owner, bot, g.entry, g.name, g.x, g.y, g.z, true, "", false, now))
                 {
                     _leads[bot->GetGUID()].group = true;   // the others come along and turn theirs in too
+                    _leads[bot->GetGUID()].round = round;  // in a round: then the next quests
                     _notices.push_back({ bot->GetGUID(), "You finished \"" + title + "\" while leading and lead them to " + g.name +
                                                              " to turn it in. Say it in a few words." });
                     return;
