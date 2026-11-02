@@ -26,6 +26,8 @@
 #include "SpellInfo.h"
 #include "SpellMgr.h"
 #include "Trainer.h"
+#include "World.h"
+#include "WorldSession.h"
 
 #include <algorithm>
 #include <cctype>
@@ -402,58 +404,80 @@ namespace truecompanion::ac
             return nullptr;
         }
 
-        // Sells items directly (like the vendor window would): money in, items gone.
-        uint64 SellItems(Player* bot, std::vector<Item*> const& items, uint32* sold, uint32* units = nullptr)
+        // Whether `p` can receive `copper` more, by the same limits the core's ModifyMoney applies (gold cap, trial cap).
+        bool CanReceiveMoney(Player* p, uint64 copper)
         {
-            uint64 total = 0;
-            uint32 n = 0, count = 0;
-            for (Item* item : items)
-            {
-                ItemTemplate const* proto = item ? item->GetTemplate() : nullptr;
-                if (!proto || !proto->SellPrice || item->IsInTrade())
-                    continue;
-                total += uint64(proto->SellPrice) * item->GetCount();
-                count += item->GetCount();
-                ++n;
-                bot->DestroyItem(item->GetBagSlot(), item->GetSlot(), true);
-            }
-            if (total)
-                bot->ModifyMoney(int32(std::min<uint64>(total, 0x7FFFFFFF)));
-            if (sold)
-                *sold = n;
-            if (units)
-                *units = count;
-            return total;
+            if (copper == 0)
+                return true;
+            if (copper >= MAX_MONEY_AMOUNT || uint64(p->GetMoney()) + copper >= MAX_MONEY_AMOUNT)
+                return false;
+            if (uint32 trialCap = sWorld->getIntConfig(CONFIG_TRIAL_MONEY_CAP))
+                if (p->GetSession() && p->GetSession()->IsTrialAccount() && uint64(p->GetMoney()) + copper > trialCap)
+                    return false;
+            return true;
         }
 
-        // Sells exactly `want` units of the given stacks (a part of a stack leaves the rest in the bag).
-        uint64 SellUnits(Player* bot, std::vector<Item*> const& items, uint32 want, uint32* units)
+        // Whether a merchant buys this item stack now (the vendor window's checks that apply to her).
+        bool Sellable(Item* item)
         {
-            uint64 total = 0;
+            ItemTemplate const* proto = item ? item->GetTemplate() : nullptr;
+            return proto && proto->SellPrice && !item->IsInTrade() && !item->IsRefundable() && !item->m_lootGenerated;
+        }
+
+        struct SaleResult
+        {
+            uint64 credited = 0;   // copper she really got
+            uint32 stacks = 0;     // stacks touched
+            uint32 units = 0;      // items sold
+            bool noRoom = false;   // she can't carry that much money: nothing was sold
+        };
+
+        // Sells `want` units of the given stacks (0 = all of them), like the vendor window: the price is worked out first,
+        // the money is checked against her limits before anything leaves her bags, and only then items go and money comes in.
+        // A part of a stack leaves the rest in the bag.
+        SaleResult SellStacks(Player* bot, std::vector<Item*> const& items, uint32 want)
+        {
+            SaleResult r;
+            struct Take { Item* item; uint32 count; };
+            std::vector<Take> plan;
+            uint64 price = 0;
             uint32 left = want;
             for (Item* item : items)
             {
-                if (!left)
+                if (want && !left)
                     break;
-                ItemTemplate const* proto = item ? item->GetTemplate() : nullptr;
-                if (!proto || !proto->SellPrice || item->IsInTrade())
+                if (!Sellable(item))
                     continue;
-                uint32 take = std::min<uint32>(left, item->GetCount());
-                total += uint64(proto->SellPrice) * take;
-                left -= take;
-                if (take >= item->GetCount())
-                    bot->DestroyItem(item->GetBagSlot(), item->GetSlot(), true);
+                uint32 take = want ? std::min<uint32>(left, item->GetCount()) : item->GetCount();
+                plan.push_back({ item, take });
+                price += uint64(item->GetTemplate()->SellPrice) * take;
+                if (want)
+                    left -= take;
+            }
+            if (plan.empty())
+                return r;
+            if (!CanReceiveMoney(bot, price))
+            {
+                r.noRoom = true;
+                return r;
+            }
+            uint32 before = bot->GetMoney();
+            for (Take const& t : plan)
+            {
+                if (t.count >= t.item->GetCount())
+                    bot->DestroyItem(t.item->GetBagSlot(), t.item->GetSlot(), true);
                 else
                 {
-                    item->SetCount(item->GetCount() - take);
-                    item->SetState(ITEM_CHANGED, bot);
+                    t.item->SetCount(t.item->GetCount() - t.count);
+                    t.item->SetState(ITEM_CHANGED, bot);
                 }
+                ++r.stacks;
+                r.units += t.count;
             }
-            if (total)
-                bot->ModifyMoney(int32(std::min<uint64>(total, 0x7FFFFFFF)));
-            if (units)
-                *units = want - left;
-            return total;
+            if (price && !bot->ModifyMoney(int32(price), false))
+                LOG_ERROR("module", "[mod-true-companion] {} sold items for {} copper but the money was refused", bot->GetName(), price);
+            r.credited = bot->GetMoney() > before ? uint64(bot->GetMoney() - before) : 0;
+            return r;
         }
 
         std::vector<Item*> JunkItems(Player* bot)
@@ -1202,6 +1226,8 @@ namespace truecompanion::ac
 
     std::string CompanionControl::GiveItem(Player* owner, Player* bot, CompanionCommand const& cmd, time_t now)
     {
+        if (cmd.badAmount)
+            return "Nothing. They asked for an amount that isn't a whole number of items (" + cmd.arg + "); ask them how many they mean.";
         ItemGroup const* best = nullptr;
         int bestScore = 0;
         auto groups = GroupedBagItems(bot);
@@ -1224,18 +1250,21 @@ namespace truecompanion::ac
             return "Nothing. They are trading with someone else right now.";
 
         // Trades move whole stacks: offer enough stacks to cover the requested amount.
-        uint32 wanted = cmd.amount ? uint32(std::min<uint64>(cmd.amount, best->count)) : best->count;
+        uint32 wanted = cmd.amountGiven ? uint32(std::min<uint64>(cmd.amount, best->count)) : best->count;
         uint32 perStack = std::max<uint32>(1, best->proto->GetMaxStackSize());
         uint32 stacks = std::max<uint32>(1, std::min<uint32>(best->stacks, (wanted + perStack - 1) / perStack));
         stacks = std::min<uint32>(stacks, 6);
         Trade(owner, bot, "t " + ItemLink(best->proto) + " " + std::to_string(stacks), now);
         std::string what = best->proto->Name1 + (best->count > 1 ? " (you have " + std::to_string(best->count) + ")" : "");
-        std::string note = cmd.amount && cmd.amount > best->count ? " You had fewer than they asked for." : "";
+        std::string note = cmd.amountGiven && cmd.amount > best->count ? " You had fewer than they asked for." : "";
         return "You opened a trade with them and put your " + what + " in it; they only need to accept." + note;
     }
 
     std::string CompanionControl::GiveGold(Player* owner, Player* bot, CompanionCommand const& cmd, time_t now)
     {
+        if (cmd.badAmount)
+            return "Nothing. They asked for an amount of money that isn't a whole number (like \"2 gold 50 silver\"); you gave nothing. "
+                   "Ask them to say it again.";
         uint64 amount = cmd.amount;
         bool all = cmd.arg == "all";
         if (all)
@@ -1257,7 +1286,7 @@ namespace truecompanion::ac
         if (amount == 0 || amount > uint64(std::numeric_limits<int32>::max()))
             return "Nothing. That is not an amount you can hand over at once; tell them.";
         uint64 before = owner->GetMoney();
-        if (!owner->ModifyMoney(int32(amount), false))
+        if (!CanReceiveMoney(owner, amount) || !owner->ModifyMoney(int32(amount), false))
             return "Nothing. They can't carry any more gold; tell them.";
         if (uint64(owner->GetMoney()) < before + amount)
         {
@@ -1463,12 +1492,19 @@ namespace truecompanion::ac
             return "Nothing yet. There is no merchant nearby; you can sell as soon as you are close to one. Tell them.";
         if (cmd.kind == CompanionCommandKind::SellJunk)
         {
-            uint32 n = 0;
-            uint64 value = SellItems(bot, JunkItems(bot), &n);
-            if (!n)
+            std::vector<Item*> junk = JunkItems(bot);
+            if (junk.empty())
                 return "Nothing. You have no junk to sell; tell them.";
-            return "You sold " + std::to_string(n) + " junk items to " + vendor->GetName() + " for " + Money(value) + ".";
+            SaleResult sale = SellStacks(bot, junk, 0);
+            if (sale.noRoom)
+                return "Nothing. You can't carry any more money, so the merchant can't pay you; nothing was sold. Tell them.";
+            if (!sale.stacks)
+                return "Nothing. Your junk can't be sold right now (it may be in a trade); tell them.";
+            return "You sold " + std::to_string(sale.stacks) + " junk items to " + vendor->GetName() + " for " + Money(sale.credited) + ".";
         }
+        if (cmd.badAmount)
+            return "Nothing. They asked you to sell an amount that isn't a whole number of items (" + cmd.arg +
+                   "); nothing was sold. Ask them how many they mean.";
         ItemGroup const* best = nullptr;
         int bestScore = 0;
         auto groups = GroupedBagItems(bot);
@@ -1488,21 +1524,20 @@ namespace truecompanion::ac
         std::vector<Item*> items;
         uint32 entry = best->proto->ItemId;
         ForEachBagItem(bot, [&](Item* item) { if (item->GetEntry() == entry) items.push_back(item); });
-        uint32 n = 0, units = 0;
-        uint64 value = 0;
-        if (cmd.amount && cmd.amount < best->count)
-        {
-            // "sell 3 of your linen cloth": exactly that many
-            value = SellUnits(bot, items, uint32(cmd.amount), &units);
-            n = units ? 1 : 0;
-        }
-        else
-            value = SellItems(bot, items, &n, &units);
-        if (!n)
+        // "sell 3 of your linen cloth": exactly that many; no count (or more than she has): all of them
+        uint32 want = cmd.amountGiven && cmd.amount < best->count ? uint32(cmd.amount) : 0;
+        SaleResult sale = SellStacks(bot, items, want);
+        if (sale.noRoom)
+            return "Nothing. You can't carry any more money, so the merchant can't pay you for your " + best->proto->Name1 +
+                   "; nothing was sold. Tell them.";
+        if (!sale.units)
             return "Nothing. Your " + best->proto->Name1 + " could not be sold right now (it may be in a trade); tell them.";
-        return "You sold " + (units > 1 ? std::to_string(units) + " of your " : std::string("your ")) + best->proto->Name1 + " to " +
-               vendor->GetName() + " for " + Money(value) +
-               (best->count > units ? " (you still have " + std::to_string(best->count - units) + ")." : ".");
+        std::string fewer = cmd.amountGiven && cmd.amount > best->count
+                                ? " They asked for " + std::to_string(cmd.amount) + ", but you only had " + std::to_string(best->count) + "."
+                                : "";
+        return "You sold " + (sale.units > 1 ? std::to_string(sale.units) + " of your " : std::string("your ")) + best->proto->Name1 +
+               " to " + vendor->GetName() + " for " + Money(sale.credited) +
+               (best->count > sale.units ? " (you still have " + std::to_string(best->count - sale.units) + ")." : ".") + fewer;
     }
 
     std::string CompanionControl::Share(Player* owner, Player* bot, CompanionCommand const& cmd, time_t now)
@@ -2982,9 +3017,9 @@ namespace truecompanion::ac
                             sellers.push_back(m);
                     for (Player* p2 : sellers)
                     {
-                        uint32 n = 0;
-                        value += SellItems(p2, JunkItems(p2), &n);
-                        items += n;
+                        SaleResult sale = SellStacks(p2, JunkItems(p2), 0);
+                        value += sale.credited;
+                        items += sale.stacks;
                     }
                 }
                 LOG_INFO("module", "[mod-true-companion] {}: sold {} junk items at {}", bot->GetName(), items, lead.title);
@@ -3423,10 +3458,10 @@ namespace truecompanion::ac
             if (vendor && !junk.empty() && freeSlots <= _cfg.autoSellFreeSlots && now - _lastAutoSell[g] > kAutoSellCooldown)
             {
                 _lastAutoSell[g] = now;
-                uint32 n = 0;
-                uint64 value = SellItems(bot, junk, &n);
-                return "Your bags were almost full, so you sold " + std::to_string(n) + " junk items to " + vendor->GetName() +
-                       " for " + Money(value) + ". Mention it briefly.";
+                SaleResult sale = SellStacks(bot, junk, 0);
+                if (sale.stacks)
+                    return "Your bags were almost full, so you sold " + std::to_string(sale.stacks) + " junk items to " +
+                           vendor->GetName() + " for " + Money(sale.credited) + ". Mention it briefly.";
             }
             // while a round is going she takes them to a merchant herself; otherwise she says so
             bool leading = false;
