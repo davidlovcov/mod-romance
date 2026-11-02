@@ -357,6 +357,15 @@ namespace truecompanion
                 o << "- Your gear: " << w.equipmentSummary << "\n";
             for (auto const& e : w.recentEvents)
                 o << "- Recently: " << e << "\n";
+            if (!w.journal.empty())
+            {
+                o << "\n## Your journal (real game data, always up to date)\n";
+                for (auto const& line : w.journal)
+                    o << "- " << line << "\n";
+                o << "For your quests, quest items, bags and money use only these numbers - they are yours. Numbers "
+                  << pname << " posts in chat (\"8/8\") are their own progress, not yours. Check the journal before you "
+                     "say how many you have or still need.\n";
+            }
             if (!w.knowledge.empty())
             {
                 o << "\n## What you know about yourself right now (real game data)\n";

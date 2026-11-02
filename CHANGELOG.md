@@ -7,6 +7,7 @@
 - Upgrading keeps everything: a new SQL update renames the `romance_*` tables (only when the old ones exist, so it is safe to run again), `scripts/migrate-from-mod-romance.sh` converts your config, and memory exports made before the rename can still be imported. Steps: docs/INSTALLATION.md, "Upgrading from mod-romance".
 
 ### Added
+- Journal: every prompt has her own quests with her progress (and yours next to it, marked as yours), her free bag slots, her money and what she is doing. Before, she only got this when your message contained a word like "quest" or "bags", and otherwise guessed or repeated your numbers.
 - "Let's sell trash", "we should sell our junk", "go sell your stuff at the merchant" are understood.
 - "Learn your spells" / "go to your trainer": she walks to the nearest trainer of her class, learns the new spells she can afford with her own gold and comes back (right away when the trainer is next to her).
 - With her AI conversation off, a companion still carries out commands and answers them in plain words (before: a plain Playerbot). Such companions don't count toward the companion limit; turning the AI on checks the limit.
@@ -31,6 +32,7 @@
 - "Pick up your quests" / "go get your class quest": the companion walks to the nearest quest giver with something for them (e.g. their class trainer), picks the quests up and comes back.
 
 ### Fixed
+- Money is spelled out for her ("1 silver 68 copper"), which small models read reliably.
 - Amounts: "give me 1.5 gold" gave 5 gold, "give me -5 gold" gave 5, "give me 1,000 gold" asked for an item called "000 gold", and "sell 0 linen cloth" sold all of them. Amounts that are not whole positive numbers are refused now, and nothing changes.
 - Selling removed the items before the money was paid; at the gold cap (or a trial account's cap) they were gone without payment. The money is checked first; nothing is sold when she can't take it, and the reply says what she really got.
 - Quest sharing (addon "Share") gave a quest to the companions even when nobody in the group had it. Now somebody must hold it, as with the game's own sharing; it reaches companions on the same map near that person.

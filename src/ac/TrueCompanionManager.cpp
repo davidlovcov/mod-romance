@@ -651,6 +651,8 @@ namespace truecompanion::ac
                             who += ", " + pronouns;
                         c.partyCompanions.push_back(_service->DisplayName(other) + (who.empty() ? "" : " (" + who + ")"));
                     }
+            if (_control)
+                _control->AddJournal(c, owner, bot);
             uint32 total = 0, count = 0;
             for (uint8 slot = EQUIPMENT_SLOT_START; slot < EQUIPMENT_SLOT_END; ++slot)
                 if (Item* it = bot->GetItemByPos(INVENTORY_SLOT_BAG_0, slot))

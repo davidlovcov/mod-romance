@@ -49,6 +49,7 @@ namespace truecompanion::ac
         constexpr float kShareRange = 100.0f;   // quest sharing: how far from the holder a companion may be
         constexpr size_t kMaxKnowledgeItems = 30;
         constexpr size_t kMaxKnowledgeSpells = 40;
+        constexpr size_t kMaxJournalQuests = 10;
 
         std::string Lower(std::string s)
         {
@@ -113,6 +114,20 @@ namespace truecompanion::ac
                 out += (out.empty() ? "" : " ") + std::to_string(s) + "s";
             if (c || out.empty())
                 out += (out.empty() ? "" : " ") + std::to_string(c) + "c";
+            return out;
+        }
+
+        // "1 silver 68 copper": spelled out for the model (small models misread "1s 68c")
+        std::string MoneyWords(uint64 copper)
+        {
+            uint64 g = copper / 10000, s = (copper / 100) % 100, c = copper % 100;
+            std::string out;
+            if (g)
+                out += std::to_string(g) + " gold";
+            if (s)
+                out += (out.empty() ? "" : " ") + std::to_string(s) + " silver";
+            if (c || out.empty())
+                out += (out.empty() ? "" : " ") + std::to_string(c) + " copper";
             return out;
         }
 
@@ -1087,7 +1102,7 @@ namespace truecompanion::ac
             return;
         auto& k = ctx.knowledge;
         if (topics & (knowledge::Gold | knowledge::Inventory))
-            k.push_back("Your gold: " + Money(bot->GetMoney()));
+            k.push_back("Your money: " + MoneyWords(bot->GetMoney()) + ".");
         if (topics & knowledge::Xp)
         {
             uint32 xp = bot->GetUInt32Value(PLAYER_XP), next = bot->GetUInt32Value(PLAYER_NEXT_LEVEL_XP);
@@ -1143,15 +1158,10 @@ namespace truecompanion::ac
         }
         if (topics & knowledge::Quests)
         {
-            auto mine = QuestLog(bot);
-            if (mine.empty())
-                k.push_back("Your quest log is empty.");
-            for (auto const& [q, slot] : mine)
-            {
-                bool theyHave = owner->FindQuestSlot(q->GetQuestId()) < MAX_QUEST_LOG_SIZE;
-                k.push_back("Your quest \"" + q->GetTitle() + "\" (level " + std::to_string(q->GetQuestLevel() > 0 ? q->GetQuestLevel() : int(bot->GetLevel())) + "): " +
-                            QuestProgress(bot, q, slot) + (theyHave ? " - they have it too" : " - they don't have it"));
-            }
+            // her quests and their progress are in the journal (AddJournal), which every prompt has
+            for (auto const& [q, slot] : QuestLog(bot))
+                k.push_back("\"" + q->GetTitle() + "\" is a level " +
+                            std::to_string(q->GetQuestLevel() > 0 ? q->GetQuestLevel() : int(bot->GetLevel())) + " quest.");
             auto givers = AvailableGivers(bot, kAreaRadius, "");
             if (givers.empty())
                 k.push_back("No quest giver around here has a new quest you could take.");
@@ -1178,6 +1188,49 @@ namespace truecompanion::ac
             else
                 k.push_back(owner->GetName() + " is looking at " + DescribeUnit(target, bot) + ".");
         }
+    }
+
+    void CompanionControl::AddJournal(WorldContext& ctx, Player* owner, Player* bot) const
+    {
+        if (!_cfg.controlEnabled || !owner || !bot)
+            return;
+        auto& j = ctx.journal;
+        auto mine = QuestLog(bot);
+        if (mine.empty())
+            j.push_back("Your quest log is empty.");
+        size_t n = 0;
+        for (auto const& [q, slot] : mine)
+        {
+            if (++n > kMaxJournalQuests)
+            {
+                j.push_back("... and " + std::to_string(mine.size() - kMaxJournalQuests) + " more quests.");
+                break;
+            }
+            // her own numbers first; theirs only as a comparison, clearly marked
+            std::string line = "Your quest \"" + q->GetTitle() + "\": you have " + QuestProgress(bot, q, slot);
+            uint16 theirSlot = owner->FindQuestSlot(q->GetQuestId());
+            if (theirSlot < MAX_QUEST_LOG_SIZE)
+                line += " (" + owner->GetName() + "'s own count, not yours: " + QuestProgress(owner, q, theirSlot) + ")";
+            else
+                line += " (" + owner->GetName() + " doesn't have it)";
+            j.push_back(line + ".");
+        }
+        j.push_back("Your bags: " + std::to_string(bot->GetFreeInventorySpace()) + " of " + std::to_string(TotalBagSlots(bot)) +
+                    " slots free. Your money: " + MoneyWords(bot->GetMoney()) + ".");
+        if (auto l = _leads.find(bot->GetGUID()); l != _leads.end())
+        {
+            Lead const& lead = l->second;
+            std::string task = lead.train  ? "walking to your class trainer " + lead.title + " to learn spells"
+                               : lead.sell ? "leading them to the merchant " + lead.title + " to sell junk"
+                               : lead.turnIn ? "going to " + lead.title + " to turn in quests"
+                               : lead.fetch ? "going to " + lead.title + " to pick up quests"
+                               : !lead.title.empty() ? "leading them to the quest \"" + lead.title + "\""
+                                                     : "leading the way";
+            j.push_back("What you are doing: " + task + (lead.paused ? " (paused, waiting)" : "") + ".");
+        }
+        else if (auto h = _hunts.find(owner->GetGUID()); h != _hunts.end() && !h->second.forLead &&
+                 std::find(h->second.bots.begin(), h->second.bots.end(), bot->GetGUID()) != h->second.bots.end())
+            j.push_back("What you are doing: clearing the area of enemies.");
     }
 
     // ------------------------------------------------------------------ commands

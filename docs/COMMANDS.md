@@ -34,7 +34,7 @@ You don't need exact wording. "can you", "please", her name and similar are igno
 
 ### Ask about her
 
-She answers from **real game data**, never invented:
+She answers from **real game data**, never invented. Her quests (with her own progress), free bag slots and money are in every prompt, so she knows them even when you don't say "quest" or "bags"; your Questie lines in party chat are your progress and get no reply.
 
 | Ask | Example |
 |---|---|

@@ -1704,6 +1704,29 @@ TEST(Service, SwitchingTheAiOffDropsRepliesOnTheirWay)
     }));
 }
 
+TEST(Service, JournalReachesEveryPrompt)
+{
+    Harness h;
+    h.Activate(h.Key());
+    std::string sys;
+    h.llm->SetResponder([&](LlmRequest const& req)
+    {
+        sys = req.messages[0].content;
+        LlmResult res;
+        res.status = LlmResult::Status::Ok;
+        res.content = ReplyJson("Two collars so far.");
+        return res;
+    });
+    WorldContext ctx = h.ctx;
+    ctx.journal = { "Your quest \"Unfortunate Measures\": you have Lynx Collar 2/8 (Arthas's own count, not yours: Lynx Collar 8/8)." };
+    // no quest word in the message: she still has her own numbers
+    h.svc->OnPlayerMessage(h.Key(), "how many collars do you need?", ChatChannel::Whisper, ctx, h.now);
+    CHECK(h.WaitSpeak(h.Key()));
+    CHECK_CONTAINS(sys, "Your journal");
+    CHECK_CONTAINS(sys, "Lynx Collar 2/8");
+    CHECK_CONTAINS(sys, "their own progress, not yours");
+}
+
 TEST(Service, ImportWithRejectedSettingsChangesNothing)
 {
     Harness h;

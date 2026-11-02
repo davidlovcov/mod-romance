@@ -42,6 +42,8 @@ namespace truecompanion::ac
 
         // Adds the requested knowledge lines (see truecompanion::knowledge) to ctx.knowledge.
         void AddKnowledge(WorldContext& ctx, Player* owner, Player* bot, uint32 topics) const;
+        // Her journal for every prompt (WorldContext::journal): quests with her progress (and theirs), bags, gold, task.
+        void AddJournal(WorldContext& ctx, Player* owner, Player* bot) const;
 
         // Carries out `cmd`; returns the outcome sentence for the prompt (second person: "You ...").
         std::string Execute(Player* owner, Player* bot, CompanionCommand const& cmd, std::optional<Stage> stage, time_t now);
