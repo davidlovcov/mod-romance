@@ -1,5 +1,5 @@
 /*
- * mod-romance — Licensed under the GNU GPL v2 or later. See LICENSE.
+ * mod-true-companion — Licensed under the GNU GPL v2 or later. See LICENSE.
  */
 
 #include "TestFramework.h"

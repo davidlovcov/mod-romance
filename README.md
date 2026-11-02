@@ -1,4 +1,8 @@
-# mod-romance
+<p align="center"><img src="icon.png" alt="True Companion" width="128" height="128"></p>
+
+<h1 align="center">mod-true-companion</h1>
+
+<p align="center"><i>Formerly <b>mod-romance</b>. Upgrading? See <a href="docs/INSTALLATION.md#upgrading-from-mod-romance">Upgrading from mod-romance</a>.</i></p>
 
 **Author:** [davidlovcov](https://github.com/davidlovcov)
 
@@ -6,7 +10,7 @@ An AI companion and relationship module for **AzerothCore (WotLK 3.3.5a)** with 
 
 Turn one of your own characters into a companion who remembers you. Your companion keeps the personality you configured, reacts to fights, level-ups and gifts, sometimes starts conversations, and the relationship between you grows over time. Male and female companions work the same way. Combat, movement and spellcasting stay with the normal Playerbots AI. Ollama only supplies the conversation, and **only for the companion you explicitly select**, never for your other bots.
 
-The in-game interface is the companion addon: **[azerothcore-romance-addon](https://github.com/davidlovcov/azerothcore-romance-addon)**.
+The in-game interface is the companion addon: **[azerothcore-true-companion-addon](https://github.com/davidlovcov/azerothcore-true-companion-addon)**.
 
 ## Screenshots
 
@@ -18,7 +22,7 @@ A companion's memory after a short questing session (editable in the addon):
 
 ![Memory viewer](docs/images/memories.jpg)
 
-More screenshots in the [addon repository](https://github.com/davidlovcov/azerothcore-romance-addon#screenshots).
+More screenshots in the [addon repository](https://github.com/davidlovcov/azerothcore-true-companion-addon#screenshots).
 
 ## Features
 
@@ -57,12 +61,12 @@ A preset is a complete personality: traits, response style, age, gender, pronoun
 
 ```bash
 cd azerothcore-wotlk/modules
-git clone https://github.com/davidlovcov/mod-romance.git
+git clone https://github.com/davidlovcov/mod-true-companion.git
 cd .. && ./acore.sh compiler build        # or your usual CMake build
 ```
-Then copy `mod_romance.conf.dist` to `mod_romance.conf` in your `etc/modules` folder and set `Romance.Ollama.Url`.
+Then copy `mod_true_companion.conf.dist` to `mod_true_companion.conf` in your `etc/modules` folder and set `TrueCompanion.Ollama.Url`.
 
-**Updating:** run `cd modules/mod-romance && git pull`, then rebuild.
+**Updating:** run `cd modules/mod-true-companion && git pull`, then rebuild.
 
 See [docs/INSTALLATION.md](docs/INSTALLATION.md) for Linux and Windows 11 details and troubleshooting.
 
@@ -71,13 +75,13 @@ See [docs/INSTALLATION.md](docs/INSTALLATION.md) for Linux and Windows 11 detail
 | | |
 |---|---|
 | Tested core | mod-playerbots/azerothcore-wotlk `93333d6`, mod-playerbots `05a1f6f` |
-| Configuration | `conf/mod_romance.conf.dist`, copied automatically by CMake. See [docs/CONFIGURATION.md](docs/CONFIGURATION.md). |
-| SQL | characters database, 7 `romance_*` tables, applied automatically by the DB updater (`data/sql/db-characters/base`) |
-| CMake hooks | `mod-romance.cmake` (links `ws2_32` on Windows, Threads) |
+| Configuration | `conf/mod_true_companion.conf.dist`, copied automatically by CMake. See [docs/CONFIGURATION.md](docs/CONFIGURATION.md). |
+| SQL | characters database, 7 `true_companion_*` tables, applied automatically by the DB updater (`data/sql/db-characters/base`) |
+| CMake hooks | `mod-true-companion.cmake` (links `ws2_32` on Windows, Threads) |
 | WorldScript | `OnAfterConfigLoad`, `OnStartup`, `OnShutdown`, `OnUpdate` |
 | PlayerScript | `OnPlayerCanUseChat` (whisper, group), `OnPlayerLogin`, `OnPlayerLogout`, `OnPlayerCreatureKill`, `OnPlayerCompleteQuest`, `OnPlayerStoreNewItem` |
 | ServerScript | `CanPacketReceive` (`CMSG_ACCEPT_TRADE`), `CanPacketSend` (`SMSG_TRADE_STATUS`) |
-| CommandScript | `.romance status \| summon \| dismiss \| on \| off` |
+| CommandScript | `.companion status \| summon \| dismiss \| on \| off` |
 | Core changes | none |
 
 ## Documentation

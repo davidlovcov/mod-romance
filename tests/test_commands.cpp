@@ -1,14 +1,14 @@
 /*
- * mod-romance — Licensed under the GNU GPL v2 or later. See LICENSE.
+ * mod-true-companion — Licensed under the GNU GPL v2 or later. See LICENSE.
  * Natural-language companion commands and knowledge topics.
  */
 
 #include "TestFramework.h"
-#include "RomanceCommands.h"
+#include "TrueCompanionCommands.h"
 
 #include <string>
 
-using namespace romance;
+using namespace truecompanion;
 
 namespace
 {

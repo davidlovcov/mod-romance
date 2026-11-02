@@ -1,13 +1,13 @@
 /*
- * mod-romance — Licensed under the GNU GPL v2 or later. See LICENSE.
+ * mod-true-companion — Licensed under the GNU GPL v2 or later. See LICENSE.
  *
  * Tiny single-threaded HTTP server on 127.0.0.1 that impersonates Ollama for
  * network-level tests of HttpRequest/OllamaBackend (status codes, chunked
  * bodies, slow responses for timeout tests). POSIX only.
  */
 
-#ifndef MOD_ROMANCE_MOCK_HTTP_SERVER_H
-#define MOD_ROMANCE_MOCK_HTTP_SERVER_H
+#ifndef MOD_TRUE_COMPANION_MOCK_HTTP_SERVER_H
+#define MOD_TRUE_COMPANION_MOCK_HTTP_SERVER_H
 
 #include <arpa/inet.h>
 #include <netinet/in.h>
@@ -23,7 +23,7 @@
 #include <thread>
 #include <vector>
 
-namespace romance::test
+namespace truecompanion::test
 {
     struct MockHttpRequest
     {

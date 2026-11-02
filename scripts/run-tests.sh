@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Runs the automated tests of mod-romance (no AzerothCore build needed).
+# Runs the automated tests of mod-true-companion (no AzerothCore build needed).
 #   scripts/run-tests.sh [--sql] [--sanitize]
-#   ADDON_DIR=../azerothcore-romance-addon scripts/run-tests.sh   # also runs the C++ <-> Lua wire interop test
+#   ADDON_DIR=../azerothcore-true-companion-addon scripts/run-tests.sh   # also runs the C++ <-> Lua wire interop test
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -17,13 +17,13 @@ for a in "$@"; do
 done
 
 echo "== C++ tests"
-cmake -S "$ROOT/tests" -B "$BUILD" -DCMAKE_BUILD_TYPE=Debug -DROMANCE_SANITIZE=$SAN >/dev/null
+cmake -S "$ROOT/tests" -B "$BUILD" -DCMAKE_BUILD_TYPE=Debug -DTRUE_COMPANION_SANITIZE=$SAN >/dev/null
 cmake --build "$BUILD" -j"$(nproc 2>/dev/null || echo 2)"
-"$BUILD/romance_tests"
+"$BUILD/true_companion_tests"
 
 if [ -n "${ADDON_DIR:-}" ]; then
   echo "== C++ <-> Lua wire interop (addon at $ADDON_DIR)"
-  (cd "$ADDON_DIR" && lua5.1 tests/test_interop.lua AzerothRomance "$BUILD/romance_wire")
+  (cd "$ADDON_DIR" && lua5.1 tests/test_interop.lua TrueCompanion "$BUILD/true_companion_wire")
 fi
 
 if [ "$SQL" = 1 ]; then

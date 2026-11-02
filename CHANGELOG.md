@@ -1,6 +1,10 @@
 # Changelog
 
-## Unreleased
+## Unreleased (2.0.0)
+
+### Renamed: mod-romance is now mod-true-companion
+- The module, its files, config keys (`TrueCompanion.*`, file `mod_true_companion.conf`), tables (`true_companion_*`), log prefix and GM command (`.companion`) are renamed. Romantic relationships stay a per-companion option. Version 2.0.0, since the config and the addon (now **TrueCompanion**) change with it.
+- Upgrading keeps everything: a new SQL update renames the `romance_*` tables (only when the old ones exist, so it is safe to run again), `scripts/migrate-from-mod-romance.sh` converts your config, and memory exports made before the rename can still be imported. Steps: docs/INSTALLATION.md, "Upgrading from mod-romance".
 
 ### Added
 - Quests tab actions: "Share" gives a quest to every companion who lacks it and can take it, and a companion who has it shares it with you; "Take" sends the companions to take a quest available around (right away when the quest giver is near, else the leading or selected companion leads everyone there and they take exactly that quest). The tab shows who could still get each quest and who can take each available one.
@@ -11,14 +15,14 @@
 - Quest level: "lead the way" and "pick up your quests" leave quests far above the group for later (the group's average level +2, +3 with three, +4 with five or more); grinding leaves such enemies alone too. A quest you name ("lead me to ...") or put first in the addon's quest order is always done.
 - Quest order (addon Character tab): she leads to the first unfinished quest of your order. "Lead me to <quest>" while she leads switches to that quest.
 - Companion setting "Wait for me to loot" (off by default): after a fight she also waits for your loot; off, she only loots her own and goes on.
-- `conf/playerbots-recommended.conf`: the recommended Playerbots settings (only the changed ones) to copy into playerbots.conf, now including `Playerbots.SyncQuestWithPlayer = 0`; mod-romance warns at startup while it is 1.
+- `conf/playerbots-recommended.conf`: the recommended Playerbots settings (only the changed ones) to copy into playerbots.conf, now including `Playerbots.SyncQuestWithPlayer = 0`; mod-true-companion warns at startup while it is 1.
 - "Lead the way" without a quest: she leads you and the other companions to the quest givers around, everyone picks up what they can, and then she leads you to one of the new quests (kill and item-drop quests first). With nothing to pick up she turns in finished quests or grinds the creatures nearby.
-- "Give me all your money" (gold, copper, coins): she hands over everything she has, up to `Romance.Control.MaxGoldPerRequest`.
+- "Give me all your money" (gold, copper, coins): she hands over everything she has, up to `TrueCompanion.Control.MaxGoldPerRequest`.
 - Companions know which quests they could pick up around you (quest givers within ~250 yards, with direction, distance and class-quest marker); ask them or see "Available nearby" on the Character tab.
 - "Pick up your quests" / "go get your class quest": the companion walks to the nearest quest giver with something for them (e.g. their class trainer), picks the quests up and comes back.
 
 ### Fixed
-- Companion commands that start with a Playerbots command word ("sell your junk", "Vendor, sell trash", "attack", "accept the quest", "go on") went to Playerbots instead: nothing was sold or accepted and the companion didn't answer. mod-romance now handles them; `!` still sends a line to Playerbots unchanged.
+- Companion commands that start with a Playerbots command word ("sell your junk", "Vendor, sell trash", "attack", "accept the quest", "go on") went to Playerbots instead: nothing was sold or accepted and the companion didn't answer. mod-true-companion now handles them; `!` still sends a line to Playerbots unchanged.
 - "Give me 1 gold" said yes but gave nothing: gold is now handed over directly (within 30 yards), no trade window.
 - "Turn in your quests" only worked right at the quest ender: she now walks to the quest ender (up to ~250 yards), turns the quests in and comes back.
 - Lead mode: only one companion leads (the others follow the group), every bot of the group fights at the destination, quests that need item drops ("bring 8 Lynx Collars") send her to the creatures that drop them, and she no longer "arrives" at the turn-in marker instead of the quest area. A quest errand (fetching or turning in) is no longer mistaken for a lead.
@@ -32,8 +36,8 @@
 - Export / import failed for larger memory sets (one message was limited to 16 KiB): exports and imports now travel in pages and an import is applied only when every part arrived.
 - Build with clang and warnings as errors (AzerothCore CI): unused parameters.
 - Tests include the standard headers they use (GCC 14).
-- Party chat lines could open a trade window ("how many more to kill?"): that is Playerbots' `EnableAutoTradeOnItemMention`. mod-romance now warns about it at startup; set `Playerbots.EnableAutoTradeOnItemMention = 0` (see docs/INSTALLATION.md).
-- mod-romance's own bot commands respect `Playerbots.CommandPrefix` when one is set.
+- Party chat lines could open a trade window ("how many more to kill?"): that is Playerbots' `EnableAutoTradeOnItemMention`. mod-true-companion now warns about it at startup; set `Playerbots.EnableAutoTradeOnItemMention = 0` (see docs/INSTALLATION.md).
+- mod-true-companion's own bot commands respect `Playerbots.CommandPrefix` when one is set.
 - The Ollama connection no longer depends on exact header spacing or case in the server's reply (`Transfer-Encoding:chunked`, `CONTENT-LENGTH:  123`); a malformed `Content-Length` is ignored instead of misread.
 - The Character tab lagged when opened (and hitched on every refresh): finding nearby quest givers walked every creature spawn in the world each time. The quest-giving and quest-ending spawns are now indexed once per map, which also speeds up "pick up your quests", "turn in your quests" and quest questions.
 - Lead mode edge cases (see docs/LEAD_MODE.md): a dismissed or kicked leader no longer leaves the followers without Playerbots' follow; "follow me" to a follower makes her follow you during a lead; a follower back from her own errand walks behind the leader again; a lead ends when you hearth / teleport / enter an instance; quests without a known place are skipped instead of blocking the round; quests with nothing to fight, unreachable spots and spots without free creatures are skipped for the round instead of ending it; quest givers that can't be used are not visited again and again; "Apply order" no longer interrupts turn-ins; "lead me to" works for quests only you (or another companion) have; the round uses the whole group's quests and turns in every companion's finished quests; follow is switched back on when a companion is called (a lead before a restart could leave it off).
@@ -55,12 +59,12 @@
 - Item-drop quests never finished: right after a kill the next enemy was marked, so the companions stayed in combat and never looted (no Lynx Collars). There is now a short pause after every kill and the bots are told to loot.
 - Kicking a companion from the party (or disbanding it) left her summoned and following you; she is dismissed now, like with "Dismiss".
 - Lead mode skipped the creatures some quests need: Springpaw Cubs and Lynxes (Lynx Collars) and other creatures marked "civilian" in the world database were never marked or attacked, so she walked from spot to spot and then went back to following. Civilian creatures are attacked now.
-- Lead mode still ended when she reached the quest mobs if none of them was free (in busy starting areas they are often tagged by other players or bots): she now leads on to the next spawn spot, up to four times, before giving up. Every lead start and end and every "no target left" is written to the server log with the reason (`[mod-romance] ... stops leading: ...`).
+- Lead mode still ended when she reached the quest mobs if none of them was free (in busy starting areas they are often tagged by other players or bots): she now leads on to the next spawn spot, up to four times, before giving up. Every lead start and end and every "no target left" is written to the server log with the reason (`[mod-true-companion] ... stops leading: ...`).
 - Walking closer to an enemy out of sight now goes through Playerbots' own movement ("go"), which its strategies don't cancel.
 - Lead mode dropped back to following right when she reached the enemies (and sometimes right after "lead the way"): the AI's own reply could contain a "follow" action, which was passed to Playerbots. While she leads, runs an errand or clears an area, the AI's movement actions are ignored now; your own "follow me" ends a lead or an area clearing properly.
 - Enemies out of sight: the companions now really walk closer (Playerbots' follow pulled them straight back before), also for a single "attack" on your target; they attack as soon as they see it.
 - An import sent one "memory changed" message per memory, and the addon reloaded its lists for each one ("get_memories: Too many requests" flood). One message per import now.
-- "Give me 5 copper" at a low relationship stage: she is not allowed to hand things over yet (`Romance.Control.GiveMinStage`, default: friends) but the AI sometimes said "here you go" anyway. The server now says so in the chat, and the prompt says plainly that nothing was given.
+- "Give me 5 copper" at a low relationship stage: she is not allowed to hand things over yet (`TrueCompanion.Control.GiveMinStage`, default: friends) but the AI sometimes said "here you go" anyway. The server now says so in the chat, and the prompt says plainly that nothing was given.
 - "Springpaw Cub is not in my sight" / "attack rti target: failed": Playerbots refuses to attack what it cannot see (or what it is already attacking). Attack orders now go out only for enemies in line of sight and not twice; when the next enemy is out of sight, the companions walk closer first and skip it after 20 seconds.
 - Lead mode and area clearing ignored quest mobs that count through a kill-credit creature (many "kill N wolves" quests), so she found no enemies at the destination and went back to following. These mobs are found now, also when choosing where to walk.
 - When a quest she is leading you through is finished, she now walks to the quest giver, turns it in and comes back (before: she only said it was done).
@@ -68,7 +72,7 @@
 - "Sell 3 of your linen cloth" sold the whole stack: the amount is respected now, the rest stays in the bag.
 - "Pick up your quests" now goes to every quest giver around (not only one); "pick up a quest" takes the nearest quest only.
 - "Give me 5 copper" is verified now: if the gold does not arrive, she says so and the server log has a line about it (`gold handover failed`).
-- The server version is shown in the startup log and in the addon's Settings tab (`1.1.1-dev` while on develop).
+- The server version is shown in the startup log and in the addon's Settings tab (`2.0.0-dev` while on develop).
 - Opening the Character tab for the first time still lagged: the quest-giver index is now built at server start.
 - Quests with a choice of rewards always gave the companion the first item. She now picks for herself: gear she can use that upgrades what she wears comes first (in her best armor type: cloth, leather, mail or plate), then other usable gear, then potions and bags, and last things she cannot use. Applies to turn-ins by command, quest sync and fetch errands.
 - Selling an item by name reported the whole stack even if part of it was skipped (e.g. in a trade window); it now reports what was actually sold.
@@ -85,15 +89,15 @@
 
 ### Added
 - **Game knowledge:** ask her about her bags, gold, XP, gear, spells, quests (with progress and which you share) or your target; she answers from real game data.
-- **Companion control** in plain sentences: give items or gold (she opens the trade), cast a spell on you or your target, attack an enemy by name or creature type (skull mark), sell junk or an item at a vendor, share quests, lead the way to one of her quests (experimental). Auto-sells junk at a vendor when bags are nearly full. `Romance.Control.*` options. See [docs/COMMANDS.md](docs/COMMANDS.md).
+- **Companion control** in plain sentences: give items or gold (she opens the trade), cast a spell on you or your target, attack an enemy by name or creature type (skull mark), sell junk or an item at a vendor, share quests, lead the way to one of her quests (experimental). Auto-sells junk at a vendor when bags are nearly full. `TrueCompanion.Control.*` options. See [docs/COMMANDS.md](docs/COMMANDS.md).
 - **Several companions** at once (default 3); party messages go to the companion you name, or to the one you talked to last when only bots are in your group.
-- **Presets:** every built-in preset is a complete personality; 7 male presets next to the 7 female ones; custom presets per account (`romance_preset` table, `Romance.Presets.MaxCustomPerAccount`).
-- **Estrangement:** constant mistreatment makes her leave; she refuses calls for 72 h (longer each time) and comes back cold; reconciliation takes several days. `Romance.Estrangement.*` options.
+- **Presets:** every built-in preset is a complete personality; 7 male presets next to the 7 female ones; custom presets per account (`true_companion_preset` table, `TrueCompanion.Presets.MaxCustomPerAccount`).
+- **Estrangement:** constant mistreatment makes her leave; she refuses calls for 72 h (longer each time) and comes back cold; reconciliation takes several days. `TrueCompanion.Estrangement.*` options.
 - `get_character_sheet`, `list_presets`, `save_preset`, `delete_preset` addon ops; failed acks carry a readable `message`.
-- Party chat: every companion you name answers; "everyone"/"all of you"/"guys" reach all; unaddressed lines reach all companions when only bots share your group (`Romance.Party.UnaddressedReplies`). Each companion knows who else is travelling with her.
+- Party chat: every companion you name answers; "everyone"/"all of you"/"guys" reach all; unaddressed lines reach all companions when only bots share your group (`TrueCompanion.Party.UnaddressedReplies`). Each companion knows who else is travelling with her.
 - "Attack all here" / "clear the area" / "kill all wolves": one enemy after another until the area is clear; "stop attacking". "Attack" without a target picks the nearest enemy.
-- Quests without targeting: "accept the quest", "turn in your quests"; companions take and turn in quests together with you (`Romance.Control.QuestSync`).
-- Selling works with a merchant within 30 yards, no targeting (`Romance.Control.InteractRange`).
+- Quests without targeting: "accept the quest", "turn in your quests"; companions take and turn in quests together with you (`TrueCompanion.Control.QuestSync`).
+- Selling works with a merchant within 30 yards, no targeting (`TrueCompanion.Control.InteractRange`).
 
 ### Fixed
 - After renaming a companion and saving, she sometimes still introduced herself with the character's name: saves are now visible immediately (write-through cache), and the prompt says her chosen name wins over the name shown in the world.
@@ -121,7 +125,7 @@ First release.
   - world-state snapshots and event polling (combat, near death, deaths, level-ups, zones), quest and loot hooks;
   - emotes, and allow-listed Playerbots commands.
 - Characters-DB persistence (6 tables), asynchronous idempotent writes, schema check at startup.
-- `.romance status|summon|dismiss|on|off` chat commands and `mod_romance.conf.dist` with 70+ documented options.
+- `.companion status|summon|dismiss|on|off` chat commands and `mod_true_companion.conf.dist` with 70+ documented options.
 - 75 C++ tests (including the full couple → ring → restart → remembers flow) and an SQL test against MySQL/MariaDB.
 
 ### Known limitations

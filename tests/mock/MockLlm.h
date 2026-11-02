@@ -1,15 +1,15 @@
 /*
- * mod-romance — Licensed under the GNU GPL v2 or later. See LICENSE.
+ * mod-true-companion — Licensed under the GNU GPL v2 or later. See LICENSE.
  *
  * Deterministic, scriptable LLM backend for tests. A responder function maps
  * each request to a result; every request is recorded together with the
  * thread it ran on (used to prove no LLM work happens on the game thread).
  */
 
-#ifndef MOD_ROMANCE_MOCK_LLM_H
-#define MOD_ROMANCE_MOCK_LLM_H
+#ifndef MOD_TRUE_COMPANION_MOCK_LLM_H
+#define MOD_TRUE_COMPANION_MOCK_LLM_H
 
-#include "RomanceLlm.h"
+#include "TrueCompanionLlm.h"
 
 #include <atomic>
 #include <chrono>
@@ -21,7 +21,7 @@
 #include <string>
 #include <vector>
 
-namespace romance::test
+namespace truecompanion::test
 {
     inline std::string ReplyJson(std::string const& reply, std::string const& emotion = "happy", std::string const& sentiment = "positive",
                                  std::vector<std::string> const& signals = {}, std::string const& proposalKind = "none",

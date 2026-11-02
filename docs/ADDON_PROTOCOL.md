@@ -4,8 +4,8 @@
 
 WoW 3.3.5a addons can't open sockets, so communication uses addon messages.
 
-* **Client → server:** `SendAddonMessage("ARMN", chunk, "WHISPER", UnitName("player"))`, a whisper to yourself in `LANG_ADDON`. The server intercepts it in `PlayerScript::OnPlayerCanUseChat` (inside `Player::Whisper`) and swallows it, so it's never relayed or echoed.
-* **Server → client:** `ChatHandler::BuildChatPacket(CHAT_MSG_WHISPER, LANG_ADDON, player, player, "ARMN\t" + chunk)`. The client fires `CHAT_MSG_ADDON("ARMN", chunk, "WHISPER", <own name>)`. The addon ignores this prefix from any other sender.
+* **Client → server:** `SendAddonMessage("TCMP", chunk, "WHISPER", UnitName("player"))`, a whisper to yourself in `LANG_ADDON`. The server intercepts it in `PlayerScript::OnPlayerCanUseChat` (inside `Player::Whisper`) and swallows it, so it's never relayed or echoed.
+* **Server → client:** `ChatHandler::BuildChatPacket(CHAT_MSG_WHISPER, LANG_ADDON, player, player, "TCMP\t" + chunk)`. The client fires `CHAT_MSG_ADDON("TCMP", chunk, "WHISPER", <own name>)`. The addon ignores this prefix from any other sender.
 
 ## Framing
 
@@ -28,7 +28,7 @@ WoW 3.3.5a addons can't open sockets, so communication uses addon messages.
 The addon sends at most 20 chunks/s and pauses 1.2 s after every 40 chunks, which keeps it below AzerothCore's `ChatFlood.AddonMessageCount` (default 100).
 
 ### Identity and security
-The server **never** takes identity from the payload. The owner is always the session's logged-in character. Every op that names a companion `guid` first checks that the character belongs to the player's account, or to a linked account when `Romance.AllowLinkedAccounts = 1` and Playerbots' `IsAccountLinked` agrees. Otherwise it replies with `error/not_owner` and reveals nothing. Replaying a request can only repeat an action the player is already allowed to take on their own data.
+The server **never** takes identity from the payload. The owner is always the session's logged-in character. Every op that names a companion `guid` first checks that the character belongs to the player's account, or to a linked account when `TrueCompanion.AllowLinkedAccounts = 1` and Playerbots' `IsAccountLinked` agrees. Otherwise it replies with `error/not_owner` and reveals nothing. Replaying a request can only repeat an action the player is already allowed to take on their own data.
 
 ## Operations (client → server)
 

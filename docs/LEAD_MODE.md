@@ -7,7 +7,7 @@ the behaviour and the cases it handles; check new changes against it before impl
 
 - **Leader**: the one companion leading the player. There is at most one leader per player.
 - **Followers**: the other companions in the group. While someone leads, they walk a few yards behind the
-  leader (mod-romance moves them; Playerbots' own follow is switched off for that time).
+  leader (mod-true-companion moves them; Playerbots' own follow is switched off for that time).
 - **Errand**: a companion walks alone to a quest giver ("pick up your quests", "turn in your quests") and
   comes back. An errand is not leading: another companion can lead meanwhile.
 
@@ -83,6 +83,6 @@ quest that can't be taken or turned in never causes a loop.
 
 ## Logs
 
-Every decision is logged at INFO (`[mod-romance] ...`): `leads to "<quest>"`, `leads to quest giver`,
+Every decision is logged at INFO (`[mod-true-companion] ...`): `leads to "<quest>"`, `leads to quest giver`,
 `leads to <NPC> to turn in`, `leads to merchant`, `no target left (...)`, `no free quest mobs here, moving on`,
 `stops leading: <reason>`.

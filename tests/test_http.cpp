@@ -1,19 +1,19 @@
 /*
- * mod-romance — Licensed under the GNU GPL v2 or later. See LICENSE.
+ * mod-true-companion — Licensed under the GNU GPL v2 or later. See LICENSE.
  * Network-level tests: real sockets against a local fake Ollama server.
  */
 
 #include "TestFramework.h"
 
 #include "MockHttpServer.h"
-#include "RomanceLlm.h"
+#include "TrueCompanionLlm.h"
 
 #include <chrono>
 #include <string>
 #include <thread>
 
-using namespace romance;
-using namespace romance::test;
+using namespace truecompanion;
+using namespace truecompanion::test;
 
 namespace
 {

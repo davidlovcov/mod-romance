@@ -1,4 +1,4 @@
-# Builds AzerothCore (Playerbot fork) + mod-playerbots + mod-romance on Windows 11.
+# Builds AzerothCore (Playerbot fork) + mod-playerbots + mod-true-companion on Windows 11.
 # Requires: Visual Studio 2022 (C++), CMake, Git, MySQL 8, Boost (BOOST_ROOT), OpenSSL.
 #   powershell -ExecutionPolicy Bypass -File scripts\install-windows.ps1 [-Source C:\azerothcore] [-Pinned]
 param(
@@ -19,8 +19,8 @@ if (-not (Test-Path $Source)) { git clone https://github.com/mod-playerbots/azer
 if (-not (Test-Path "$Source\modules\mod-playerbots")) {
     git clone https://github.com/mod-playerbots/mod-playerbots.git --branch=master "$Source\modules\mod-playerbots"
 }
-if (-not (Test-Path "$Source\modules\mod-romance")) {
-    git clone https://github.com/davidlovcov/mod-romance.git "$Source\modules\mod-romance"
+if (-not (Test-Path "$Source\modules\mod-true-companion")) {
+    git clone https://github.com/davidlovcov/mod-true-companion.git "$Source\modules\mod-true-companion"
 }
 if ($Pinned) {
     git -C $Source fetch --depth 1 origin $AcCommit; git -C $Source checkout $AcCommit
@@ -31,9 +31,9 @@ cmake -S $Source -B "$Source\build" -G "Visual Studio 17 2022" -A x64 -DSCRIPTS=
 cmake --build "$Source\build" --config $Config --parallel
 
 $conf = "$Source\build\bin\$Config\configs\modules"
-foreach ($c in @("mod_romance", "playerbots")) {
+foreach ($c in @("mod_true_companion", "playerbots")) {
     if ((Test-Path "$conf\$c.conf.dist") -and -not (Test-Path "$conf\$c.conf")) { Copy-Item "$conf\$c.conf.dist" "$conf\$c.conf" }
 }
 if (Get-Command ollama -ErrorAction SilentlyContinue) { ollama pull qwen3.5:4b; ollama pull qwen3:4b-instruct }
-else { Write-Warning "Ollama not found here: install it or point Romance.Ollama.Url to the machine running it." }
-Write-Host "Done. Binaries: $Source\build\bin\$Config  -  Addon: https://github.com/davidlovcov/azerothcore-romance-addon"
+else { Write-Warning "Ollama not found here: install it or point TrueCompanion.Ollama.Url to the machine running it." }
+Write-Host "Done. Binaries: $Source\build\bin\$Config  -  Addon: https://github.com/davidlovcov/azerothcore-true-companion-addon"

@@ -1,7 +1,7 @@
 /*
- * mod-romance — Licensed under the GNU GPL v2 or later. See LICENSE.
+ * mod-true-companion — Licensed under the GNU GPL v2 or later. See LICENSE.
  *
- * Integration tests of RomanceService with the mocked LLM backend and the
+ * Integration tests of TrueCompanionService with the mocked LLM backend and the
  * in-memory repository: conversation flow, proposals, gifts, persistence across
  * "restarts", offline/timeout handling, saturation, proactive limits, isolation
  * between companions, and thread-safety of state mutation.
@@ -10,10 +10,10 @@
 #include "TestFramework.h"
 
 #include "MockLlm.h"
-#include "RomancePresets.h"
-#include "RomanceProtocol.h"
-#include "RomanceService.h"
-#include "RomanceTransfer.h"
+#include "TrueCompanionPresets.h"
+#include "TrueCompanionProtocol.h"
+#include "TrueCompanionService.h"
+#include "TrueCompanionTransfer.h"
 
 #include <chrono>
 #include <thread>
@@ -24,8 +24,8 @@
 #include <string>
 #include <vector>
 
-using namespace romance;
-using namespace romance::test;
+using namespace truecompanion;
+using namespace truecompanion::test;
 
 namespace
 {
@@ -37,10 +37,10 @@ namespace
 
     struct Harness
     {
-        RomanceConfig cfg;
+        TrueCompanionConfig cfg;
         InMemoryRepository repo;
         std::shared_ptr<MockLlm> llm = std::make_shared<MockLlm>();
-        std::unique_ptr<RomanceService> svc;
+        std::unique_ptr<TrueCompanionService> svc;
         WorldContext ctx;
         TimePoint now = 1'800'000'000;
         std::vector<OutgoingAction> out;
@@ -65,7 +65,7 @@ namespace
             ctx.partySize = 2;
         }
 
-        void Start() { svc = std::make_unique<RomanceService>(cfg, repo, llm, 42); }
+        void Start() { svc = std::make_unique<TrueCompanionService>(cfg, repo, llm, 42); }
         void Restart()
         {
             svc->Shutdown();
@@ -129,11 +129,11 @@ TEST(Service, OnlySelectedCompanionsReachTheModel)
     Harness h;
     // Not activated: every message passes through untouched and no LLM call happens.
     auto r = h.svc->OnPlayerMessage(h.Key(), "Hey Elara, how was your day?", ChatChannel::Whisper, h.ctx, h.now);
-    CHECK(r.result == RomanceService::MessageResult::NotForUs);
+    CHECK(r.result == TrueCompanionService::MessageResult::NotForUs);
     h.Activate(h.Key());
-    // Another bot (Lyra) of the same player is not a romance companion.
+    // Another bot (Lyra) of the same player is not an AI companion.
     auto other = h.svc->OnPlayerMessage(h.Key(kArthas, kLyra), "Hi Lyra", ChatChannel::Whisper, h.ctx, h.now);
-    CHECK(other.result == RomanceService::MessageResult::NotForUs);
+    CHECK(other.result == TrueCompanionService::MessageResult::NotForUs);
     h.PumpUntil([](auto const&) { return false; }, 100);
     CHECK_EQ(h.llm->CallCount(), size_t(0));
 }
@@ -146,7 +146,7 @@ TEST(Service, ChatRoundTripOnWorkerThreadAppliedOnGameThread)
                                 "happy", "positive", { "kindness" }));
     RelationshipValues before = h.svc->GetOrCreateRecord(h.Key(), kAccount, "Elara", h.now).relationship.v;
     auto r = h.svc->OnPlayerMessage(h.Key(), "Hey Elara, how was your day?", ChatChannel::Whisper, h.ctx, h.now);
-    CHECK(r.result == RomanceService::MessageResult::Accepted);
+    CHECK(r.result == TrueCompanionService::MessageResult::Accepted);
     // Nothing is applied before Tick runs on the game thread
     std::this_thread::sleep_for(std::chrono::milliseconds(50));
     RelationshipValues mid = h.svc->GetOrCreateRecord(h.Key(), kAccount, "Elara", h.now).relationship.v;
@@ -215,13 +215,13 @@ TEST(Service, CompanionCommandsWinOverPlayerbotsCommandWords)
     for (char const* line : { "!sell your junk", "stats", "co +dps", "nc ?" })
     {
         auto r = h.svc->OnPlayerMessage(h.Key(), line, ChatChannel::Whisper, h.ctx, h.now);
-        CHECK(r.result == RomanceService::MessageResult::PassToPlayerbots);
+        CHECK(r.result == TrueCompanionService::MessageResult::PassToPlayerbots);
         CHECK(!h.svc->PrepareControl(h.Key(), line, "Elara").command.has_value());
     }
     // and the companion command gets an AI answer instead of going to Playerbots
     h.llm->QueueReply(ReplyJson("Sold it all!", "happy", "neutral", {}));
     auto r = h.svc->OnPlayerMessage(h.Key(), "sell your junk", ChatChannel::Whisper, h.ctx, h.now);
-    CHECK(r.result == RomanceService::MessageResult::Accepted);
+    CHECK(r.result == TrueCompanionService::MessageResult::Accepted);
     CHECK(!r.command.has_value());
 }
 
@@ -230,16 +230,16 @@ TEST(Service, PlayerbotCommandsPassThroughAndNaturalCommandsExecute)
     Harness h;
     h.Activate(h.Key());
     auto cmd = h.svc->OnPlayerMessage(h.Key(), "follow", ChatChannel::Whisper, h.ctx, h.now);
-    CHECK(cmd.result == RomanceService::MessageResult::PassToPlayerbots);
+    CHECK(cmd.result == TrueCompanionService::MessageResult::PassToPlayerbots);
     CHECK_EQ(cmd.rewritten, std::string("follow"));
     auto bang = h.svc->OnPlayerMessage(h.Key(), "!co +dps", ChatChannel::Whisper, h.ctx, h.now);
-    CHECK(bang.result == RomanceService::MessageResult::PassToPlayerbots);
+    CHECK(bang.result == TrueCompanionService::MessageResult::PassToPlayerbots);
     CHECK_EQ(bang.rewritten, std::string("co +dps"));
     CHECK_EQ(h.llm->CallCount(), size_t(0));
 
     h.llm->QueueReply(ReplyJson("Right behind you!", "happy", "neutral", {}, "none", "none", "follow"));
     auto nl = h.svc->OnPlayerMessage(h.Key(), "Elara, follow me.", ChatChannel::Whisper, h.ctx, h.now);
-    CHECK(nl.result == RomanceService::MessageResult::Accepted);
+    CHECK(nl.result == TrueCompanionService::MessageResult::Accepted);
     CHECK(nl.command == ActionType::Follow);    // executed immediately via Playerbots by the caller
     CHECK(h.WaitSpeak(h.Key()));
     // model's duplicate "follow" action is not executed a second time
@@ -547,7 +547,7 @@ TEST(Service, OllamaOfflineDegradesGracefully)
     h.llm->SetOnline(false);
     h.Activate(h.Key());
     auto r = h.svc->OnPlayerMessage(h.Key(), "Are you there?", ChatChannel::Whisper, h.ctx, h.now);
-    CHECK(r.result == RomanceService::MessageResult::Accepted);
+    CHECK(r.result == TrueCompanionService::MessageResult::Accepted);
     CHECK(h.PumpUntil([&](auto const&) { return h.Has(OutgoingAction::Type::Notice); }));
     CHECK(h.Spoken(h.Key()).empty());
     CHECK(h.PumpUntil([&](auto const&) { return h.svc->Status().checked; }));
@@ -592,8 +592,8 @@ TEST(Service, WorkerQueueSaturationGivesBackpressure)
     for (Guid c : { kElara, kLyra, Guid(4) })
     {
         auto r = h.svc->OnPlayerMessage(h.Key(kArthas, c), "Hello, how are you today?", ChatChannel::Whisper, h.ctx, h.now);
-        if (r.result == RomanceService::MessageResult::Accepted) ++accepted;
-        if (r.result == RomanceService::MessageResult::Busy) ++busy;
+        if (r.result == TrueCompanionService::MessageResult::Accepted) ++accepted;
+        if (r.result == TrueCompanionService::MessageResult::Busy) ++busy;
         std::this_thread::sleep_for(std::chrono::milliseconds(20));
     }
     CHECK(accepted >= 1);
@@ -604,8 +604,8 @@ TEST(Service, WorkerQueueSaturationGivesBackpressure)
     h2.Restart();
     h2.llm->SetDelayMs(300);
     h2.Activate(h2.Key());
-    CHECK(h2.svc->OnPlayerMessage(h2.Key(), "First message here", ChatChannel::Whisper, h2.ctx, h2.now).result == RomanceService::MessageResult::Accepted);
-    CHECK(h2.svc->OnPlayerMessage(h2.Key(), "Second message here", ChatChannel::Whisper, h2.ctx, h2.now).result == RomanceService::MessageResult::Busy);
+    CHECK(h2.svc->OnPlayerMessage(h2.Key(), "First message here", ChatChannel::Whisper, h2.ctx, h2.now).result == TrueCompanionService::MessageResult::Accepted);
+    CHECK(h2.svc->OnPlayerMessage(h2.Key(), "Second message here", ChatChannel::Whisper, h2.ctx, h2.now).result == TrueCompanionService::MessageResult::Busy);
 }
 
 TEST(Service, MinimumResponseCooldown)
@@ -614,12 +614,12 @@ TEST(Service, MinimumResponseCooldown)
     h.cfg.minResponseCooldownMs = 400;
     h.cfg.maxPendingPerCompanion = 5;
     h.Activate(h.Key());
-    CHECK(h.svc->OnPlayerMessage(h.Key(), "First message here", ChatChannel::Whisper, h.ctx, h.now).result == RomanceService::MessageResult::Accepted);
-    CHECK(h.svc->OnPlayerMessage(h.Key(), "Spam spam spam", ChatChannel::Whisper, h.ctx, h.now).result == RomanceService::MessageResult::Busy);
+    CHECK(h.svc->OnPlayerMessage(h.Key(), "First message here", ChatChannel::Whisper, h.ctx, h.now).result == TrueCompanionService::MessageResult::Accepted);
+    CHECK(h.svc->OnPlayerMessage(h.Key(), "Spam spam spam", ChatChannel::Whisper, h.ctx, h.now).result == TrueCompanionService::MessageResult::Busy);
     // commands are never throttled by the conversation cooldown
-    CHECK(h.svc->OnPlayerMessage(h.Key(), "follow", ChatChannel::Whisper, h.ctx, h.now).result == RomanceService::MessageResult::PassToPlayerbots);
+    CHECK(h.svc->OnPlayerMessage(h.Key(), "follow", ChatChannel::Whisper, h.ctx, h.now).result == TrueCompanionService::MessageResult::PassToPlayerbots);
     std::this_thread::sleep_for(std::chrono::milliseconds(450));
-    CHECK(h.svc->OnPlayerMessage(h.Key(), "Okay, now a real question?", ChatChannel::Whisper, h.ctx, h.now).result == RomanceService::MessageResult::Accepted);
+    CHECK(h.svc->OnPlayerMessage(h.Key(), "Okay, now a real question?", ChatChannel::Whisper, h.ctx, h.now).result == TrueCompanionService::MessageResult::Accepted);
 }
 
 TEST(Service, DismissCancelsInFlightRequests)
@@ -734,10 +734,10 @@ TEST(Service, PartyChatOnlyWhenAddressed)
     Harness h;
     h.Activate(h.Key());
     auto r = h.svc->OnPlayerMessage(h.Key(), "pull the next pack", ChatChannel::Party, h.ctx, h.now);
-    CHECK(r.result == RomanceService::MessageResult::NotForUs);
+    CHECK(r.result == TrueCompanionService::MessageResult::NotForUs);
     h.llm->QueueReply(ReplyJson("On it!"));
     auto r2 = h.svc->OnPlayerMessage(h.Key(), "Elara, what do you think of this place?", ChatChannel::Party, h.ctx, h.now);
-    CHECK(r2.result == RomanceService::MessageResult::Accepted);
+    CHECK(r2.result == TrueCompanionService::MessageResult::Accepted);
     CHECK(h.WaitSpeak(h.Key()));
     for (auto const& a : h.out)
         if (a.type == OutgoingAction::Type::Speak)
@@ -751,7 +751,7 @@ TEST(Service, PartyFallbackAnswersUnaddressedLines)
     h.llm->QueueReply(ReplyJson("Sounds good to me."));
     // The game layer sets partyTarget when only bots share the group with the player.
     auto r = h.svc->OnPlayerMessage(h.Key(), "nice weather today", ChatChannel::Party, h.ctx, h.now, true);
-    CHECK(r.result == RomanceService::MessageResult::Accepted);
+    CHECK(r.result == TrueCompanionService::MessageResult::Accepted);
     CHECK(h.WaitSpeak(h.Key()));
 }
 
@@ -879,7 +879,7 @@ TEST(Service, GameKnowledgeAndCommandOutcomeReachThePrompt)
     ctx.commandHandled = true;
     // "attack" would normally trigger the movement command; the handled command wins
     auto r = h.svc->OnPlayerMessage(h.Key(), "give me 10 gold and attack", ChatChannel::Whisper, ctx, h.now);
-    CHECK(r.result == RomanceService::MessageResult::Accepted);
+    CHECK(r.result == TrueCompanionService::MessageResult::Accepted);
     CHECK(!r.command.has_value());
     CHECK(h.WaitSpeak(h.Key()));
     CHECK_CONTAINS(sys, "Gold: 12g 30s");
@@ -948,7 +948,7 @@ TEST(Service, QueuedResultNeverReachesAReactivatedSession)
     auto before = h.repo.LoadCompanion(h.Key())->relationship.v;
     h.llm->QueueReply(ReplyJson("OLD SESSION REPLY", "happy", "very_positive", { "compliment", "kindness" }));
     CHECK(h.svc->OnPlayerMessage(h.Key(), "You are wonderful", ChatChannel::Whisper, h.ctx, h.now).result ==
-          RomanceService::MessageResult::Accepted);
+          TrueCompanionService::MessageResult::Accepted);
     // the backend finishes, but the service is not ticked: the result waits in the queue
     for (int i = 0; i < 200 && h.llm->CallCount() == 0; ++i)
         std::this_thread::sleep_for(std::chrono::milliseconds(5));
@@ -968,7 +968,7 @@ TEST(Service, QueuedResultNeverReachesAReactivatedSession)
     // the new session works normally and is not blocked by a leftover pending slot
     h.llm->QueueReply(ReplyJson("New session reply."));
     CHECK(h.svc->OnPlayerMessage(h.Key(), "Hello again", ChatChannel::Whisper, h.ctx, h.now + 60).result ==
-          RomanceService::MessageResult::Accepted);
+          TrueCompanionService::MessageResult::Accepted);
     CHECK(h.WaitSpeak(h.Key()));
     CHECK_EQ(h.Spoken(h.Key()).back(), std::string("New session reply."));
 }
@@ -1024,7 +1024,7 @@ TEST(Service, SameCommandPathForWhisperPartyAndAddon)
         h.now += 30;
         h.llm->QueueReply(ReplyJson("On it!"));
         auto r = h.svc->OnPlayerMessage(h.Key(), "Seren, attack the wolf", ch, ctx, h.now, ch == ChatChannel::Party);
-        CHECK(r.result == RomanceService::MessageResult::Accepted);
+        CHECK(r.result == TrueCompanionService::MessageResult::Accepted);
         CHECK(!r.command.has_value());
         h.PumpUntil([](auto const&) { return false; }, 100);
     }
@@ -1178,7 +1178,7 @@ TEST(Service, ExportImportRoundTrip)
     h.Activate(h.Key());
     h.svc->AddUserMemory(h.Key(), MemoryKind::Fact, "David collects rare equipment.", 60, h.now);
     Json exp = h.svc->ExportCompanion(h.Key(), kAccount);
-    CHECK_EQ(exp.GetString("format"), std::string("mod-romance-export"));
+    CHECK_EQ(exp.GetString("format"), std::string("mod-true-companion-export"));
     CHECK_EQ(exp["memories"].Size(), size_t(1));
     auto res = h.svc->ImportCompanion(h.Key(kArthas, kLyra), kAccount, "Lyra", exp, h.now);
     CHECK(res.ok);

@@ -1,24 +1,24 @@
 /*
- * mod-romance — Licensed under the GNU GPL v2 or later. See LICENSE.
+ * mod-true-companion — Licensed under the GNU GPL v2 or later. See LICENSE.
  * Unit tests: JSON, protocol, relationship, gifts, memory, text, prompts.
  */
 
 #include "TestFramework.h"
 
-#include "RomanceGift.h"
-#include "RomanceJson.h"
-#include "RomanceMemory.h"
-#include "RomancePresets.h"
-#include "RomancePrompt.h"
-#include "RomanceProtocol.h"
-#include "RomanceRelationship.h"
-#include "RomanceText.h"
+#include "TrueCompanionGift.h"
+#include "TrueCompanionJson.h"
+#include "TrueCompanionMemory.h"
+#include "TrueCompanionPresets.h"
+#include "TrueCompanionPrompt.h"
+#include "TrueCompanionProtocol.h"
+#include "TrueCompanionRelationship.h"
+#include "TrueCompanionText.h"
 
 #include <algorithm>
 #include <string>
 #include <vector>
 
-using namespace romance;
+using namespace truecompanion;
 
 namespace
 {
@@ -105,7 +105,7 @@ TEST(Protocol, ChunkRoundTripLargeMessage)
     AddonReassembler::Result last;
     for (auto const& c : chunks)
     {
-        CHECK(c.size() + 5 <= 255);              // prefix "ARMN" + tab + body fits an addon message
+        CHECK(c.size() + 5 <= 255);              // prefix "TCMP" + tab + body fits an addon message
         CHECK(c.find('|') == std::string::npos); // never raw pipes on the wire
         last = re.Feed(c, 1000);
     }
@@ -187,7 +187,7 @@ TEST(Relationship, InitialStagesAreConsistent)
 
 TEST(Relationship, SpamDoesNotMaxOutAffection)
 {
-    RomanceConfig cfg;
+    TrueCompanionConfig cfg;
     RelationshipEngine eng(cfg, 1);
     RelationshipState st = RelationshipEngine::InitialFor(Stage::Strangers, true, kNow);
     PersonalityProfile p = Elara();
@@ -200,7 +200,7 @@ TEST(Relationship, SpamDoesNotMaxOutAffection)
 
 TEST(Relationship, EstrangementIsHardToFix)
 {
-    RomanceConfig cfg;
+    TrueCompanionConfig cfg;
     RelationshipEngine eng(cfg, 1);
     RelationshipState st = RelationshipEngine::InitialFor(Stage::Dating, true, kNow);
     PersonalityProfile p = Elara();
@@ -252,7 +252,7 @@ TEST(Relationship, EstrangementIsHardToFix)
 
 TEST(Relationship, EstrangementCanBeDisabled)
 {
-    RomanceConfig cfg;
+    TrueCompanionConfig cfg;
     cfg.estrangementEnabled = false;
     RelationshipEngine eng(cfg, 1);
     RelationshipState st = RelationshipEngine::InitialFor(Stage::Friends, true, kNow);
@@ -265,7 +265,7 @@ TEST(Relationship, EstrangementCanBeDisabled)
 
 TEST(Relationship, ProgressesGraduallyOverDays)
 {
-    RomanceConfig cfg;
+    TrueCompanionConfig cfg;
     RelationshipEngine eng(cfg, 1);
     RelationshipState st = RelationshipEngine::InitialFor(Stage::Strangers, true, kNow);
     PersonalityProfile p = Elara();
@@ -280,7 +280,7 @@ TEST(Relationship, ProgressesGraduallyOverDays)
 
 TEST(Relationship, InsultsHurtAndStrain)
 {
-    RomanceConfig cfg;
+    TrueCompanionConfig cfg;
     RelationshipEngine eng(cfg, 1);
     RelationshipState st = RelationshipEngine::InitialFor(Stage::Dating, true, kNow);
     PersonalityProfile p = Elara();
@@ -299,7 +299,7 @@ TEST(Relationship, InsultsHurtAndStrain)
 
 TEST(Relationship, ProposalAcceptedWhenReady)
 {
-    RomanceConfig cfg;
+    TrueCompanionConfig cfg;
     RelationshipEngine eng(cfg, 1);
     PersonalityProfile p = Elara();
     p.confidence = 100; // no nervous deferral
@@ -315,7 +315,7 @@ TEST(Relationship, ProposalAcceptedWhenReady)
 
 TEST(Relationship, ProposalRejectedForStrangersAndDeferredWhenClose)
 {
-    RomanceConfig cfg;
+    TrueCompanionConfig cfg;
     RelationshipEngine eng(cfg, 1);
     PersonalityProfile p = Elara();
     RelationshipState st = RelationshipEngine::InitialFor(Stage::Strangers, true, kNow);
@@ -335,7 +335,7 @@ TEST(Relationship, ProposalRejectedForStrangersAndDeferredWhenClose)
 
 TEST(Relationship, EngagementNeedsTimeAndMarriageNeedsEngagement)
 {
-    RomanceConfig cfg;
+    TrueCompanionConfig cfg;
     cfg.minDaysDatingBeforeEngagement = 2;
     RelationshipEngine eng(cfg, 1);
     PersonalityProfile p = Elara();
@@ -352,7 +352,7 @@ TEST(Relationship, EngagementNeedsTimeAndMarriageNeedsEngagement)
 
 TEST(Relationship, PlatonicAndAutoAcceptAndBreakup)
 {
-    RomanceConfig cfg;
+    TrueCompanionConfig cfg;
     RelationshipEngine eng(cfg, 1);
     PersonalityProfile friendP = FindPreset("loyal_friend")->profile;
     RelationshipState st = RelationshipEngine::InitialFor(Stage::CloseFriends, false, kNow);
@@ -373,7 +373,7 @@ TEST(Relationship, PlatonicAndAutoAcceptAndBreakup)
 
 TEST(Relationship, ProposalRetryCooldown)
 {
-    RomanceConfig cfg;
+    TrueCompanionConfig cfg;
     RelationshipEngine eng(cfg, 1);
     PersonalityProfile p = Elara();
     RelationshipState st = RelationshipEngine::InitialFor(Stage::CloseFriends, true, kNow);
@@ -466,7 +466,7 @@ TEST(Gift, QuestRewardChoicePrefersUsableUpgradesOfHerArmorType)
 
 TEST(Gift, CategoriesAndRingMeansMoreToPartner)
 {
-    RomanceConfig cfg;
+    TrueCompanionConfig cfg;
     GiftEvaluator ev(cfg);
     PersonalityProfile p = Elara();
     RelationshipState couple = RelationshipEngine::InitialFor(Stage::Dating, true, kNow);
@@ -486,7 +486,7 @@ TEST(Gift, CategoriesAndRingMeansMoreToPartner)
 
 TEST(Gift, ThoughtfulCheapBeatsIrrelevantExpensive)
 {
-    RomanceConfig cfg;
+    TrueCompanionConfig cfg;
     GiftEvaluator ev(cfg);
     PersonalityProfile p = Elara();   // likes flowers
     RelationshipState st = RelationshipEngine::InitialFor(Stage::CloseFriends, true, kNow);
@@ -503,7 +503,7 @@ TEST(Gift, ThoughtfulCheapBeatsIrrelevantExpensive)
 
 TEST(Gift, UpgradeIsAppreciatedAndRepeatsDiminish)
 {
-    RomanceConfig cfg;
+    TrueCompanionConfig cfg;
     GiftEvaluator ev(cfg);
     PersonalityProfile p = Elara();
     RelationshipState st = RelationshipEngine::InitialFor(Stage::Friends, true, kNow);
@@ -527,7 +527,7 @@ TEST(Gift, UpgradeIsAppreciatedAndRepeatsDiminish)
 
 TEST(Gift, DailyCapAndAwkwardRing)
 {
-    RomanceConfig cfg;
+    TrueCompanionConfig cfg;
     GiftEvaluator ev(cfg);
     PersonalityProfile p = Elara();
     RelationshipState st = RelationshipEngine::InitialFor(Stage::Dating, true, kNow);
@@ -549,7 +549,7 @@ TEST(Gift, DailyCapAndAwkwardRing)
 
 TEST(Memory, DedupeMergesNearDuplicates)
 {
-    RomanceConfig cfg;
+    TrueCompanionConfig cfg;
     MemoryStore store(cfg);
     auto a = store.Add(MemoryKind::Preference, MemorySource::PlayerStated, 40, "David likes exploring old ruins.", kNow);
     auto b = store.Add(MemoryKind::Preference, MemorySource::PlayerStated, 50, "David likes exploring old ruins!", kNow + 10);
@@ -565,7 +565,7 @@ TEST(Memory, DedupeMergesNearDuplicates)
 TEST(Memory, RealSessionDuplicatesAreMerged)
 {
     // Memories a companion produced in one real questing session.
-    RomanceConfig cfg;
+    TrueCompanionConfig cfg;
     MemoryStore store(cfg);
     using K = MemoryKind;
     using S = MemorySource;
@@ -599,7 +599,7 @@ TEST(Memory, RealSessionDuplicatesAreMerged)
 
 TEST(Memory, CompactTidiesOldMemories)
 {
-    RomanceConfig cfg;
+    TrueCompanionConfig cfg;
     MemoryStore store(cfg);
     std::vector<MemoryEntry> old;
     auto add = [&](uint32_t id, MemoryKind k, MemorySource src, int imp, std::string const& text, bool pinned = false)
@@ -632,7 +632,7 @@ TEST(Memory, CompactTidiesOldMemories)
 
 TEST(Memory, CompactMergesDuplicatesOfPlayerMemories)
 {
-    RomanceConfig cfg;
+    TrueCompanionConfig cfg;
     MemoryStore store(cfg);
     std::vector<MemoryEntry> old;
     auto add = [&](uint32_t id, MemorySource src, std::string const& text, bool pinned = false)
@@ -669,7 +669,7 @@ TEST(Memory, CompactMergesDuplicatesOfPlayerMemories)
 
 TEST(Memory, RetrievalFindsRelevantMemory)
 {
-    RomanceConfig cfg;
+    TrueCompanionConfig cfg;
     MemoryStore store(cfg);
     store.Add(MemoryKind::Preference, MemorySource::PlayerStated, 40, "David likes exploring old ruins.", kNow - 5 * kDay);
     store.Add(MemoryKind::Fact, MemorySource::PlayerStated, 40, "David told Elara that he enjoys magic.", kNow - 4 * kDay);
@@ -686,7 +686,7 @@ TEST(Memory, RetrievalFindsRelevantMemory)
 
 TEST(Memory, EditDeletePruneAndProtection)
 {
-    RomanceConfig cfg;
+    TrueCompanionConfig cfg;
     cfg.maxMemoriesPerCompanion = 10;
     MemoryStore store(cfg);
     auto milestone = store.Add(MemoryKind::Relationship, MemorySource::Observed, 95, "Elara and David became a couple in Stormwind.", kNow);
@@ -712,7 +712,7 @@ TEST(Memory, EditDeletePruneAndProtection)
 
 TEST(Memory, RejectsGarbageAndPipes)
 {
-    RomanceConfig cfg;
+    TrueCompanionConfig cfg;
     MemoryStore store(cfg);
     CHECK(!store.Add(MemoryKind::Fact, MemorySource::PlayerStated, 40, "   ", kNow).stored);
     auto r = store.Add(MemoryKind::Fact, MemorySource::PlayerStated, 40, "Likes |cffff0000red|r things", kNow);
@@ -900,7 +900,7 @@ TEST(Prompt, SystemPromptContainsPersonaMemoriesAndRules)
     pp.preferredName = "David";
     pp.background = "A human adventurer who loves rare equipment.";
     RelationshipState st = RelationshipEngine::InitialFor(Stage::Dating, true, kNow);
-    RomanceConfig cfg;
+    TrueCompanionConfig cfg;
     RelationshipEngine eng(cfg, 1);
     PromptInput in;
     in.personality = &p;

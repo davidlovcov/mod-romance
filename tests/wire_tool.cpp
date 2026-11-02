@@ -1,19 +1,19 @@
 /*
- * mod-romance — Licensed under the GNU GPL v2 or later. See LICENSE.
+ * mod-true-companion — Licensed under the GNU GPL v2 or later. See LICENSE.
  *
  * Wire-format helper used by tests/addon/test_interop.lua to prove that the
  * C++ server codec and the Lua addon codec understand each other.
- *   romance_wire encode < message.json   -> chunk lines
- *   romance_wire decode < chunks.txt     -> canonical JSON
+ *   true_companion_wire encode < message.json   -> chunk lines
+ *   true_companion_wire decode < chunks.txt     -> canonical JSON
  */
 
-#include "RomanceProtocol.h"
+#include "TrueCompanionProtocol.h"
 
 #include <iostream>
 #include <iterator>
 #include <string>
 
-using namespace romance;
+using namespace truecompanion;
 
 int main(int argc, char** argv)
 {
@@ -50,6 +50,6 @@ int main(int argc, char** argv)
         }
         return 4;
     }
-    std::cerr << "usage: romance_wire encode|decode\n";
+    std::cerr << "usage: true_companion_wire encode|decode\n";
     return 1;
 }

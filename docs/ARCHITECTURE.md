@@ -5,15 +5,15 @@
 ```
  WoW 3.3.5a client                         worldserver (AzerothCore Playerbot fork)
  ┌──────────────────┐  addon whispers     ┌────────────────────────────────────────────────────────┐
- │ AzerothRomance   │ ◄─────────────────► │ src/ac  (AzerothCore integration, world thread)        │
- │  Json / Protocol │   "ARMN" chunks     │  RomanceScripts   hooks: chat, login, kills, packets   │
- │  Core (state)    │                     │  RomanceManager   ownership, addon ops, summon, trades,│
+ │ TrueCompanion   │ ◄─────────────────► │ src/ac  (AzerothCore integration, world thread)        │
+ │  Json / Protocol │   "TCMP" chunks     │  TrueCompanionScripts   hooks: chat, login, kills, packets   │
+ │  Core (state)    │                     │  TrueCompanionManager   ownership, addon ops, summon, trades,│
  │  UI tabs         │  normal whispers    │                   snapshots, executes actions          │
  └──────────────────┘ ◄─────────────────► │  PlayerbotsBridge AddPlayerBot / HandleCommand / ...   │
-                                          │  RomanceSqlRepository (characters DB)                  │
+                                          │  TrueCompanionSqlRepository (characters DB)                  │
                                           ├────────────────────────────────────────────────────────┤
                                           │ src/core (engine independent, unit tested)             │
-                                          │  RomanceService ── RelationshipEngine  GiftEvaluator   │
+                                          │  TrueCompanionService ── RelationshipEngine  GiftEvaluator   │
                                           │        │          MemoryStore         MessageClassifier│
                                           │        │          DialogueContextBuilder (prompts)     │
                                           │        ▼                                               │
@@ -27,24 +27,24 @@ The design asked for components such as CompanionManager, PersonalityManager, Ol
 
 | Requested | Implementation |
 |---|---|
-| CompanionManager, CompanionOwnershipService, PlayerbotIntegration, AddonMessageHandler | `ac/RomanceManager` (+ `ac/RomancePlayerbots`) |
-| CompanionState, PersonalityManager, PlayerProfileService, ConversationManager | `core/RomanceService` with `core/RomanceTypes` |
-| RomanceRelationshipManager | `core/RomanceRelationship` (`RelationshipEngine`) |
-| RomanceMemoryManager | `core/RomanceMemory` (`MemoryStore`) |
-| RomanceEventProcessor | `RomanceService::OnGameEvent` + `RomanceManager::PollTrackers` |
-| GiftEvaluationService | `core/RomanceGift` |
-| DialogueContextBuilder | `core/RomancePrompt` |
-| OllamaClient | `core/RomanceLlm` (`OllamaBackend`, `WorkerPool`) + `core/RomanceHttp` |
-| RomanceConfig | `core/RomanceConfig` + `ac/RomanceAcConfig` |
-| Presets (built-in and custom) | `core/RomancePresets`, stored by `IRomanceRepository::*CustomPreset*` |
-| Natural-language commands, knowledge topics | `core/RomanceCommands` (parser, engine independent and unit tested) |
-| Command execution, game knowledge, character sheet, lead mode, auto-sell | `ac/RomanceControl` (`CompanionControl`, world thread) |
+| CompanionManager, CompanionOwnershipService, PlayerbotIntegration, AddonMessageHandler | `ac/TrueCompanionManager` (+ `ac/TrueCompanionPlayerbots`) |
+| CompanionState, PersonalityManager, PlayerProfileService, ConversationManager | `core/TrueCompanionService` with `core/TrueCompanionTypes` |
+| TrueCompanionRelationshipManager | `core/TrueCompanionRelationship` (`RelationshipEngine`) |
+| TrueCompanionMemoryManager | `core/TrueCompanionMemory` (`MemoryStore`) |
+| TrueCompanionEventProcessor | `TrueCompanionService::OnGameEvent` + `TrueCompanionManager::PollTrackers` |
+| GiftEvaluationService | `core/TrueCompanionGift` |
+| DialogueContextBuilder | `core/TrueCompanionPrompt` |
+| OllamaClient | `core/TrueCompanionLlm` (`OllamaBackend`, `WorkerPool`) + `core/TrueCompanionHttp` |
+| TrueCompanionConfig | `core/TrueCompanionConfig` + `ac/TrueCompanionAcConfig` |
+| Presets (built-in and custom) | `core/TrueCompanionPresets`, stored by `ITrueCompanionRepository::*CustomPreset*` |
+| Natural-language commands, knowledge topics | `core/TrueCompanionCommands` (parser, engine independent and unit tested) |
+| Command execution, game knowledge, character sheet, lead mode, auto-sell | `ac/TrueCompanionControl` (`CompanionControl`, world thread) |
 
-Commands run **before** the message reaches the model: `RomanceManager::ApplyControl` parses the line, `CompanionControl` executes it against the real game state and writes a one-sentence outcome into `WorldContext::commandOutcome`. The prompt shows the outcome, so the companion only claims what really happened. Knowledge (bags, quests, spells...) is added to `WorldContext::knowledge` only when the message asks for it, which keeps prompts short for small models.
+Commands run **before** the message reaches the model: `TrueCompanionManager::ApplyControl` parses the line, `CompanionControl` executes it against the real game state and writes a one-sentence outcome into `WorldContext::commandOutcome`. The prompt shows the outcome, so the companion only claims what really happened. Knowledge (bags, quests, spells...) is added to `WorldContext::knowledge` only when the message asks for it, which keeps prompts short for small models.
 
 ## Why a separate core
 
-All romance logic (relationship rules, memory, prompts, validation, protocol, HTTP, worker pool, persistence interface) lives in `src/core`, which includes no AzerothCore headers. That makes it:
+All companion logic (relationship rules, memory, prompts, validation, protocol, HTTP, worker pool, persistence interface) lives in `src/core`, which includes no AzerothCore headers. That makes it:
 
 * unit-testable without a server (`tests/`, 75 tests, also run under sanitizers);
 * safe to reason about thread-wise, because its only contact with the game is plain data snapshots in and `OutgoingAction` values out.
@@ -57,7 +57,7 @@ All romance logic (relationship rules, memory, prompts, validation, protocol, HT
 |---|---|---|
 | Chat hooks (`OnPlayerCanUseChat`), addon ops | world thread | `CMSG_MESSAGECHAT` is `PROCESS_THREADUNSAFE` |
 | `CanPacketReceive(CMSG_ACCEPT_TRADE)` → trade snapshot | world thread | `PROCESS_THREADUNSAFE`; maps idle |
-| `WorldScript::OnUpdate` → `RomanceManager::Update` → `RomanceService::Tick` | world thread | `World::Update` calls it **after** `MapMgr::Update` returns, so reading Player objects is safe |
+| `WorldScript::OnUpdate` → `TrueCompanionManager::Update` → `TrueCompanionService::Tick` | world thread | `World::Update` calls it **after** `MapMgr::Update` returns, so reading Player objects is safe |
 | Login/logout, kill, quest, loot hooks | any (map threads) | push records into a mutex-protected inbox only |
 | `CanPacketSend(SMSG_TRADE_STATUS)` | any | marks a snapshot completed under a mutex |
 | Ollama HTTP | `WorkerPool` threads | input is an immutable `LlmRequest` built on the world thread; output goes into `ResultQueue` |
@@ -88,11 +88,11 @@ No AzerothCore object is ever touched off the world thread by this module. Worke
 
 | Layer | Storage | Use |
 |---|---|---|
-| Short-term | `romance_chat_log` (last `StoredTurns`), in-session deque | last `HistoryTurns` turns go to the prompt |
-| Long-term facts and preferences | `romance_memory` kind `fact`/`preference` | retrieved by relevance |
+| Short-term | `true_companion_chat_log` (last `StoredTurns`), in-session deque | last `HistoryTurns` turns go to the prompt |
+| Long-term facts and preferences | `true_companion_memory` kind `fact`/`preference` | retrieved by relevance |
 | Episodic | kinds `episode`, `gift`, `summary` | shared moments, gifts, conversation summaries |
 | Relationship | kind `relationship`/`promise` | milestones, arguments, apologies, promises |
-| Personality | `romance_companion.personality` | stable profile, always in the system prompt |
+| Personality | `true_companion_companion.personality` | stable profile, always in the system prompt |
 
 * **Sources:** `observed` (server saw it: gifts, stage changes, level-ups, quests, zones), `player_stated`, `model_summary`, `interpretation`, `user_edited`, `profile`. The prompt labels them ("witnessed", "they told you", "your impression, unsure"…) and tells the model to treat only witnessed, certain and backstory memories as definite.
 * **Importance:** 0–100. The server sets it for observed events; model suggestions are capped at 70.
@@ -104,7 +104,7 @@ No AzerothCore object is ever touched off the world thread by this module. Worke
 
 ## Relationship model
 
-Values range 0–100 and are stored as JSON in `romance_companion.relationship`, with a denormalized `stage` column for admin queries.
+Values range 0–100 and are stored as JSON in `true_companion_companion.relationship`, with a denormalized `stage` column for admin queries.
 
 * **Positive changes:** each signal has a base value (e.g. compliment → affection +1.2, attraction +0.8 if at least Friends and romantic). It is scaled by `ProgressionSpeed × GainMultiplier × (1 − value/125)`, limited to 4 points per message and `DailyGainCap` per day. Familiarity grows only from substantive messages.
 * **Negative changes:** insults, rudeness, dismissiveness, broken promises and jealousy triggers (scaled by the jealousy trait). Loyal companions forgive a little more. A low trust or satisfaction value marks the relationship as **strained** until trust and satisfaction recover through apologies and support.
@@ -124,8 +124,8 @@ Values range 0–100 and are stored as JSON in `romance_companion.relationship`,
 
 1. `CMSG_ACCEPT_TRADE` from the owner, with an active companion as trader: snapshot the items in the trade slots (guid, entry, count, template data, usability for the companion's class, item level currently in the matching slot, the companion's count of that entry) and the money.
 2. `SMSG_TRADE_STATUS` sent to the owner with `TRADE_STATUS_TRADE_COMPLETE` (AzerothCore sends this only after `moveItems`): mark the snapshot completed. Cancel or close drops it.
-3. Next world update: verify each item in the companion's possession (same item guid, or the entry count increased). Only then call `RomanceService::OnGift`.
-4. `OnGift` ignores item guids already rewarded (loaded from `romance_gift_log` on activation, plus a `UNIQUE(companion_guid, item_guid)` constraint), evaluates the gift, applies capped deltas, stores a gift memory, and requests a reaction.
+3. Next world update: verify each item in the companion's possession (same item guid, or the entry count increased). Only then call `TrueCompanionService::OnGift`.
+4. `OnGift` ignores item guids already rewarded (loaded from `true_companion_gift_log` on activation, plus a `UNIQUE(companion_guid, item_guid)` constraint), evaluates the gift, applies capped deltas, stores a gift memory, and requests a reaction.
 
 The module never moves, deletes or equips items. Equipping stays with Playerbots' own logic (e.g. `autogear`).
 
@@ -141,10 +141,10 @@ The module never moves, deletes or equips items. Equipping stays with Playerbots
 
 ## Database tables (characters DB)
 
-`romance_companion`, `romance_player_profile`, `romance_memory`, `romance_chat_log`, `romance_gift_log`, `romance_relationship_log`. See `data/sql/db-characters/base/`.
+`true_companion_companion`, `true_companion_player_profile`, `true_companion_memory`, `true_companion_chat_log`, `true_companion_gift_log`, `true_companion_relationship_log`. See `data/sql/db-characters/base/`.
 
 Reads are synchronous and happen only when a companion is activated, configured or inspected. Writes are asynchronous, idempotent upserts. Memory ids are per pair and never reused, so asynchronous write ordering is safe.
 
 ## Licensing notes
 
-mod-romance is GPL-2.0-or-later, compatible with AzerothCore (GPL-2.0) and mod-playerbots (GPL-2.0-or-later). mod-ollama-chat is **AGPL-3.0**. It was studied for its approach (asynchronous requests, personalities, memory, sentiment), but **no code was copied** from it, because including AGPL-3.0 code would impose AGPL terms on the combined work. The HTTP client, JSON, prompt builder and memory system are original implementations.
+mod-true-companion is GPL-2.0-or-later, compatible with AzerothCore (GPL-2.0) and mod-playerbots (GPL-2.0-or-later). mod-ollama-chat is **AGPL-3.0**. It was studied for its approach (asynchronous requests, personalities, memory, sentiment), but **no code was copied** from it, because including AGPL-3.0 code would impose AGPL terms on the combined work. The HTTP client, JSON, prompt builder and memory system are original implementations.

@@ -1,10 +1,10 @@
 /*
- * mod-romance — Licensed under the GNU GPL v2 or later. See LICENSE.
+ * mod-true-companion — Licensed under the GNU GPL v2 or later. See LICENSE.
  * Minimal self-contained test framework (no external dependencies).
  */
 
-#ifndef MOD_ROMANCE_TEST_FRAMEWORK_H
-#define MOD_ROMANCE_TEST_FRAMEWORK_H
+#ifndef MOD_TRUE_COMPANION_TEST_FRAMEWORK_H
+#define MOD_TRUE_COMPANION_TEST_FRAMEWORK_H
 
 #include <cmath>
 #include <functional>

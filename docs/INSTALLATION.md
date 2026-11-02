@@ -8,7 +8,7 @@
 | mod-playerbots | https://github.com/mod-playerbots/mod-playerbots | `master` | `05a1f6fceb8a32aa879b13f5f48934c6e46a774c` |
 | mod-ollama-chat (studied for reference only, not required) | https://github.com/DustinHendrickson/mod-ollama-chat | `main` | `906eb2a45f5b3b815a281977005371193517eb32` |
 
-**mod-playerbots requires the Playerbot fork of AzerothCore.** The standard AzerothCore repository will not work with it. mod-romance itself only *needs* mod-playerbots for summoning companions. Without it, the module still compiles, but companions can't be called.
+**mod-playerbots requires the Playerbot fork of AzerothCore.** The standard AzerothCore repository will not work with it. mod-true-companion itself only *needs* mod-playerbots for summoning companions. Without it, the module still compiles, but companions can't be called.
 
 The module uses C++20, matching the fork's `CMAKE_CXX_STANDARD 20`. It needs no extra third-party library: the Ollama client uses plain sockets, and JSON is implemented in the module.
 
@@ -26,7 +26,7 @@ ollama pull qwen3:4b-instruct   # fallback, used automatically if the default is
 curl http://127.0.0.1:11434/api/version
 ```
 
-The 4B models need about 4–8 GB of RAM or VRAM. On weaker hardware, `qwen3.5:2b` works (set `Romance.Ollama.Model`).
+The 4B models need about 4–8 GB of RAM or VRAM. On weaker hardware, `qwen3.5:2b` works (set `TrueCompanion.Ollama.Model`).
 Keep Ollama on `127.0.0.1`, or on a LAN host you trust. The module only supports `http://`.
 
 ---
@@ -46,7 +46,7 @@ sudo apt-get install git cmake make gcc g++ clang libmysqlclient-dev libssl-dev 
 git clone https://github.com/mod-playerbots/azerothcore-wotlk.git --branch=Playerbot azerothcore
 cd azerothcore/modules
 git clone https://github.com/mod-playerbots/mod-playerbots.git --branch=master
-git clone https://github.com/davidlovcov/mod-romance.git
+git clone https://github.com/davidlovcov/mod-true-companion.git
 cd ..
 ```
 
@@ -63,7 +63,7 @@ make install
 ### Configuration
 ```bash
 cd $HOME/azeroth-server/etc
-cp modules/mod_romance.conf.dist modules/mod_romance.conf
+cp modules/mod_true_companion.conf.dist modules/mod_true_companion.conf
 cp modules/playerbots.conf.dist modules/playerbots.conf     # if not done yet
 ```
 Make sure Playerbots allows your own characters as bots (these are the defaults):
@@ -75,15 +75,16 @@ Playerbots.AllowTrustedAccountBots = 1   # for linked accounts
 ### Database
 The module's SQL lives in `data/sql/db-characters/base/`. The AzerothCore DB updater applies it automatically on worldserver start, as long as the characters database is included in `Updates.EnableDatabases` (worldserver.conf, default `7` = all). To apply it manually:
 ```bash
-mysql -u acore -p acore_characters < modules/mod-romance/data/sql/db-characters/base/mod_romance_2026_11_01_00.sql
+for f in modules/mod-true-companion/data/sql/db-characters/base/*.sql; do mysql -u acore -p acore_characters < "$f"; done
 ```
+(All files, in this order. The two `mod_romance_*` files are from before the module was renamed; the last one renames their tables.)
 On start, the module checks that its 7 tables exist. If they don't, it logs an error and disables itself; it doesn't crash.
 
 ### Run
 ```bash
 cd $HOME/azeroth-server/bin && ./authserver & ./worldserver
 ```
-Look for: `[mod-romance] enabled | Ollama on at http://127.0.0.1:11434 | model qwen3.5:4b | Playerbots found`.
+Look for: `[mod-true-companion] enabled | Ollama on at http://127.0.0.1:11434 | model qwen3.5:4b | Playerbots found`.
 
 ---
 
@@ -104,46 +105,46 @@ See the [AzerothCore Windows requirements](https://www.azerothcore.org/wiki/wind
 git clone https://github.com/mod-playerbots/azerothcore-wotlk.git --branch=Playerbot C:\azerothcore
 cd C:\azerothcore\modules
 git clone https://github.com/mod-playerbots/mod-playerbots.git --branch=master
-git clone https://github.com/davidlovcov/mod-romance.git
+git clone https://github.com/davidlovcov/mod-true-companion.git
 cd C:\azerothcore
 cmake -S . -B build -G "Visual Studio 17 2022" -A x64 -DSCRIPTS=static -DMODULES=static -DTOOLS_BUILD=all
 cmake --build build --config RelWithDebInfo --parallel
 ```
 `scripts/install-windows.ps1` does this and copies the configs (`-Source`, `-Pinned`).
 
-Copy `build\bin\RelWithDebInfo\configs\modules\mod_romance.conf.dist` to `mod_romance.conf` next to it. Database and run steps are the same as on Linux.
+Copy `build\bin\RelWithDebInfo\configs\modules\mod_true_companion.conf.dist` to `mod_true_companion.conf` next to it. Database and run steps are the same as on Linux.
 
 ---
 
 ## 4. Addon
 
-Get the addon from the separate repository **[azerothcore-romance-addon](https://github.com/davidlovcov/azerothcore-romance-addon)** (green *Code* button → *Download ZIP*, or a release ZIP). Copy the `AzerothRomance` folder from it to:
+Get the addon from the separate repository **[azerothcore-true-companion-addon](https://github.com/davidlovcov/azerothcore-true-companion-addon)** (green *Code* button → *Download ZIP*, or a release ZIP). Copy the `TrueCompanion` folder from it to:
 
-- Windows: `C:\...\World of Warcraft 3.3.5a\Interface\AddOns\AzerothRomance\`
-- Linux/Wine: `<wine prefix>/drive_c/.../World of Warcraft/Interface/AddOns/AzerothRomance/`
+- Windows: `C:\...\World of Warcraft 3.3.5a\Interface\AddOns\TrueCompanion\`
+- Linux/Wine: `<wine prefix>/drive_c/.../World of Warcraft/Interface/AddOns/TrueCompanion/`
 
-The folder must contain `AzerothRomance.toc` directly. Enable "Load out of date AddOns" if your client complains. Type `/romance` (or `/ar`) in game, or click the heart on the minimap.
+The folder must contain `TrueCompanion.toc` directly. Enable "Load out of date AddOns" if your client complains. Type `/tc` (or `/companion`) in game, or click the heart on the minimap.
 
 ---
 
 ### Updating
 
 ```bash
-cd azerothcore/modules/mod-romance && git pull
+cd azerothcore/modules/mod-true-companion && git pull
 cd ../.. && ./acore.sh compiler build      # or your usual cmake build
 ```
 Database changes in future versions are applied automatically on the next worldserver start.
 
 ## 5. First steps in game
 
-1. Log in with your main character (e.g. Arthas) and run `/romance`.
+1. Log in with your main character (e.g. Arthas) and run `/tc`.
 2. Pick a character (e.g. Elara). Greyed-out characters can't be used right now; hover over them to see why.
 3. **Personality** tab: choose a preset (e.g. *Anime Girlfriend*), then adjust it and save.
 4. **Relationship** tab: choose a starting relationship (e.g. *Dating / Couple*) with an optional backstory.
 5. **Companion** tab: **Call companion**. Your companion logs in as your Playerbot and joins your party.
 6. Whisper your companion, or use the **Chat** tab. Trade them an item to give a gift.
 
-Chat-command alternatives: `.romance summon Elara`, `.romance dismiss`, `.romance status`, `.romance on|off` (on a targeted bot of yours).
+Chat-command alternatives: `.companion summon Elara`, `.companion dismiss`, `.companion status`, `.companion on|off` (on a targeted bot of yours).
 
 ---
 
@@ -151,18 +152,18 @@ Chat-command alternatives: `.romance summon Elara`, `.romance dismiss`, `.romanc
 
 | Symptom | Cause / fix |
 |---|---|
-| Addon says "Waiting for the server..." | The module isn't loaded (check the worldserver log for `[mod-romance]`), `Romance.Enable = 0`, or `AddonChannel = 0` in worldserver.conf (it must be 1). |
-| `Table romance_... is missing` in the log | The SQL wasn't applied. Apply it manually (see Database above). |
-| "seems lost in thought (the AI service is offline)" | Ollama isn't running or not reachable at `Romance.Ollama.Url`. Test with `curl <url>/api/version`. |
-| "the configured model is not installed" | Run `ollama pull qwen3.5:4b`, or set `Romance.Ollama.Model` to an installed model (`ollama list`). |
-| Replies take very long or time out | The model is too big for your hardware. Use a smaller model, keep `Romance.Ollama.Thinking = 0`, or raise `RequestTimeoutMs`. The first request after idle loads the model; `KeepAlive` keeps it loaded. |
-| "Cannot call: limit_reached" | `Romance.MaxActiveCompanionsPerPlayer` is reached. Send the other companion home first. |
+| Addon says "Waiting for the server..." | The module isn't loaded (check the worldserver log for `[mod-true-companion]`), `TrueCompanion.Enable = 0`, or `AddonChannel = 0` in worldserver.conf (it must be 1). |
+| `Table true_companion_... is missing` in the log | The SQL wasn't applied. Apply it manually (see Database above). |
+| "seems lost in thought (the AI service is offline)" | Ollama isn't running or not reachable at `TrueCompanion.Ollama.Url`. Test with `curl <url>/api/version`. |
+| "the configured model is not installed" | Run `ollama pull qwen3.5:4b`, or set `TrueCompanion.Ollama.Model` to an installed model (`ollama list`). |
+| Replies take very long or time out | The model is too big for your hardware. Use a smaller model, keep `TrueCompanion.Ollama.Thinking = 0`, or raise `RequestTimeoutMs`. The first request after idle loads the model; `KeepAlive` keeps it loaded. |
+| "Cannot call: limit_reached" | `TrueCompanion.MaxActiveCompanionsPerPlayer` is reached. Send the other companion home first. |
 | Character shows "Online as a player" | That character is logged in with a real client. Log it out. |
-| Bot joins but doesn't talk with AI | AI is disabled for that companion (Companion tab → Enable AI), or `Romance.Ollama.Enable = 0`. |
+| Bot joins but doesn't talk with AI | AI is disabled for that companion (Companion tab → Enable AI), or `TrueCompanion.Ollama.Enable = 0`. |
 | Gift not recognized | Only completed trades count, and each item instance is rewarded once. Mail isn't treated as a gift. The bot must be your active companion. |
 | Two bots answer the same whisper | **mod-ollama-chat** is also installed and answers bot whispers. Disable it, or don't use both on the same character. |
 | Muted for chat flood | Very large imports. The addon paces its traffic below `ChatFlood.AddonMessageCount`; if you lowered that setting, raise it again. |
-| Linking error mentioning `ws2_32` on Windows | Delete the CMake cache and re-run CMake. `mod-romance.cmake` adds `ws2_32` automatically. |
+| Linking error mentioning `ws2_32` on Windows | Delete the CMake cache and re-run CMake. `mod-true-companion.cmake` adds `ws2_32` automatically. |
 
 ## Recommended Playerbots settings
 
@@ -180,11 +181,23 @@ Playerbots.EnableBroadcasts = 0
 
 | Setting | Why |
 |---|---|
-| `EnableAutoTradeOnItemMention = 0` | **Strongly recommended.** Playerbots reads every party chat line as a possible bot command. When a line contains any word it associates with items (slot names, item qualities, trade goods, money...), it opens a trade window. With AI companions you talk to them in party chat all the time, so ordinary sentences like "how many more to kill?" can suddenly open a trade. mod-romance logs a warning at startup while the setting is on. Item trades you ask for ("give me your linen cloth") still work, because mod-romance opens those itself. |
-| `SyncQuestWithPlayer = 0` | **Recommended.** With 1 (the default) a bot does not loot a quest item that you need too, and its quest is completed the moment you turn yours in. Companions then never collect their own Lynx Collars and "questing together until everyone is done" can't finish. mod-romance already gives companions the quests you accept (`Romance.Control.QuestSync`), so nothing is lost. mod-romance logs a warning at startup while it is on. |
+| `EnableAutoTradeOnItemMention = 0` | **Strongly recommended.** Playerbots reads every party chat line as a possible bot command. When a line contains any word it associates with items (slot names, item qualities, trade goods, money...), it opens a trade window. With AI companions you talk to them in party chat all the time, so ordinary sentences like "how many more to kill?" can suddenly open a trade. mod-true-companion logs a warning at startup while the setting is on. Item trades you ask for ("give me your linen cloth") still work, because mod-true-companion opens those itself. |
+| `SyncQuestWithPlayer = 0` | **Recommended.** With 1 (the default) a bot does not loot a quest item that you need too, and its quest is completed the moment you turn yours in. Companions then never collect their own Lynx Collars and "questing together until everyone is done" can't finish. mod-true-companion already gives companions the quests you accept (`TrueCompanion.Control.QuestSync`), so nothing is lost. mod-true-companion logs a warning at startup while it is on. |
 | `RandomBotTalk = 0` | No random small talk from bots between your companion's lines. |
 | `AnnounceConsumableUse = 0` | No "Using potion..." lines. |
 | `TellWhenMissingBuffReagents = 0` | No reagent complaints. |
 | `EnableBroadcasts = 0` | Optional. Random bots stop announcing loot, quests and level-ups in public channels. |
 
 Playerbots still answers commands ("Following", "attack rti target: useless", quest notices). The addon hides these lines from your AI companions in the chat window and keeps them as gray `[Playerbots]` lines in the Chat tab (Settings tab: **Hide Playerbots feedback**). When you give a plain Playerbots command (`!stats`, `co +dps`), its answer is shown as usual. Your other bots are never filtered.
+
+## Upgrading from mod-romance
+
+The module was renamed; it is the same module, and nothing of your data is lost.
+
+1. Rename the module folder: `modules/mod-romance` -> `modules/mod-true-companion` (or clone the new repository there and remove the old folder). Only one of the two may be in `modules/`, or both are built and both answer.
+2. Run `scripts/migrate-from-mod-romance.sh` (Linux). It asks before each step: it moves an old `modules/mod-romance` out of the build and writes `mod_true_companion.conf` from your `mod_romance.conf` with the keys renamed (`Romance.*` -> `TrueCompanion.*`). On Windows, copy `mod_romance.conf` to `mod_true_companion.conf` and replace `Romance.` with `TrueCompanion.` in it.
+3. Re-run cmake (the module's files were renamed), build and install.
+4. Start worldserver. The DB updater renames the tables (`romance_*` -> `true_companion_*`); the log shows `[mod-true-companion] v2.0.0 enabled`.
+5. Addon: delete `Interface/AddOns/AzerothRomance` and install `TrueCompanion`. To keep the addon's own settings (window position, your commands, ignored quests), rename `WTF/Account/<ACCOUNT>/SavedVariables/AzerothRomance.lua` to `TrueCompanion.lua` before logging in.
+
+What changed for you: the GM command is `.companion` (was `.romance`), the addon opens with `/tc` or `/companion` (was `/romance`, `/ar`). Memory exports made before the rename can still be imported.
