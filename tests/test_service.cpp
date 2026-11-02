@@ -1106,8 +1106,15 @@ TEST(Service, ExportImportRoundTripAtMemoryCapacity)
     std::string err;
     auto joined = imp.Finish(err);
     CHECK(joined.has_value());
+    h.svc->TakeOutgoing();
     auto res = h.svc->ImportCompanion(h.Key(kArthas, kLyra), kAccount, "Lyra", *joined, h.now);
     CHECK(res.ok);
+    // one memory_changed for the whole import (one per memory flooded the addon with reloads)
+    size_t changed = 0;
+    for (auto const& a : h.svc->TakeOutgoing())
+        if (a.type == OutgoingAction::Type::UiPush && a.payload["op"].AsString() == "memory_changed")
+            ++changed;
+    CHECK_EQ(changed, size_t(1));
     h.svc->ListMemories(h.Key(kArthas, kLyra), std::nullopt, "", 0, 100000, &total);
     CHECK_EQ(total, want);
     CHECK_CONTAINS(res.notes.front(), std::to_string(want) + " of " + std::to_string(want));

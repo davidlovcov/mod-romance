@@ -755,6 +755,14 @@ namespace romance::ac
                         case ActionType::Flee: cmd = "flee"; break;
                         default: break;
                     }
+                    // while she leads, runs an errand or clears an area, the AI's own movement wishes are ignored:
+                    // a "follow" in a reply would otherwise drop the lead the moment she reaches the enemies
+                    if (cmd && _control && _control->IsBusy(owner->GetGUID(), bot->GetGUID()))
+                    {
+                        if (_cfg.debugLogging)
+                            LOG_INFO("module", "[mod-romance] {}: ignored AI action '{}' (busy leading or fighting)", bot->GetName(), cmd);
+                        cmd = nullptr;
+                    }
                     if (cmd)
                         PlayerbotsBridge::Command(bot, owner, cmd);
                     if (a.action == ActionType::Leave)
@@ -838,6 +846,8 @@ namespace romance::ac
         {
             static char const* const cmds[] = { "", "follow", "stay", "attack", "flee" };
             int idx = int(*res.command);
+            if (idx == 1 && _control)
+                _control->OnPlayerFollowOrder(owner, bot);   // "follow me" ends a lead / an area clearing properly
             if (idx >= 1 && idx <= 4)
                 PlayerbotsBridge::Command(bot, owner, cmds[idx]);
         }
@@ -855,7 +865,14 @@ namespace romance::ac
         _control->AddKnowledge(ctx, owner, bot, req.knowledgeTopics);
         if (auto const& cmd = req.command)
         {
-            ctx.commandOutcome = _control->Execute(owner, bot, *cmd, _service->StageOf(key), Now());
+            auto stage = _service->StageOf(key);
+            ctx.commandOutcome = _control->Execute(owner, bot, *cmd, stage, Now());
+            // The model may still say "here you go"; the player sees the real reason in the chat.
+            bool giving = cmd->kind == CompanionCommandKind::GiveItem || cmd->kind == CompanionCommandKind::GiveGold;
+            if (giving && stage && uint32(*stage) < _cfg.giveMinStage)
+                Notice(owner, bot->GetName() + " hands over items or gold only from the stage \"" +
+                                  StageId(Stage(_cfg.giveMinStage)) + "\" on (now: \"" + StageId(*stage) +
+                                  "\"; see Romance.Control.GiveMinStage).");
             ctx.commandHandled = !ctx.commandOutcome.empty();
             if (_cfg.debugLogging)
                 LOG_INFO("module", "[mod-romance] {} -> {}: command {} '{}' => {}", owner->GetName(), bot->GetName(),

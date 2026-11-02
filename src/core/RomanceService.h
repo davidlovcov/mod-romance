@@ -207,7 +207,9 @@ namespace romance
                                               size_t offset, size_t limit, size_t* total);
         bool DeleteMemory(CompanionKey const& key, uint32_t id);
         std::optional<MemoryEntry> EditMemory(CompanionKey const& key, uint32_t id, std::string const& text, std::optional<int> importance, TimePoint now);
-        std::optional<MemoryEntry> AddUserMemory(CompanionKey const& key, MemoryKind kind, std::string const& text, int importance, TimePoint now);
+        // notify = false: no memory_changed push (an import sends one at the end instead of one per memory)
+        std::optional<MemoryEntry> AddUserMemory(CompanionKey const& key, MemoryKind kind, std::string const& text, int importance, TimePoint now,
+                                                 bool notify = true);
         std::optional<MemoryEntry> PinMemory(CompanionKey const& key, uint32_t id, bool pinned);
         size_t ClearMemories(CompanionKey const& key, std::optional<MemoryKind> kind);
         void ClearChatHistory(CompanionKey const& key);

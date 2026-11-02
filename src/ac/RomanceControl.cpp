@@ -870,15 +870,15 @@ namespace romance::ac
             return "Nothing - you are dead right now and cannot do that.";
         bool giving = cmd.kind == CompanionCommandKind::GiveItem || cmd.kind == CompanionCommandKind::GiveGold;
         if (giving && stage && uint32(*stage) < _cfg.giveMinStage)
-            return "Nothing. They asked you to hand over your belongings, but you don't know them well enough for that yet; "
-                   "politely refuse.";
+            return "Nothing. You did NOT give them anything: you don't know them well enough yet to hand over your belongings. "
+                   "Refuse kindly and do not pretend to give it.";
         switch (cmd.kind)
         {
             case CompanionCommandKind::GiveItem: return GiveItem(owner, bot, cmd, now);
             case CompanionCommandKind::GiveGold: return GiveGold(owner, bot, cmd, now);
             case CompanionCommandKind::Cast: return Cast(owner, bot, cmd);
             case CompanionCommandKind::AttackNamed:
-            case CompanionCommandKind::AttackTarget: return Attack(owner, bot, cmd);
+            case CompanionCommandKind::AttackTarget: return Attack(owner, bot, cmd, now);
             case CompanionCommandKind::AttackAll: return AttackAll(owner, bot, cmd, now);
             case CompanionCommandKind::StopAttack: return StopAttack(owner, bot);
             case CompanionCommandKind::AcceptQuests: return AcceptQuests(owner, bot, cmd, now);
@@ -1014,7 +1014,7 @@ namespace romance::ac
         return "You cast " + name + " " + target + ".";
     }
 
-    std::string CompanionControl::Attack(Player* owner, Player* bot, CompanionCommand const& cmd)
+    std::string CompanionControl::Attack(Player* owner, Player* bot, CompanionCommand const& cmd, time_t now)
     {
         if (cmd.kind == CompanionCommandKind::AttackTarget)
         {
@@ -1022,6 +1022,8 @@ namespace romance::ac
             Unit* u = tg ? ObjectAccessor::GetUnit(*owner, tg) : nullptr;
             if (u && bot->IsValidAttackTarget(u))
             {
+                if (!bot->IsWithinLOSInMap(u))
+                    return ChaseAttack(owner, bot, u, now);   // Playerbots won't attack what it can't see
                 PlayerbotsBridge::Command(bot, owner, "attack");
                 return "You attack " + u->GetName() + ".";
             }
@@ -1036,7 +1038,7 @@ namespace romance::ac
         Cell::VisitObjects(bot, searcher, range);
         Unit* best = nullptr;
         float bestDist = 0;
-        uint32 hidden = 0;
+        Unit* hidden = nullptr;
         for (Unit* u : units)
         {
             if (!u->IsAlive() || !bot->IsValidAttackTarget(u) || u->ToPlayer())
@@ -1048,7 +1050,9 @@ namespace romance::ac
                 continue;
             if (!bot->IsWithinLOSInMap(u))
             {
-                ++hidden;   // Playerbots refuses to attack what it cannot see
+                // Playerbots refuses to attack what it cannot see: only if nothing visible matches, walk closer to this one
+                if (!hidden || bot->GetDistance(u) < bot->GetDistance(hidden))
+                    hidden = u;
                 continue;
             }
             float d = bot->GetDistance(u);
@@ -1059,7 +1063,7 @@ namespace romance::ac
             }
         }
         if (!best && hidden)
-            return "Nothing. The enemy is out of your sight; ask them to come closer or tell them you can't see it.";
+            return ChaseAttack(owner, bot, hidden, now);
         if (!best)
             return cmd.arg.empty() ? "Nothing. There is no enemy nearby to attack; tell them."
                                    : "Nothing. They told you to attack \"" + cmd.arg + "\", but there is no such enemy nearby; tell them.";
@@ -1076,6 +1080,68 @@ namespace romance::ac
             return "You marked " + DescribeUnit(best, bot) + " with a skull and attacked it.";
         }
         return "Nothing. You can only pick fights together when you are in the same group; tell them.";
+    }
+
+    std::string CompanionControl::ChaseAttack(Player* owner, Player* bot, Unit* target, time_t now)
+    {
+        Group* group = bot->GetGroup();
+        if (!group || !group->IsMember(owner->GetGUID()))
+            return "Nothing. You can only pick fights together when you are in the same group; tell them.";
+        auto old = _hunts.find(owner->GetGUID());
+        if (old != _hunts.end())
+        {
+            if (old->second.forLead)
+                return "Nothing yet. You are fighting for the quest you are leading them to; tell them you are busy with that.";
+            ReleaseChasers(old->second);
+            _hunts.erase(old);
+        }
+        Hunt h;
+        h.owner = owner->GetGUID();
+        h.bots = { bot->GetGUID() };
+        h.only = target->GetGUID();
+        h.radius = _cfg.commandRange + 20.0f;
+        h.until = now + 60;
+        _hunts[owner->GetGUID()] = h;
+        HuntStep(_hunts[owner->GetGUID()], now);
+        return "You can't see " + target->GetName() + " from where you stand, so you move closer and attack as soon as you see it.";
+    }
+
+    void CompanionControl::ReleaseChasers(Hunt& h)
+    {
+        for (ObjectGuid g : h.unfollowed)
+            if (Player* b = ObjectAccessor::FindConnectedPlayer(g))
+                if (Player* owner = ObjectAccessor::FindConnectedPlayer(h.owner))
+                    if (!_leads.count(g))
+                        PlayerbotsBridge::SetFollow(b, owner, true);
+        h.unfollowed.clear();
+    }
+
+    bool CompanionControl::IsBusy(ObjectGuid owner, ObjectGuid bot) const
+    {
+        if (_leads.count(bot))
+            return true;
+        auto h = _hunts.find(owner);
+        return h != _hunts.end() && std::find(h->second.bots.begin(), h->second.bots.end(), bot) != h->second.bots.end();
+    }
+
+    void CompanionControl::OnPlayerFollowOrder(Player* owner, Player* bot)
+    {
+        if (!owner || !bot)
+            return;
+        if (_leads.count(bot->GetGUID()))
+        {
+            StopLead(owner, bot);
+            return;
+        }
+        auto h = _hunts.find(owner->GetGUID());
+        if (h != _hunts.end() && !h->second.forLead &&
+            std::find(h->second.bots.begin(), h->second.bots.end(), bot->GetGUID()) != h->second.bots.end())
+        {
+            ReleaseChasers(h->second);
+            if (Group* group = bot->GetGroup())
+                group->SetTargetIcon(kSkullIcon, owner->GetGUID(), ObjectGuid::Empty);
+            _hunts.erase(h);
+        }
     }
 
     std::string CompanionControl::Sell(Player* /*owner*/, Player* bot, CompanionCommand const& cmd)
@@ -1173,6 +1239,7 @@ namespace romance::ac
         bool fresh = h.bots.empty() || h.forLead || now > h.until;
         if (fresh)
         {
+            ReleaseChasers(h);
             h = Hunt();
             h.owner = owner->GetGUID();
             h.filter = cmd.arg;
@@ -1184,6 +1251,7 @@ namespace romance::ac
             h.bots.push_back(bot->GetGUID());
         if (!HuntStep(h, now))
         {
+            ReleaseChasers(h);
             _hunts.erase(owner->GetGUID());
             return cmd.arg.empty() ? "Nothing. There are no enemies around here; tell them."
                                    : "Nothing. There are no \"" + cmd.arg + "\" around here; tell them.";
@@ -1199,11 +1267,18 @@ namespace romance::ac
     std::string CompanionControl::StopAttack(Player* owner, Player* bot)
     {
         auto it = _hunts.find(owner->GetGUID());
-        bool clearing = it != _hunts.end() && !it->second.forLead;
+        bool clearing = it != _hunts.end() && !it->second.forLead && it->second.only.IsEmpty();
+        if (it != _hunts.end() && !it->second.forLead && !clearing)
+        {
+            ReleaseChasers(it->second);   // a single attack that was still walking closer
+            _hunts.erase(it);
+            it = _hunts.end();
+        }
         if (clearing)
         {
             if (Group* group = bot->GetGroup())
                 group->SetTargetIcon(kSkullIcon, owner->GetGUID(), ObjectGuid::Empty);
+            ReleaseChasers(it->second);
             _hunts.erase(it);
         }
         PlayerbotsBridge::StopAttack(bot, owner);
@@ -1281,7 +1356,12 @@ namespace romance::ac
                 continue;   // someone else's fight
             if (h.skipped.count(c->GetGUID()))
                 continue;
-            if (!h.entries.empty())
+            if (!h.only.IsEmpty())
+            {
+                if (c->GetGUID() != h.only)
+                    continue;
+            }
+            else if (!h.entries.empty())
             {
                 if (!h.entries.count(c->GetEntry()))
                     continue;
@@ -1330,8 +1410,13 @@ namespace romance::ac
             {
                 h.lastChase = now;
                 for (Player* b : bots)
-                    if (!PlayerbotsBridge::IsHealer(b) && !b->IsInCombat())
+                    if (!PlayerbotsBridge::IsHealer(b) && !b->IsInCombat() && PlayerbotsBridge::FollowState(b) != "stay")
+                    {
+                        // Playerbots' "follow" would pull her straight back to the player: off while she walks closer
+                        if (PlayerbotsBridge::FollowState(b) == "follow" && PlayerbotsBridge::SetFollow(b, owner, false))
+                            h.unfollowed.insert(b->GetGUID());
                         b->GetMotionMaster()->MovePoint(0, next->GetPositionX(), next->GetPositionY(), next->GetPositionZ());
+                    }
             }
             return true;
         }
@@ -1342,6 +1427,7 @@ namespace romance::ac
         group->SetTargetIcon(kSkullIcon, owner->GetGUID(), next->GetGUID());
         for (Player* b : bots)
             order(b, true);
+        ReleaseChasers(h);
         return true;
     }
 
@@ -1615,7 +1701,10 @@ namespace romance::ac
         bool was = _leads.erase(bot->GetGUID()) > 0;
         auto h = _hunts.find(owner->GetGUID());
         if (h != _hunts.end() && h->second.forLead)
+        {
+            ReleaseChasers(h->second);
             _hunts.erase(h);
+        }
         bot->GetMotionMaster()->Clear();
         PlayerbotsBridge::StopLead(bot, owner);
         return was ? "You stopped leading and follow them again." : "You follow them (you were not leading).";
@@ -1653,7 +1742,10 @@ namespace romance::ac
         _leads.erase(bot->GetGUID());
         auto h = _hunts.find(owner->GetGUID());
         if (h != _hunts.end() && h->second.forLead)
+        {
+            ReleaseChasers(h->second);
             _hunts.erase(h);
+        }
         bot->GetMotionMaster()->Clear();
         PlayerbotsBridge::StopLead(bot, owner);
         if (!notice.empty())
@@ -1748,7 +1840,10 @@ namespace romance::ac
                 GiverInfo const& g = enders.front();
                 auto hunt = _hunts.find(owner->GetGUID());
                 if (hunt != _hunts.end() && hunt->second.forLead)
+                {
+                    ReleaseChasers(hunt->second);
                     _hunts.erase(hunt);
+                }
                 bot->GetMotionMaster()->Clear();
                 if (BeginErrand(owner, bot, g.entry, g.name, g.x, g.y, g.z, true, title, false, now))
                 {
@@ -1905,8 +2000,9 @@ namespace romance::ac
                 ++it;
                 continue;
             }
-            Hunt const& h = it->second;
-            if (!h.forLead && !h.bots.empty())
+            Hunt& h = it->second;
+            ReleaseChasers(h);
+            if (!h.forLead && h.only.IsEmpty() && !h.bots.empty())
                 _notices.push_back({ h.bots.front(), h.kills
                     ? "You cleared the area (" + std::to_string(h.kills) + (h.kills == 1 ? " enemy" : " enemies") + "). Say it briefly."
                     : "" });

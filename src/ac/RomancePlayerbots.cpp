@@ -184,6 +184,15 @@ namespace romance::ac
         bot->SetSelection(ObjectGuid::Empty);
         return true;
     }
+
+    bool PlayerbotsBridge::SetFollow(Player* bot, Player* master, bool on)
+    {
+        PlayerbotAI* ai = bot ? GET_PLAYERBOT_AI(bot) : nullptr;
+        if (!ai || !ai->IsBotAI() || ai->GetMaster() != master)
+            return false;
+        ai->HandleCommand(CHAT_MSG_WHISPER, Cmd(on ? "nc +follow" : "nc -follow"), master);
+        return true;
+    }
 #else
     bool PlayerbotsBridge::Available() { return false; }
     std::string PlayerbotsBridge::ConfigWarnings() { return ""; }
@@ -202,5 +211,6 @@ namespace romance::ac
     bool PlayerbotsBridge::StartLead(Player*, Player*) { return false; }
     bool PlayerbotsBridge::StopLead(Player*, Player*) { return false; }
     bool PlayerbotsBridge::StopAttack(Player*, Player*) { return false; }
+    bool PlayerbotsBridge::SetFollow(Player*, Player*, bool) { return false; }
 #endif
 }

@@ -63,6 +63,13 @@ namespace romance::ac
 
         bool IsLeading(ObjectGuid bot) const { return _leads.count(bot) > 0; }
 
+        // True while she is leading, on an errand or clearing an area: then the AI's own movement actions
+        // (follow / stay / attack / flee in a reply) must not interfere.
+        bool IsBusy(ObjectGuid owner, ObjectGuid bot) const;
+
+        // The player said "follow me": a lead or an area clearing ends properly (not just Playerbots' follow).
+        void OnPlayerFollowOrder(Player* owner, Player* bot);
+
         void Forget(ObjectGuid bot);
 
         // Builds the quest-giver and kill-credit indexes now (at startup) instead of on the first request.
@@ -95,6 +102,8 @@ namespace romance::ac
             time_t currentSince = 0;                  // when the current target was marked
             std::set<ObjectGuid> skipped;             // targets nobody could reach (behind walls, ...)
             ObjectGuid chase;                         // out of sight: walk closer first (Playerbots won't attack what it can't see)
+            std::set<ObjectGuid> unfollowed;          // bots whose Playerbots "follow" is off while they walk closer
+            ObjectGuid only;                          // a single attack: just this enemy
             time_t chaseSince = 0, lastChase = 0;
         };
         // Lead mode: she walks to the quest area (you follow), then hunts the quest mobs there.
@@ -126,7 +135,9 @@ namespace romance::ac
         std::string GiveItem(Player* owner, Player* bot, CompanionCommand const& cmd, time_t now);
         std::string GiveGold(Player* owner, Player* bot, CompanionCommand const& cmd, time_t now);
         std::string Cast(Player* owner, Player* bot, CompanionCommand const& cmd);
-        std::string Attack(Player* owner, Player* bot, CompanionCommand const& cmd);
+        std::string Attack(Player* owner, Player* bot, CompanionCommand const& cmd, time_t now);
+        std::string ChaseAttack(Player* owner, Player* bot, Unit* target, time_t now);
+        void ReleaseChasers(Hunt& h);
         std::string Sell(Player* owner, Player* bot, CompanionCommand const& cmd);
         std::string Share(Player* owner, Player* bot, CompanionCommand const& cmd, time_t now);
         std::string AttackAll(Player* owner, Player* bot, CompanionCommand const& cmd, time_t now);

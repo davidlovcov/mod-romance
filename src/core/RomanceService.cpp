@@ -2019,7 +2019,8 @@ namespace romance
         return m;
     }
 
-    std::optional<MemoryEntry> RomanceService::AddUserMemory(CompanionKey const& key, MemoryKind kind, std::string const& text, int importance, TimePoint now)
+    std::optional<MemoryEntry> RomanceService::AddUserMemory(CompanionKey const& key, MemoryKind kind, std::string const& text, int importance, TimePoint now,
+                                                             bool notify)
     {
         if (kind == MemoryKind::Summary)
             kind = MemoryKind::Fact;
@@ -2035,7 +2036,8 @@ namespace romance
         if (!res.stored)
             return std::nullopt;
         _repo.SaveMemory(key, res.entry);
-        PushMemoryChanged(key, res.entry.id);
+        if (notify)
+            PushMemoryChanged(key, res.entry.id);
         return res.entry;
     }
 
@@ -2194,9 +2196,10 @@ namespace romance
             if (!m || m->kind == MemoryKind::Summary)
                 continue;
             // Imported memories are the player's own statements now; they cannot claim to be server observations.
-            if (AddUserMemory(key, m->kind, m->text, std::min(m->importance, 80), now))
+            if (AddUserMemory(key, m->kind, m->text, std::min(m->importance, 80), now, false))
                 ++imported;
         }
+        PushMemoryChanged(key, -1);   // one refresh for the whole import
         size_t offered = data["memories"].AsArray().size();
         r.notes.push_back(std::to_string(imported) + " of " + std::to_string(offered) + " memories imported" +
                           (imported < offered ? " (duplicates merged, summaries skipped or the memory limit reached)" : ""));

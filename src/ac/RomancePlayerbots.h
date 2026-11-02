@@ -51,6 +51,8 @@ namespace romance::ac
         static bool StopLead(Player* bot, Player* master);
         // Drops the current target and stops auto-attacking (the bot is still in combat if enemies fight back).
         static bool StopAttack(Player* bot, Player* master);
+        // Adds / removes Playerbots' non-combat "follow" strategy only (no movement, no "Following" reply).
+        static bool SetFollow(Player* bot, Player* master, bool on);
     };
 }
 
