@@ -45,6 +45,8 @@ There are two layers:
 | `TrueCompanion.Control.GiveMinStage` | 2 | Relationship stage before the companion hands over items or gold (2 = friends) |
 | `TrueCompanion.Control.MaxGoldPerRequest` | 50 | Most gold per request (0 = no limit) |
 | `TrueCompanion.Control.AutoSellJunk` / `AutoSellFreeSlots` | 1 / 2 | Sell gray items at a vendor when bags are nearly full |
+| `TrueCompanion.Control.DropJunkForLoot` | 1 | Full bags: drop her cheapest gray item for something worth more on a corpse (only gray items) |
+| `TrueCompanion.Control.HealerAssist` | 1 | A healer companion attacks your target while everyone near is healthy |
 | `TrueCompanion.Control.LeadMode` | 1 | "lead the way" walks the companion to one of their quests, then they fight the quest creatures |
 | `TrueCompanion.Control.InteractRange` | 30 | Merchants and quest givers this close work without targeting them |
 | `TrueCompanion.Control.QuestSync` | 1 | Companions take and turn in quests together with you |

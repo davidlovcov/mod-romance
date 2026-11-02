@@ -17,6 +17,7 @@
 #include "GridNotifiersImpl.h"
 #include "Group.h"
 #include "Item.h"
+#include "LootMgr.h"
 #include "ObjectAccessor.h"
 #include "ObjectMgr.h"
 #include "Player.h"
@@ -50,6 +51,8 @@ namespace truecompanion::ac
         constexpr size_t kMaxKnowledgeItems = 30;
         constexpr size_t kMaxKnowledgeSpells = 40;
         constexpr size_t kMaxJournalQuests = 10;
+        constexpr float kAssistMinHealthPct = 75.0f;   // healer assist: everyone near at least this healthy
+        constexpr float kAssistMinManaPct = 30.0f;     // ... and she keeps this much mana for heals
 
         std::string Lower(std::string s)
         {
@@ -1786,7 +1789,10 @@ namespace truecompanion::ac
                     // without "wait for me to loot": the player's round-robin turn isn't waited for, and a corpse with
                     // only the player's share left is given up after a few seconds
                     bool playersTurn = c && c->loot.roundRobinPlayer == owner->GetGUID();
-                    bool done = !c || c->IsAlive() || c->loot.isLooted() || (!waitForPlayer && playersTurn) ||
+                    bool room = false;   // with full bags nobody can take anything (TendBags makes room or pauses looting)
+                    for (Player* b : bots)
+                        room = room || b->GetFreeInventorySpace() > 0;
+                    bool done = !c || c->IsAlive() || c->loot.isLooted() || (!waitForPlayer && playersTurn) || (!room && !waitForPlayer) ||
                                 now - it->second > (waitForPlayer ? 60 : 12);
                     it = done ? h.toLoot.erase(it) : std::next(it);
                 }
@@ -1796,7 +1802,8 @@ namespace truecompanion::ac
                     {
                         h.lastLootCmd = now;
                         for (Player* b : bots)
-                            PlayerbotsBridge::Command(b, owner, "add all loot");
+                            if (b->GetFreeInventorySpace() > 0)
+                                PlayerbotsBridge::Command(b, owner, "add all loot");
                     }
                     return true;   // still looting
                 }
@@ -3535,6 +3542,135 @@ namespace truecompanion::ac
         _notices.erase(std::remove_if(_notices.begin(), _notices.end(), [](auto const& n) { return n.second.empty(); }), _notices.end());
     }
 
+    void CompanionControl::Tend(Player* owner, Player* bot, time_t now)
+    {
+        if (!_cfg.controlEnabled || !owner || !bot || !bot->IsInWorld() || !bot->IsAlive() || !SameWorld(owner, bot))
+            return;
+        HealerAssist(owner, bot, now);
+        TendBags(owner, bot);
+    }
+
+    // Playerbots lets a healer attack only with a lot of mana (and not at all on many maps), so a priest companion often
+    // just watched the player fight. While everyone near is healthy she casts her damage spells at the player's target;
+    // healing stays with Playerbots and takes over as soon as someone is hurt.
+    void CompanionControl::HealerAssist(Player* owner, Player* bot, time_t now)
+    {
+        if (!_cfg.healerAssist || !PlayerbotsBridge::IsHealer(bot) || _leads.count(bot->GetGUID()))
+            return;
+        if (!owner->IsInCombat() || bot->IsNonMeleeSpellCast(false) || now - _lastAssist[bot->GetGUID()] < 2)
+            return;
+        ObjectGuid tg = owner->GetTarget();
+        Unit* target = tg ? ObjectAccessor::GetUnit(*owner, tg) : nullptr;
+        if (!target || !target->IsAlive())
+            target = owner->GetVictim();
+        if (!target || !target->IsAlive() || !target->IsInCombat() || !bot->IsValidAttackTarget(target) || !bot->IsWithinLOSInMap(target))
+            return;
+        if (bot->getPowerType() == POWER_MANA && bot->GetPowerPct(POWER_MANA) < kAssistMinManaPct)
+            return;
+        if (Group* g = bot->GetGroup())
+            for (GroupReference* ref = g->GetFirstMember(); ref; ref = ref->next())
+                if (Player* m = ref->GetSource())
+                    if (m->IsInWorld() && m->IsAlive() && SameWorld(m, bot) && m->GetDistance(bot) < 40.0f && m->GetHealthPct() < kAssistMinHealthPct)
+                        return;   // someone needs her heals
+        // her damage spells, best first: a damage-over-time that isn't on the target yet, then direct damage
+        static char const* const spells[] = { "Shadow Word: Pain", "Moonfire", "Flame Shock", "Holy Fire", "Mind Blast", "Smite", "Wrath",
+                                              "Lightning Bolt" };
+        std::map<std::string, SpellInfo const*> known;
+        for (SpellInfo const* info : KnownSpells(bot))
+            known[info->SpellName[0]] = info;
+        float dist = bot->GetDistance(target);
+        for (char const* name : spells)
+        {
+            auto it = known.find(name);
+            if (it == known.end())
+                continue;
+            SpellInfo const* info = it->second;
+            if (bot->HasSpellCooldown(info->Id) || dist > info->GetMaxRange(false, bot))
+                continue;
+            if (info->HasAura(SPELL_AURA_PERIODIC_DAMAGE) && target->HasAura(info->Id, bot->GetGUID()))
+                continue;
+            if (info->PowerType == POWER_MANA && info->CalcPowerCost(bot, info->GetSchoolMask()) > int32(bot->GetPower(POWER_MANA)))
+                continue;
+            bot->SetFacingToObject(target);
+            if (bot->CastSpell(target, info->Id, false) == SPELL_CAST_OK)
+            {
+                _lastAssist[bot->GetGUID()] = now;
+                return;
+            }
+        }
+    }
+
+    // Full bags made her run to corpses again and again (Playerbots finds loot she can't take). Now: when a corpse of the
+    // group holds something worth more than her cheapest junk (or a quest item she needs), that junk is dropped so she
+    // can loot it; otherwise Playerbots' looting is paused until she has room again.
+    void CompanionControl::TendBags(Player* owner, Player* bot)
+    {
+        ObjectGuid g = bot->GetGUID();
+        if (bot->GetFreeInventorySpace() > 0)
+        {
+            if (_lootPaused.erase(g))
+                PlayerbotsBridge::SetLooting(bot, true);
+            return;
+        }
+        if (bot->IsInCombat())
+            return;
+        // the most valuable thing on the group's corpses around that she may loot and can't fit
+        uint64 wanted = 0;
+        std::string wantedName;
+        for (Creature* c : NearbyCreatures(bot, 30.0f))
+        {
+            if (c->IsAlive() || c->loot.isLooted() || !c->isTappedBy(owner))
+                continue;
+            auto consider = [&](LootItem const& li, bool quest)
+            {
+                ItemTemplate const* proto = sObjectMgr->GetItemTemplate(li.itemid);
+                if (li.is_looted || !proto || !li.AllowedForPlayer(bot, c->GetGUID()))
+                    return;
+                ItemPosCountVec dest;
+                if (bot->CanStoreNewItem(NULL_BAG, NULL_SLOT, dest, li.itemid, li.count) == EQUIP_ERR_OK)
+                    return;   // fits on a stack she has
+                uint64 value = quest || li.needs_quest ? std::numeric_limits<uint64>::max() / 2
+                                                       : uint64(proto->SellPrice) * li.count + (proto->Quality >= ITEM_QUALITY_UNCOMMON ? 1000000 : 0);
+                if (value > wanted)
+                {
+                    wanted = value;
+                    wantedName = proto->Name1;
+                }
+            };
+            for (LootItem const& li : c->loot.items)
+                consider(li, false);
+            for (LootItem const& li : c->loot.quest_items)
+                consider(li, true);
+        }
+        Item* cheapest = nullptr;
+        uint64 cheapestValue = 0;
+        for (Item* item : JunkItems(bot))
+        {
+            uint64 v = uint64(item->GetTemplate()->SellPrice) * item->GetCount();
+            if (!item->IsInTrade() && (!cheapest || v < cheapestValue))
+            {
+                cheapest = item;
+                cheapestValue = v;
+            }
+        }
+        if (_cfg.dropJunkForLoot && wanted && cheapest && wanted > cheapestValue)
+        {
+            std::string dropped = cheapest->GetTemplate()->Name1 + (cheapest->GetCount() > 1 ? " x" + std::to_string(cheapest->GetCount()) : "");
+            bot->DestroyItem(cheapest->GetBagSlot(), cheapest->GetSlot(), true);
+            LOG_INFO("module", "[mod-true-companion] {}: bags full, dropped {} ({} copper) for {}", bot->GetName(), dropped, cheapestValue, wantedName);
+            _notices.push_back({ g, "Your bags were full, so you threw away " + dropped + " (junk worth " + MoneyWords(cheapestValue) +
+                                    ") to make room for " + wantedName + ". Mention it in a few words." });
+            if (_lootPaused.erase(g))
+                PlayerbotsBridge::SetLooting(bot, true);
+            return;
+        }
+        if (!_lootPaused.count(g) && PlayerbotsBridge::IsLooting(bot) && PlayerbotsBridge::SetLooting(bot, false))
+        {
+            _lootPaused.insert(g);
+            LOG_INFO("module", "[mod-true-companion] {}: bags full, looting paused until there is room", bot->GetName());
+        }
+    }
+
     std::vector<std::pair<ObjectGuid, std::string>> CompanionControl::TakeNotices()
     {
         std::vector<std::pair<ObjectGuid, std::string>> out;
@@ -3626,6 +3762,10 @@ namespace truecompanion::ac
         }
         _lastAutoSell.erase(bot);
         _lastBagsFull.erase(bot);
+        _lastAssist.erase(bot);
+        if (_lootPaused.erase(bot))
+            if (Player* p = ObjectAccessor::FindConnectedPlayer(bot))
+                PlayerbotsBridge::SetLooting(p, true);   // a plain Playerbot loots again
         _pending.erase(std::remove_if(_pending.begin(), _pending.end(), [&](Pending const& p) { return p.bot == bot; }), _pending.end());
         if (b && b->IsInWorld())
         {

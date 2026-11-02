@@ -202,6 +202,21 @@ namespace truecompanion::ac
         return true;
     }
 
+    bool PlayerbotsBridge::IsLooting(Player* bot)
+    {
+        PlayerbotAI* ai = bot ? GET_PLAYERBOT_AI(bot) : nullptr;
+        return ai && ai->HasStrategy("loot", BOT_STATE_NON_COMBAT);
+    }
+
+    bool PlayerbotsBridge::SetLooting(Player* bot, bool on)
+    {
+        PlayerbotAI* ai = bot ? GET_PLAYERBOT_AI(bot) : nullptr;
+        if (!ai || !ai->IsBotAI())
+            return false;
+        ai->ChangeStrategy(on ? "+loot" : "-loot", BOT_STATE_NON_COMBAT);
+        return true;
+    }
+
     bool PlayerbotsBridge::MoveTo(Player* bot, Player* master, float x, float y, float z)
     {
         PlayerbotAI* ai = bot ? GET_PLAYERBOT_AI(bot) : nullptr;
@@ -231,6 +246,8 @@ namespace truecompanion::ac
     bool PlayerbotsBridge::StopLead(Player*, Player*) { return false; }
     bool PlayerbotsBridge::StopAttack(Player*, Player*) { return false; }
     bool PlayerbotsBridge::SetFollow(Player*, Player*, bool) { return false; }
+    bool PlayerbotsBridge::IsLooting(Player*) { return false; }
+    bool PlayerbotsBridge::SetLooting(Player*, bool) { return false; }
     bool PlayerbotsBridge::MoveTo(Player*, Player*, float, float, float) { return false; }
 #endif
 }

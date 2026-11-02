@@ -44,6 +44,9 @@ namespace truecompanion::ac
         void AddKnowledge(WorldContext& ctx, Player* owner, Player* bot, uint32 topics) const;
         // Her journal for every prompt (WorldContext::journal): quests with her progress (and theirs), bags, gold, task.
         void AddJournal(WorldContext& ctx, Player* owner, Player* bot) const;
+        // Twice a second for each active companion: a healer helps with damage while nobody needs healing, and with full
+        // bags she makes room for better loot (drops junk) or stops trying to loot.
+        void Tend(Player* owner, Player* bot, time_t now);
 
         // Carries out `cmd`; returns the outcome sentence for the prompt (second person: "You ...").
         std::string Execute(Player* owner, Player* bot, CompanionCommand const& cmd, std::optional<Stage> stage, time_t now);
@@ -244,6 +247,10 @@ namespace truecompanion::ac
         time_t _lastStep = 0;
         std::map<ObjectGuid, time_t> _lastAutoSell;
         std::map<ObjectGuid, time_t> _lastBagsFull;
+        std::map<ObjectGuid, time_t> _lastAssist;      // healer assist: last damage spell
+        std::set<ObjectGuid> _lootPaused;              // Playerbots looting switched off by us (full bags); back on with room
+        void HealerAssist(Player* owner, Player* bot, time_t now);
+        void TendBags(Player* owner, Player* bot);
     };
 }
 

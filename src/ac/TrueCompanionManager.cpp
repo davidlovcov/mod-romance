@@ -676,6 +676,8 @@ namespace truecompanion::ac
             Player* bot = ObjectAccessor::FindConnectedPlayer(PlayerGuid(uint32(key.companion)));
             if (!owner || !bot || !owner->IsInWorld() || !bot->IsInWorld())
                 continue;
+            if (_control)
+                _control->Tend(owner, bot, now);
             Tracker& t = _trackers[key];
             if (!t.initialized)
             {

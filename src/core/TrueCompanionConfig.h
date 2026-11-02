@@ -63,6 +63,8 @@ namespace truecompanion
         uint64_t maxGoldPerRequest = 500000;      // copper (50 gold); 0 = no limit
         bool autoSellJunk = true;                 // sell gray items at a vendor when bags are nearly full
         uint32_t autoSellFreeSlots = 2;           // "nearly full" = this many free slots or fewer
+        bool dropJunkForLoot = true;              // full bags: drop her cheapest gray item for better loot on a corpse
+        bool healerAssist = true;                 // a healer companion attacks the player's target while nobody needs healing
         bool leadMode = true;                     // experimental: she leads to a quest (Playerbots "new rpg")
         float commandRange = 50.0f;               // yards to search for enemies named in commands
         float interactRange = 30.0f;              // vendors / quest givers this close count as "here" (no targeting)

@@ -8,6 +8,8 @@
 
 ### Added
 - Journal: every prompt has her own quests with her progress (and yours next to it, marked as yours), her free bag slots, her money and what she is doing. Before, she only got this when your message contained a word like "quest" or "bags", and otherwise guessed or repeated your numbers.
+- Healer companions help with damage (`TrueCompanion.Control.HealerAssist`, on): while everyone near is healthy and she has mana, a priest, druid or shaman healer casts her damage spells at your target instead of watching you fight.
+- Full bags (`TrueCompanion.Control.DropJunkForLoot`, on): when a corpse of your group holds something worth more than her cheapest gray item (or a quest item she needs), she drops that gray item and loots it. Only gray items are ever dropped.
 - "Let's sell trash", "we should sell our junk", "go sell your stuff at the merchant" are understood.
 - "Learn your spells" / "go to your trainer": she walks to the nearest trainer of her class, learns the new spells she can afford with her own gold and comes back (right away when the trainer is next to her).
 - With her AI conversation off, a companion still carries out commands and answers them in plain words (before: a plain Playerbot). Such companions don't count toward the companion limit; turning the AI on checks the limit.
@@ -34,6 +36,7 @@
 ### Fixed
 - She took your quest counts for hers ("I have six") and answered every Questie progress line in party chat. Lines other addons post for you (Questie and similar) get no reply now, and her own numbers come from the journal.
 - She answered everything: bare acknowledgments ("ok", "indeed", "lol") get no reply, and an everyday fight (one or two enemies) no remark of its own; it still counts as something you did together.
+- Full bags made her run to corpses she couldn't loot over and over: with nothing to drop, Playerbots' looting is paused until she has room, and area clearing and lead mode no longer wait at such corpses.
 - Money is spelled out for her ("1 silver 68 copper"), which small models read reliably.
 - Amounts: "give me 1.5 gold" gave 5 gold, "give me -5 gold" gave 5, "give me 1,000 gold" asked for an item called "000 gold", and "sell 0 linen cloth" sold all of them. Amounts that are not whole positive numbers are refused now, and nothing changes.
 - Selling removed the items before the money was paid; at the gold cap (or a trial account's cap) they were gone without payment. The money is checked first; nothing is sold when she can't take it, and the reply says what she really got.

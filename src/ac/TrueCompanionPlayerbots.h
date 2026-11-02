@@ -53,6 +53,10 @@ namespace truecompanion::ac
         static bool StopAttack(Player* bot, Player* master);
         // Adds / removes Playerbots' non-combat "follow" strategy only (no movement, no "Following" reply).
         static bool SetFollow(Player* bot, Player* master, bool on);
+        // Playerbots' non-combat "loot" strategy: whether she has it, and switching it on or off (no chat reply). Used
+        // while her bags are full, so she doesn't walk to corpses she can't take anything from over and over.
+        static bool IsLooting(Player* bot);
+        static bool SetLooting(Player* bot, bool on);
         // Playerbots' own "go x;y;z" (its movement system, so its strategies don't cancel the walk).
         static bool MoveTo(Player* bot, Player* master, float x, float y, float z);
     };

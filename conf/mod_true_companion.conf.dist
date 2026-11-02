@@ -186,6 +186,19 @@ TrueCompanion.Control.MaxGoldPerRequest = 50
 TrueCompanion.Control.AutoSellJunk = 1
 TrueCompanion.Control.AutoSellFreeSlots = 2
 
+#    TrueCompanion.Control.DropJunkForLoot
+#        Description: With completely full bags, the companion drops her cheapest gray (junk) item when a corpse of
+#                     your group holds something worth more (or a quest item she needs), so she can loot it. Only
+#                     gray items are ever dropped. With nothing to drop, she stops trying to loot until there is room.
+#        Default:     1
+TrueCompanion.Control.DropJunkForLoot = 1
+
+#    TrueCompanion.Control.HealerAssist
+#        Description: A healer companion (Playerbots heal strategy) attacks your target with her damage spells while
+#                     everyone near is healthy and she has enough mana, instead of waiting for someone to get hurt.
+#        Default:     1
+TrueCompanion.Control.HealerAssist = 1
+
 #    TrueCompanion.Control.LeadMode
 #        Description: "lead the way" makes the companion walk to one of their quests (you follow). They wait when
 #                     you fall behind, fight the quest creatures when they arrive and follow you again

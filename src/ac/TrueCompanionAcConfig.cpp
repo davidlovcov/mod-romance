@@ -80,6 +80,8 @@ namespace truecompanion::ac
         c.maxGoldPerRequest = uint64_t(Opt<uint32>("TrueCompanion.Control.MaxGoldPerRequest", uint32(c.maxGoldPerRequest / 10000))) * 10000;
         c.autoSellJunk = Opt<bool>("TrueCompanion.Control.AutoSellJunk", c.autoSellJunk);
         c.autoSellFreeSlots = Opt<uint32>("TrueCompanion.Control.AutoSellFreeSlots", c.autoSellFreeSlots);
+        c.dropJunkForLoot = Opt<bool>("TrueCompanion.Control.DropJunkForLoot", c.dropJunkForLoot);
+        c.healerAssist = Opt<bool>("TrueCompanion.Control.HealerAssist", c.healerAssist);
         c.leadMode = Opt<bool>("TrueCompanion.Control.LeadMode", c.leadMode);
         c.commandRange = std::max(5.0f, std::min(100.0f, Opt<float>("TrueCompanion.Control.CommandRange", c.commandRange)));
         c.interactRange = std::max(5.0f, std::min(60.0f, Opt<float>("TrueCompanion.Control.InteractRange", c.interactRange)));
