@@ -139,6 +139,7 @@ namespace romance::ac
         void OnAddonMessage(Player* player, std::string const& body);
         void HandleAddonOp(Player* player, Json const& msg);
         void SendAddon(Player* player, Json const& payload);
+        void ExpectBotFeedback(Player* owner, Player* bot);
         void Reply(Player* player, Json const& req, Json payload);
         void ReplyError(Player* player, Json const& req, std::string const& code, std::string const& message = "");
 

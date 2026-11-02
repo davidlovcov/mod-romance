@@ -171,6 +171,31 @@ TEST(Service, ChatRoundTripOnWorkerThreadAppliedOnGameThread)
     CHECK(typingOn >= 1 && typingOff >= 1);
 }
 
+TEST(Service, AddonGetsTheReplyBeforeTheChatLine)
+{
+    // The addon hides Playerbots' feedback lines and shows the companion's own words; it can only tell them
+    // apart if the reply text arrives before the visible chat line.
+    Harness h;
+    h.Activate(h.Key());
+    h.llm->QueueReply(ReplyJson("Of course, right behind you.", "happy", "neutral", {}));
+    h.out.clear();
+    h.svc->OnPlayerMessage(h.Key(), "Elara, come with me", ChatChannel::Whisper, h.ctx, h.now);
+    CHECK(h.WaitSpeak(h.Key()));
+    int push = -1, speak = -1;
+    for (size_t i = 0; i < h.out.size(); ++i)
+    {
+        auto const& a = h.out[i];
+        if (push < 0 && a.type == OutgoingAction::Type::UiPush && a.payload.GetString("op") == "chat_msg"
+            && a.payload.GetString("from") == "companion")
+            push = int(i);
+        if (speak < 0 && a.type == OutgoingAction::Type::Speak)
+            speak = int(i);
+    }
+    CHECK(push >= 0);
+    CHECK(speak >= 0);
+    CHECK(push < speak);
+}
+
 TEST(Service, PlayerbotCommandsPassThroughAndNaturalCommandsExecute)
 {
     Harness h;

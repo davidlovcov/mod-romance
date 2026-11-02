@@ -7,6 +7,7 @@
 - "Pick up your quests" / "go get your class quest": the companion walks to the nearest quest giver with something for them (e.g. their class trainer), picks the quests up and comes back.
 
 ### Fixed
+- Characters of the other faction could be called as companions (a Horde player could take an Alliance character into the group). They are now shown as "Other faction" and can't be called, unless `AllowTwoSide.Interaction.Group` is on in worldserver.conf.
 - A reply that was still queued (or in flight) when a companion was dismissed could appear in the next session after the companion was called again, and change the relationship. Every activation now gets its own generation, and cancelled requests never change anything.
 - The addon Chat tab skipped companion commands (give, cast, sell, quests, ...) and game knowledge; whisper, party and addon chat now share one path.
 - Export / import failed for larger memory sets (one message was limited to 16 KiB): exports and imports now travel in pages and an import is applied only when every part arrived.
@@ -17,6 +18,8 @@
 
 ### Changed
 - Documentation and config descriptions use neutral wording, since companions can be male or female.
+- A companion's reply reaches the addon before the chat line, and lines that go to Playerbots without an AI reply are announced (`bot_feedback`), so the addon can hide Playerbots' command feedback (feature `botFeedback`).
+- docs/INSTALLATION.md lists the recommended Playerbots settings for a quiet chat.
 - Clearing an area with a healer companion spammed "attack rti target: useless": Playerbots never lets healers take attack orders. Healers now keep healing while the others fight (and say so), and attack orders are re-sent at most every 5 seconds.
 - Clearing an area picks enemies she can see first; an enemy nobody reaches within 15 seconds (behind a wall, no path) is skipped.
 - Lead mode: saying "wait" made her give up leading (the Playerbots stay held her in place and the lead controller took that for being stuck). "Wait" now pauses the lead, and "lead again", "go on" or "keep going" continues it.

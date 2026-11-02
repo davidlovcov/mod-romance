@@ -1713,7 +1713,8 @@ namespace romance
         if (s.rec.turnsSinceSummary % 20 == 0)
             _repo.PruneChat(s.rec.key, _cfg.storedChatTurns);
 
-        _out.push_back({ OutgoingAction::Type::Speak, s.rec.key, reply, out, ActionType::None, Json() });
+        // The addon gets the reply before the chat line, so it can tell the companion's own words
+        // from Playerbots' command feedback and hide only the feedback.
         Json p = Json::MakeObject();
         p.Set("op", "chat_msg");
         p.Set("guid", int64_t(s.rec.key.companion));
@@ -1722,6 +1723,7 @@ namespace romance
         p.Set("ts", int64_t(now));
         p.Set("mood", MoodId(s.rec.relationship.mood));
         _out.push_back({ OutgoingAction::Type::UiPush, s.rec.key, "", ChatChannel::Addon, ActionType::None, p });
+        _out.push_back({ OutgoingAction::Type::Speak, s.rec.key, reply, out, ActionType::None, Json() });
         s.lastReplyAt = now;
         s.lastActivity = now;
         s.rec.relationship.lastInteraction = now;

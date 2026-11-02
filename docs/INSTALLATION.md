@@ -164,12 +164,25 @@ Chat-command alternatives: `.romance summon Elara`, `.romance dismiss`, `.romanc
 | Muted for chat flood | Very large imports. The addon paces its traffic below `ChatFlood.AddonMessageCount`; if you lowered that setting, raise it again. |
 | Linking error mentioning `ws2_32` on Windows | Delete the CMake cache and re-run CMake. `mod-romance.cmake` adds `ws2_32` automatically. |
 
-## Recommended Playerbots setting
+## Recommended Playerbots settings
 
-Set this in `playerbots.conf`:
+Set these in `playerbots.conf`:
 
 ```
 Playerbots.EnableAutoTradeOnItemMention = 0
+Playerbots.RandomBotTalk = 0
+Playerbots.AnnounceConsumableUse = 0
+Playerbots.TellWhenMissingBuffReagents = 0
+# optional: random bots stop posting loot, quests and level-ups in General and guild chat
+Playerbots.EnableBroadcasts = 0
 ```
 
-Playerbots reads every party chat line as a possible bot command. When a line contains any word it associates with items (slot names, item qualities, trade goods, money...), it opens a trade window. With AI companions you talk to them in party chat all the time, so ordinary sentences like "how many more to kill?" can suddenly open a trade. mod-romance logs a warning at startup while the setting is on. Item trades you ask for ("give me your linen cloth") still work, because mod-romance opens those itself.
+| Setting | Why |
+|---|---|
+| `EnableAutoTradeOnItemMention = 0` | **Strongly recommended.** Playerbots reads every party chat line as a possible bot command. When a line contains any word it associates with items (slot names, item qualities, trade goods, money...), it opens a trade window. With AI companions you talk to them in party chat all the time, so ordinary sentences like "how many more to kill?" can suddenly open a trade. mod-romance logs a warning at startup while the setting is on. Item trades you ask for ("give me your linen cloth") still work, because mod-romance opens those itself. |
+| `RandomBotTalk = 0` | No random small talk from bots between your companion's lines. |
+| `AnnounceConsumableUse = 0` | No "Using potion..." lines. |
+| `TellWhenMissingBuffReagents = 0` | No reagent complaints. |
+| `EnableBroadcasts = 0` | Optional. Random bots stop announcing loot, quests and level-ups in public channels. |
+
+Playerbots still answers commands ("Following", "attack rti target: useless", quest notices). The addon hides these lines from your AI companions in the chat window and keeps them as gray `[Playerbots]` lines in the Chat tab (Settings tab: **Hide Playerbots feedback**). When you give a plain Playerbots command (`!stats`, `co +dps`), its answer is shown as usual. Your other bots are never filtered.

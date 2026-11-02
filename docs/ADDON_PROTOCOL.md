@@ -34,7 +34,7 @@ The server **never** takes identity from the payload. The owner is always the se
 
 | op | fields | reply |
 |---|---|---|
-| `hello` | `version`, `protocol` | `hello` {protocol, enabled, features{ollama, proactive, naturalCommands, initialStage, maxInitialStage, modelChoice, export, reset, debug, playerbots, memory}, presets[{id, label, description, stage, gender, custom, profile}], maxCustomPresets, stages[], styles[], status} |
+| `hello` | `version`, `protocol` | `hello` {protocol, enabled, features{ollama, proactive, naturalCommands, initialStage, maxInitialStage, modelChoice, export, reset, debug, playerbots, memory, botFeedback}, presets[{id, label, description, stage, gender, custom, profile}], maxCustomPresets, stages[], styles[], status} |
 | `list_chars` | | `chars` {chars[{guid, name, race, raceName, class, className, gender, level, linked, status, reason, active, configured, stageLabel, estrangedUntil?, estranged?}], maxActive} |
 | `get_status` | `guid?` | `status` (see StatusJson) |
 | `get_profile` | | `profile` {profile, accountDefault} |
@@ -77,7 +77,8 @@ Every failed `ack` carries `code` (machine readable) and `message` (text for the
 
 | op | meaning |
 |---|---|
-| `chat_msg` {guid, from: player/companion, text, ts, mood?} | conversation line (whisper and addon input) |
+| `chat_msg` {guid, from: player/companion, text, ts, mood?} | conversation line (whisper and addon input). A companion reply is pushed **before** the visible whisper or party line (feature `botFeedback`), so the addon can tell it from Playerbots' command feedback |
+| `bot_feedback` {guid, name} | a line went to Playerbots without an AI reply (plain command, AI off for that line); its answer in the next seconds is wanted and must not be hidden |
 | `typing` {guid, on} | the companion is generating a reply |
 | `relationship` {guid, stage, stageIndex, stageLabel, romantic, values{…}, mood, moodIntensity, strained, estranged, estrangedUntil, reconciliation, resentment, labels[]} | values changed |
 | `milestone` {guid, stage, label} | became a couple, got engaged, married, broke up |

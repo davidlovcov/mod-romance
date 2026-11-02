@@ -24,6 +24,7 @@
 #include "WorldPacket.h"
 #include "WorldSession.h"
 
+#include <algorithm>
 #include <chrono>
 #include <ctime>
 #include <sstream>
@@ -87,6 +88,14 @@ namespace romance::ac
             return (g > 0 && g <= int64_t(0xFFFFFFFF)) ? uint32(g) : 0;
         }
 
+        // Companions follow the server's faction rules: no Horde companion for an Alliance player
+        // (and the other way round) unless AllowTwoSide.Interaction.Group is on.
+        bool OtherFaction(Player* owner, uint8 race)
+        {
+            return !sWorld->getBoolConfig(CONFIG_ALLOW_TWO_SIDE_INTERACTION_GROUP) &&
+                   Player::TeamIdForRace(race) != owner->GetTeamId(true);
+        }
+
         // Player-facing text for error codes (shown by the addon and chat commands).
         std::string HumanError(std::string const& code, uint32 limit, int64 hoursLeft = -1)
         {
@@ -99,6 +108,7 @@ namespace romance::ac
             if (code == "online_as_player") return "This character is logged in by a player.";
             if (code == "controlled_elsewhere") return "This character is controlled by someone else.";
             if (code == "already_loading") return "This companion is already on the way.";
+            if (code == "other_faction") return "This character belongs to the other faction. Companions have to be of your faction.";
             if (code == "not_owner") return "That character does not belong to you.";
             if (code == "playerbots_not_installed" || code == "playerbots_unavailable") return "mod-playerbots is not available on this server.";
             if (code == "companion_in_use") return "This companion is already active for another of your characters.";
@@ -779,8 +789,10 @@ namespace romance::ac
         {
             case RomanceService::MessageResult::NotForUs:
             case RomanceService::MessageResult::AiDisabled:
+                ExpectBotFeedback(sender, receiver);
                 return true;
             case RomanceService::MessageResult::PassToPlayerbots:
+                ExpectBotFeedback(sender, receiver);
                 msg = res.rewritten;
                 return true;
             case RomanceService::MessageResult::Busy:
@@ -917,8 +929,16 @@ namespace romance::ac
             }
         }
 
+        std::vector<CompanionKey> answering;
         for (CompanionKey const& key : addressed)
-            TalkTo(sender, ObjectAccessor::FindConnectedPlayer(PlayerGuid(uint32(key.companion))), key, msg, ChatChannel::Party, picked);
+            if (TalkTo(sender, ObjectAccessor::FindConnectedPlayer(PlayerGuid(uint32(key.companion))), key, msg, ChatChannel::Party, picked)
+                    .result == RomanceService::MessageResult::Accepted)
+                answering.push_back(key);
+        // Playerbots also reads party lines as commands. Its answers are only wanted from companions
+        // that won't reply with the AI to this line.
+        for (CompanionKey const& key : inGroup)
+            if (std::find(answering.begin(), answering.end(), key) == answering.end())
+                ExpectBotFeedback(sender, ObjectAccessor::FindConnectedPlayer(PlayerGuid(uint32(key.companion))));
         Execute(_service->TakeOutgoing());
         return true;            // party chat is always shown to the party
     }
@@ -938,6 +958,19 @@ namespace romance::ac
         }
         if (peer.nextMessageId > 2000000000)
             peer.nextMessageId = 1;
+    }
+
+    void RomanceManager::ExpectBotFeedback(Player* owner, Player* bot)
+    {
+        // A line that goes to Playerbots without an AI reply: its answer ("Following", stats, ...) is
+        // the only response, so the addon shows it instead of hiding it as feedback noise.
+        if (!owner || !bot)
+            return;
+        Json p = Json::MakeObject();
+        p.Set("op", "bot_feedback");
+        p.Set("guid", int64_t(bot->GetGUID().GetCounter()));
+        p.Set("name", bot->GetName());
+        SendAddon(owner, p);
     }
 
     void RomanceManager::Reply(Player* player, Json const& req, Json payload)
@@ -1019,6 +1052,12 @@ namespace romance::ac
     CharacterStatus RomanceManager::StatusFor(Player* owner, uint32 guidLow, std::string& reason)
     {
         CompanionKey key{ owner->GetGUID().GetCounter(), guidLow };
+        if (CharacterCacheEntry const* entry = sCharacterCache->GetCharacterCacheByGuid(PlayerGuid(guidLow));
+            entry && OtherFaction(owner, entry->Race))
+        {
+            reason = std::string("Other faction (") + (Player::TeamIdForRace(entry->Race) == TEAM_ALLIANCE ? "Alliance" : "Horde") + ").";
+            return CharacterStatus::Unavailable;
+        }
         if (Player* p = ObjectAccessor::FindConnectedPlayer(PlayerGuid(guidLow)))
         {
             if (!PlayerbotsBridge::IsBot(p))
@@ -1137,6 +1176,13 @@ namespace romance::ac
     {
         CompanionKey key{ owner->GetGUID().GetCounter(), bot->GetGUID().GetCounter() };
         time_t now = Now();
+        if (OtherFaction(owner, bot->getRace(true)))
+        {
+            // Added through Playerbots directly: it stays a regular bot, the AI is never attached.
+            if (announce)
+                Notice(owner, bot->GetName() + ": " + HumanError("other_faction", 0));
+            return false;
+        }
         CompanionRecord rec = _service->GetOrCreateRecord(key, owner->GetSession()->GetAccountId(), bot->GetName(), now);
         if (!rec.settings.aiEnabled)
         {
@@ -1166,6 +1212,9 @@ namespace romance::ac
         std::string name, error;
         if (!ResolveOwnedCompanion(owner, guidLow, name, error))
             return error;
+        if (CharacterCacheEntry const* entry = sCharacterCache->GetCharacterCacheByGuid(PlayerGuid(guidLow));
+            entry && OtherFaction(owner, entry->Race))
+            return "other_faction";
         if (Player* existing = ObjectAccessor::FindConnectedPlayer(PlayerGuid(guidLow)))
         {
             if (!PlayerbotsBridge::IsBot(existing))
@@ -1228,6 +1277,7 @@ namespace romance::ac
             f.Set("debug", _cfg.debugTabForPlayers || player->GetSession()->GetSecurity() >= SEC_GAMEMASTER);
             f.Set("playerbots", PlayerbotsBridge::Available());
             f.Set("memory", _cfg.memoryEnabled);
+            f.Set("botFeedback", true);     // replies reach the addon before the chat line; bot_feedback pushes
             p.Set("features", f);
             p.Set("presets", PresetListJson(account));
             p.Set("maxCustomPresets", int64_t(_cfg.maxCustomPresets));
@@ -1453,7 +1503,10 @@ namespace romance::ac
             }
             auto res = TalkTo(player, bot, key, text, ChatChannel::Addon, false);
             if (res.result == RomanceService::MessageResult::PassToPlayerbots)
+            {
+                ExpectBotFeedback(player, bot);
                 PlayerbotsBridge::Command(bot, player, res.rewritten);
+            }
             else if (res.result == RomanceService::MessageResult::Busy)
                 ReplyError(player, msg, "busy", name + " is still answering.");
             else if (res.result == RomanceService::MessageResult::AiDisabled)
