@@ -205,6 +205,7 @@ namespace romance
         std::string model;                // empty = server default
         double temperature = -1;          // <0 = server default
         int maxReplyChars = 0;            // 0 = server default
+        bool waitForPlayerLoot = false;   // after a fight, wait until the player has looted too (else only her own loot)
 
         Json ToJson() const;
         static CompanionSettings FromJson(Json const& j);

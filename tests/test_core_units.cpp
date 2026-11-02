@@ -868,6 +868,15 @@ TEST(Prompt, KnowsOtherCompanionsInTheParty)
     CHECK_CONTAINS(sys, "leading the way");
 }
 
+TEST(Types, WaitForPlayerLootSettingRoundTrips)
+{
+    CompanionSettings s;
+    CHECK(!s.waitForPlayerLoot);                                   // off by default
+    CHECK(!CompanionSettings::FromJson(Json::MakeObject()).waitForPlayerLoot);
+    s.waitForPlayerLoot = true;
+    CHECK(CompanionSettings::FromJson(s.ToJson()).waitForPlayerLoot);
+}
+
 TEST(Prompt, KnowsWhoSheWalksBehind)
 {
     PersonalityProfile p;

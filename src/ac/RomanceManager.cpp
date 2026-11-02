@@ -925,6 +925,8 @@ namespace romance::ac
             Player* bot = ObjectAccessor::FindConnectedPlayer(PlayerGuid(uint32(key.companion)));
             if (!owner || !bot || !owner->IsInWorld() || !bot->IsInWorld())
                 continue;
+            if (auto st = _service->ActiveSettings(key))
+                _control->SetWaitForPlayerLoot(bot->GetGUID(), st->waitForPlayerLoot);
             std::string notice = _control->Poll(owner, bot, now);
             if (!notice.empty())
                 _service->OnGameEvent(key, { GameEventType::CompanionNotice, notice, 2, now }, now);
@@ -1506,6 +1508,17 @@ namespace romance::ac
             p.Set("op", "character_sheet");
             p.Set("guid", int64_t(guid));
             Reply(player, msg, p);
+        }
+        else if (op == "set_quest_order")
+        {
+            // the addon's quest order for her: she leads to the first unfinished one ("lead the way")
+            std::vector<uint32> order;
+            if (msg["quests"].IsArray())
+                for (Json const& q : msg["quests"].AsArray())
+                    if (int64_t id = q.AsInt(0); id > 0 && order.size() < 25)
+                        order.push_back(uint32(id));
+            _control->SetQuestOrder(PlayerGuid(guid), order);
+            ack(true);
         }
         else if (op == "apply_preset")
         {

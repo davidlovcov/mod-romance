@@ -145,6 +145,8 @@ namespace romance
 
         SaveResult SetInitialRelationship(CompanionKey const& key, uint32_t ownerAccount, std::string const& companionName,
                                           Stage stage, bool romantic, std::string const& backstory, TimePoint now);
+        // Settings of an active companion (none when she is not active).
+        std::optional<CompanionSettings> ActiveSettings(CompanionKey const& key) const;
         SaveResult SaveSettings(CompanionKey const& key, uint32_t ownerAccount, std::string const& companionName,
                                 CompanionSettings settings, TimePoint now);
         PlayerProfile GetPlayerProfile(uint32_t account, Guid owner, bool* isAccountDefault = nullptr);

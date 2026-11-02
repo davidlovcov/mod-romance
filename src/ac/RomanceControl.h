@@ -65,6 +65,11 @@ namespace romance::ac
 
         bool IsLeading(ObjectGuid bot) const { return _leads.count(bot) > 0; }
 
+        // Quest order chosen in the addon (quest ids, first = next); she leads to the first unfinished one.
+        void SetQuestOrder(ObjectGuid bot, std::vector<uint32> order) { _questOrder[bot] = std::move(order); }
+        // "Wait for me to loot" (companion setting): after a fight she also waits for the player's loot.
+        void SetWaitForPlayerLoot(ObjectGuid bot, bool on) { if (on) _waitLoot.insert(bot); else _waitLoot.erase(bot); }
+
         // The companion she walks behind while that one leads (empty if none).
         ObjectGuid EscortedBy(ObjectGuid bot) const;
 
@@ -109,6 +114,7 @@ namespace romance::ac
             ObjectGuid chase;                         // out of sight: walk closer first (Playerbots won't attack what it can't see)
             std::set<ObjectGuid> unfollowed;          // bots whose Playerbots "follow" is off while they walk closer
             ObjectGuid only;                          // a single attack: just this enemy
+            uint8 maxLevel = 0;                       // grinding: leave enemies far above the group alone
             uint32 seen = 0, tapped = 0, other = 0;   // last search (for the log): enemies around, tagged by others, not wanted
             std::map<ObjectGuid, time_t> toLoot;      // our kills still to loot (quest items!), and since when
             time_t lastLootCmd = 0;
@@ -174,6 +180,10 @@ namespace romance::ac
         std::vector<Player*> OtherCompanions(Player* owner, Player* bot) const;
         // Everyone in the party with `q` in the quest log: the leader, the player, the other companions.
         std::vector<Player*> Questers(Player* owner, Player* bot, Quest const* q) const;
+        std::set<uint32> PartyTargets(Player* owner, Player* bot, Quest const* q) const;
+        bool PartyNeeds(Player* owner, Player* bot, Quest const* q) const;   // someone still has it unfinished
+        // Highest quest level worth doing: the group's average level plus 1..4 (more people, a little higher).
+        int LevelCap(Player* owner, Player* bot) const;
         std::string RoundNext(Player* owner, Player* bot, time_t now);
         void Escort(Player* owner, Player* bot, Lead& lead, time_t now);
         void ReleaseEscort(Lead& lead, Player* owner);
@@ -184,6 +194,8 @@ namespace romance::ac
         std::map<ObjectGuid, Lead> _leads;               // by companion
         std::map<ObjectGuid, Hunt> _hunts;               // by owner
         std::vector<std::pair<ObjectGuid, std::string>> _notices;
+        std::map<ObjectGuid, std::vector<uint32>> _questOrder;   // by companion
+        std::set<ObjectGuid> _waitLoot;
         time_t _lastStep = 0;
         std::map<ObjectGuid, time_t> _lastAutoSell;
         std::map<ObjectGuid, time_t> _lastBagsFull;

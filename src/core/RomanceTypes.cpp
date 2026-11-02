@@ -386,6 +386,7 @@ namespace romance
         j.Set("model", model);
         j.Set("temperature", temperature);
         j.Set("maxReplyChars", maxReplyChars);
+        j.Set("waitForPlayerLoot", waitForPlayerLoot);
         return j;
     }
 
@@ -403,6 +404,7 @@ namespace romance
         if (!std::isfinite(s.temperature) || s.temperature > 2.0)
             s.temperature = -1;
         s.maxReplyChars = ClampInt(j.GetInt("maxReplyChars", 0), 0, 2000);
+        s.waitForPlayerLoot = j.GetBool("waitForPlayerLoot", false);
         return s;
     }
 

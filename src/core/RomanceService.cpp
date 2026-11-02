@@ -584,6 +584,14 @@ namespace romance
         return r;
     }
 
+    std::optional<CompanionSettings> RomanceService::ActiveSettings(CompanionKey const& key) const
+    {
+        Session const* s = Find(key);
+        if (!s)
+            return std::nullopt;
+        return s->rec.settings;
+    }
+
     RomanceService::SaveResult RomanceService::SaveSettings(CompanionKey const& key, uint32_t ownerAccount, std::string const& companionName,
                                                             CompanionSettings st, TimePoint now)
     {

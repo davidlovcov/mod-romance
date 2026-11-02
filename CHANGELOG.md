@@ -3,6 +3,9 @@
 ## Unreleased
 
 ### Added
+- Quest level: "lead the way" and "pick up your quests" leave quests far above the group for later (the group's average level +2, +3 with three, +4 with five or more); grinding leaves such enemies alone too. A quest you name ("lead me to ...") or put first in the addon's quest order is always done.
+- Quest order (addon Character tab): she leads to the first unfinished quest of your order. "Lead me to <quest>" while she leads switches to that quest.
+- Companion setting "Wait for me to loot" (off by default): after a fight she also waits for your loot; off, she only loots her own and goes on.
 - `conf/playerbots-recommended.conf`: the recommended Playerbots settings (only the changed ones) to copy into playerbots.conf, now including `Playerbots.SyncQuestWithPlayer = 0`; mod-romance warns at startup while it is 1.
 - "Lead the way" without a quest: she leads you and the other companions to the quest givers around, everyone picks up what they can, and then she leads you to one of the new quests (kill and item-drop quests first). With nothing to pick up she turns in finished quests or grinds the creatures nearby.
 - "Give me all your money" (gold, copper, coins): she hands over everything she has, up to `Romance.Control.MaxGoldPerRequest`.
@@ -28,6 +31,8 @@
 - mod-romance's own bot commands respect `Playerbots.CommandPrefix` when one is set.
 - The Ollama connection no longer depends on exact header spacing or case in the server's reply (`Transfer-Encoding:chunked`, `CONTENT-LENGTH:  123`); a malformed `Content-Length` is ignored instead of misread.
 - The Character tab lagged when opened (and hitched on every refresh): finding nearby quest givers walked every creature spawn in the world each time. The quest-giving and quest-ending spawns are now indexed once per map, which also speeds up "pick up your quests", "turn in your quests" and quest questions.
+- Restarting "lead the way" when her quest was done but yours (or another companion's) not: she went to turn hers in. A quest counts until everyone in the party who has it is done, so she leads you back to it.
+- She still flew up onto buildings: the height of every step was taken from far above her (roofs). It is now the ground near her own height.
 - Looting: out of combat the companions now loot every corpse of theirs before the next enemy is marked (a new fight interrupts, looting goes on after it), instead of a fixed short pause.
 - A companion walking to a quest giver up on a building flew there in a straight line and got stuck on the roof: movement now only follows real paths and stops as close as it gets; talking range (12 yards) is enough to pick up or turn in.
 - Questing together: when you or the other companions have the quest she leads to, she keeps fighting there until everyone has finished it (also the items each of you still needs), then leads you all to turn it in. Alone she goes as soon as she is done.
