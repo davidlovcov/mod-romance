@@ -1771,12 +1771,15 @@ namespace romance::ac
             return "Nothing. Leading the way is not possible here; you keep following them. Tell them.";
         if (auto cur = _leads.find(bot->GetGUID()); cur != _leads.end())
         {
-            if (cur->second.fetch)
+            // on an errand: a lead to a named quest, or one told to her directly, takes over (the errand can wait;
+            // finished quests are still turned in later). Only a plain "lead the way" to everyone waits for it.
+            if (cur->second.fetch && cmd.arg.empty() && !cmd.direct)
                 return "Nothing yet. You are still on your way to " + cur->second.title + (cur->second.turnIn ? " to turn in quests" : " to pick up quests") +
                        "; you can lead them as soon as you are back. Tell them.";
-            // "lead again" while a lead is paused: continue it
-            if (cmd.arg.empty())
-                return ResumeLead(owner, bot);
+            if (cur->second.fetch)
+                LOG_INFO("module", "[mod-romance] {} drops the errand to {}: told to lead", bot->GetName(), cur->second.title);
+            else if (cmd.arg.empty())
+                return ResumeLead(owner, bot);   // "lead again" while a lead is paused: continue it
         }
         // one companion leads; the others follow the group. Told directly ("Myron, lead the way"), she takes over.
         std::vector<ObjectGuid> others;
@@ -1840,11 +1843,13 @@ namespace romance::ac
                 {
                     GiverInfo const& g = enders.front();
                     bool round = _leads.count(bot->GetGUID()) && _leads[bot->GetGUID()].round;
+                    uint32 then = InterruptedQuest(bot->GetGUID());
                     if (BeginErrand(owner, bot, g.entry, g.name, g.x, g.y, g.z, true, "", false, now))
                     {
                         Lead& r = _leads[bot->GetGUID()];
                         r.group = true;
                         r.round = round;
+                        r.thenQuest = then == pick->GetQuestId() ? 0 : then;
                         return "\"" + pick->GetTitle() + "\" is done, so you lead them to " + g.name + " (about " + std::to_string(int(g.dist)) +
                                " yards " + Direction(bot, g.x, g.y) + ") to turn it in. Tell them.";
                     }
@@ -1857,6 +1862,28 @@ namespace romance::ac
             return ResumeLead(owner, bot);
 
         return BeginQuestLead(owner, bot, pick, now);
+    }
+
+    uint32 CompanionControl::InterruptedQuest(ObjectGuid bot) const
+    {
+        auto it = _leads.find(bot);
+        if (it == _leads.end())
+            return 0;
+        return it->second.fetch ? it->second.thenQuest : it->second.quest;
+    }
+
+    bool CompanionControl::BackToQuest(Player* owner, Player* bot, uint32 questId, std::string const& done, time_t now)
+    {
+        Quest const* q = sObjectMgr->GetQuestTemplate(questId);
+        if (!q || !PartyNeeds(owner, bot, q))
+            return false;
+        LOG_INFO("module", "[mod-romance] {} goes back to the lead to \"{}\"", bot->GetName(), q->GetTitle());
+        std::string said = BeginQuestLead(owner, bot, q, now);
+        auto it = _leads.find(bot->GetGUID());
+        if (it == _leads.end() || it->second.fetch || it->second.quest != questId)
+            return false;   // could not lead there (the errand is still set: the caller finishes it)
+        _notices.push_back({ bot->GetGUID(), done + "Now back to \"" + q->GetTitle() + "\". " + said });
+        return true;
     }
 
     std::string CompanionControl::BeginQuestLead(Player* owner, Player* bot, Quest const* pick, time_t now)
@@ -2060,12 +2087,14 @@ namespace romance::ac
             return who.empty() ? "They couldn't take \"" + q->GetTitle() + "\" from " + giver.name + "."
                                : who + " took \"" + q->GetTitle() + "\".";
         }
+        uint32 then = InterruptedQuest(actor->GetGUID());
         if (!BeginErrand(owner, actor, giver.entry, giver.name, giver.x, giver.y, giver.z, false, "", false, now))
             return "Leading is not possible right now.";
         Lead& l = _leads[actor->GetGUID()];
         l.group = true;   // the others come along and take it too
         l.round = round;
         l.onlyQuest = questId;
+        l.thenQuest = round ? 0 : then;   // a round decides on its own what comes next
         _notices.push_back({ actor->GetGUID(), "They want you all to take \"" + q->GetTitle() + "\" from " + giver.name + " (about " +
                                                    std::to_string(int(giver.dist)) + " yards " + Direction(actor, giver.x, giver.y) +
                                                    "); you lead them there. Say it in a few words." });
@@ -2673,6 +2702,9 @@ namespace romance::ac
                     _notices.push_back({ bot->GetGUID(), done + next });
                     return;
                 }
+                if (lead.thenQuest && BackToQuest(owner, bot, lead.thenQuest,
+                        handed.empty() ? "" : "You turned in " + QuestList(handed) + " at " + lead.title + ". ", now))
+                    return;
                 FinishLead(owner, bot, handed.empty()
                     ? "You reached " + lead.title + " but could not turn anything in there. You are coming back to them; tell them."
                     : "You turned in " + QuestList(handed) + " at " + lead.title + " and are coming back to them. Tell them briefly.");
@@ -2722,6 +2754,9 @@ namespace romance::ac
                     _notices.push_back({ bot->GetGUID(), (all.empty() ? std::string("") : "You picked up " + all + ". ") + said });
                     return;
                 }
+                if (lead.thenQuest && BackToQuest(owner, bot, lead.thenQuest,
+                        all.empty() ? "" : "You picked up " + all + ". ", now))
+                    return;
                 FinishLead(owner, bot, lead.taken.empty()
                     ? "You reached " + lead.title + " but there was no quest left for you. You are coming back to them; tell them."
                     : "You picked up " + all + " and are coming back to them. Tell them briefly.");

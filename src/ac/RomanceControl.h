@@ -162,6 +162,7 @@ namespace romance::ac
             bool round = false;            // a "lead the way" round: after a giver / turn-in she goes on to the next
             bool sell = false;             // errand to a merchant: everyone sells their junk there
             uint32 onlyQuest = 0;          // errand to take exactly this quest (Quests tab: Take)
+            uint32 thenQuest = 0;          // errand that interrupted a lead to this quest: back to it afterwards
             std::set<ObjectGuid> escort;   // other companions walking behind her (their Playerbots follow is off)
             std::set<ObjectGuid> escortSkip;   // told "follow me" by the player: they follow the player, not her
             time_t lastEscort = 0;
@@ -192,6 +193,8 @@ namespace romance::ac
         std::string StopLead(Player* owner, Player* bot);
         std::string ResumeLead(Player* owner, Player* bot);
         std::string BeginQuestLead(Player* owner, Player* bot, Quest const* pick, time_t now);
+        uint32 InterruptedQuest(ObjectGuid bot) const;   // the quest lead an errand of hers would interrupt (0: none)
+        bool BackToQuest(Player* owner, Player* bot, uint32 questId, std::string const& done, time_t now);
         std::string QuestRound(Player* owner, Player* bot, time_t now);
         std::string Grind(Player* owner, Player* bot, time_t now);
         Quest const* NextQuest(Player* owner, Player* bot) const;

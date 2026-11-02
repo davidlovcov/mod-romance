@@ -19,6 +19,8 @@ the behaviour and the cases it handles; check new changes against it before impl
 | "lead me to <quest>" | A single lead to that quest. The quest may be hers, the player's or another companion's. A finished quest: she leads to its quest giver to turn it in. |
 | "lead ..." to everyone in party chat | One companion leads, the others say so and follow her. |
 | "lead ..." to one companion directly (whisper, the addon, or her name in party chat) | She takes over; the old leader becomes a follower. |
+| "lead ..." while she walks to a quest giver / merchant (errand) | Named quest or told directly: the errand is dropped and she leads (finished quests are turned in later). A plain "lead the way" to everyone: she finishes the errand first. |
+| "lead me to <finished quest>" (or Take) while she leads to another quest | She leads to the quest giver, then back to the quest she was leading to (if someone still needs it). |
 | "wait" / "go on" | Pause / continue (the lead is kept). |
 | "stop leading", "follow me" | The lead ends; everyone follows the player. "follow me" to a follower: only she follows the player from then on. |
 
