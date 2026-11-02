@@ -260,6 +260,42 @@ namespace truecompanion
         return c;
     }
 
+    bool IsAddonAnnouncement(std::string const& text)
+    {
+        std::string l = ToLower(Trim(text));
+        // raid target markers in front ("{rt1}", "{star}") are what quest addons put there
+        bool marker = !l.empty() && l[0] == '{' && l.find('}') != std::string::npos && l.find('}') < 12;
+        static char const* const addons[] = { "questie:", "questie :", "[questie]", "<questie>", "questhelper:", "[quest helper]",
+                                              "<dbm>", "[dbm]", "<bigwigs>", "[bigwigs]", "<recount>", "[recount]", "<details!>",
+                                              "<skada>", "[skada]" };
+        for (char const* a : addons)
+            if (l.find(a) != std::string::npos)
+                return true;
+        // "{rt1} 8/8 Lynx Collar for [Unfortunate Measures]" from other quest announcers: marker + count + quest link
+        if (marker && l.find('/') != std::string::npos && l.find('[') != std::string::npos)
+            return true;
+        return false;
+    }
+
+    bool IsBareAcknowledgment(std::string const& text)
+    {
+        std::string l;
+        for (char ch : ToLower(Trim(text)))
+        {
+            unsigned char c = static_cast<unsigned char>(ch);
+            if (std::isalpha(c) || c == ' ' || c >= 0x80)
+                l.push_back(ch);
+        }
+        l = Trim(l);
+        static char const* const words[] = { "ok", "okay", "k", "kk", "okey", "alright", "allright", "cool", "nice", "indeed", "lol", "haha",
+                                             "hahaha", "hehe", "xd", "gg", "np", "mhm", "hm", "hmm", "mh", "ah", "oh", "ah ok", "oh ok",
+                                             "ok cool", "ok nice", "nice one", "lmao", "rofl", "jo", "joa", "aha", "achso", "alles klar" };
+        for (char const* w : words)
+            if (l == w)
+                return true;
+        return false;
+    }
+
     std::string DetectLanguage(std::string const& text)
     {
         std::string l = ToLower(text);

@@ -17,6 +17,7 @@ namespace truecompanion
         constexpr int64_t kSaveIntervalSec = 30;
         constexpr int64_t kOfflineNoticeSec = 120;
         constexpr size_t kMaxRecentEvents = 6;
+        constexpr int kNotableFightKills = 3;   // a fight with fewer enemies gets no remark of its own
         constexpr int64_t kRecentEventWindow = 15 * 60;
 
         double Round1(double v) { return std::round(v * 10.0) / 10.0; }
@@ -912,12 +913,23 @@ namespace truecompanion
         if (cm.route == MessageRoute::Ignore)
             return hr;
 
+        // Another addon's progress line ("Questie: 8/8 Lynx Collar ...") is the player's progress, not words to her.
+        if (IsAddonAnnouncement(text))
+            return hr;
         if (channel == ChatChannel::Party)
         {
             // In party chat she answers when addressed by name, or when the caller picked her as the
             // target of an unaddressed line (see TrueCompanionManager::OnGroupChat).
             if (!s->rec.settings.listenInParty || !(partyTarget || IsAddressed(key, text)))
                 return hr;
+        }
+        // "ok", "indeed", "lol": nothing to answer. A whisper is still taken (shown to the player, kept from the
+        // Playerbots command parser), just without a reply.
+        if (channel != ChatChannel::Addon && IsBareAcknowledgment(text))
+        {
+            if (channel == ChatChannel::Whisper)
+                hr.result = MessageResult::Accepted;
+            return hr;
         }
 
         // The addon's chat tab shows "is thinking..." as soon as a line is sent; clear it when no reply will come.
@@ -1110,7 +1122,7 @@ namespace truecompanion
                     always = true;
                     AddRecentEvent(*s, "a dangerous fight in which " + pname + " nearly fell", now);
                 }
-                else if (ev.value > 0)
+                else if (ev.value >= kNotableFightKills)
                 {
                     text = "You just won a fight together (" + std::to_string(ev.value) + (ev.value == 1 ? " enemy" : " enemies") +
                            (ev.detail.empty() ? "" : ", including " + ev.detail) + ").";
@@ -1118,6 +1130,10 @@ namespace truecompanion
                     AddRecentEvent(*s, "won a fight against " + std::to_string(ev.value) + (ev.value == 1 ? " enemy" : " enemies") +
                                        (ev.detail.empty() ? "" : " (" + ev.detail + ")"), now);
                 }
+                else if (ev.value > 0)
+                    // an everyday fight: remembered for the conversation, but not worth a remark of its own
+                    AddRecentEvent(*s, "won a fight against " + std::to_string(ev.value) + (ev.value == 1 ? " enemy" : " enemies") +
+                                       (ev.detail.empty() ? "" : " (" + ev.detail + ")"), now);
                 s->nearDeathThisFight = false;
                 break;
             case GameEventType::PlayerNearDeath:

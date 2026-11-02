@@ -1299,7 +1299,7 @@ TEST(Acceptance, ElaraCoupleRingRestartRemember)
     h.now += 120;   // past the event-reaction cooldown
     h.svc->OnGameEvent(h.Key(), { GameEventType::CombatStart, "", 0, h.now }, h.now);
     h.cfg.eventReactionChance = 1.0;
-    h.svc->OnGameEvent(h.Key(), { GameEventType::CombatEnd, "Defias Thug", 2, h.now }, h.now);
+    h.svc->OnGameEvent(h.Key(), { GameEventType::CombatEnd, "Defias Thug", 3, h.now }, h.now);   // 3+: worth a remark
     CHECK(h.WaitSpeak(h.Key(), 3));
     h.now += 60;
     GiftItem ring;
@@ -1702,6 +1702,45 @@ TEST(Service, SwitchingTheAiOffDropsRepliesOnTheirWay)
                 return true;
         return false;
     }));
+}
+
+TEST(Service, QuestieLinesAndBareAcknowledgmentsGetNoReply)
+{
+    Harness h;
+    h.Activate(h.Key());
+    size_t calls = h.llm->CallCount();
+    // the player's Questie progress in party chat: not words to her, even as the only companion in the group
+    auto r = h.svc->OnPlayerMessage(h.Key(), "{rt1} Questie: 8/8 Lynx Collar for [Unfortunate Measures]!", ChatChannel::Party, h.ctx,
+                                    h.now, true);
+    CHECK(r.result == TrueCompanionService::MessageResult::NotForUs);
+    // "indeed" needs no answer; a whisper is still taken (kept from Playerbots)
+    r = h.svc->OnPlayerMessage(h.Key(), "Indeed", ChatChannel::Whisper, h.ctx, h.now);
+    CHECK(r.result == TrueCompanionService::MessageResult::Accepted);
+    r = h.svc->OnPlayerMessage(h.Key(), "ok", ChatChannel::Party, h.ctx, h.now, true);
+    CHECK(r.result == TrueCompanionService::MessageResult::NotForUs);
+    h.PumpUntil([](auto const&) { return false; }, 100);
+    CHECK_EQ(h.llm->CallCount(), calls);
+    CHECK(h.Spoken(h.Key()).empty());
+}
+
+TEST(Service, EverydayFightsGetNoRemark)
+{
+    Harness h;
+    h.cfg.eventReactionChance = 1.0;
+    h.cfg.eventReactionCooldownSec = 0;
+    h.Restart();
+    h.Activate(h.Key());
+    h.PumpUntil([](auto const&) { return false; }, 50);
+    size_t calls = h.llm->CallCount();
+    h.svc->OnGameEvent(h.Key(), { GameEventType::CombatStart, "", 0, h.now }, h.now);
+    h.svc->OnGameEvent(h.Key(), { GameEventType::CombatEnd, "Springpaw Lynx", 1, h.now }, h.now);
+    h.PumpUntil([](auto const&) { return false; }, 100);
+    CHECK_EQ(h.llm->CallCount(), calls);
+    // a fight against a group is still worth a word
+    h.llm->QueueReply(ReplyJson("That was a whole pack!"));
+    h.svc->OnGameEvent(h.Key(), { GameEventType::CombatStart, "", 0, h.now }, h.now);
+    h.svc->OnGameEvent(h.Key(), { GameEventType::CombatEnd, "Springpaw Lynx", 4, h.now }, h.now);
+    CHECK(h.WaitSpeak(h.Key()));
 }
 
 TEST(Service, JournalReachesEveryPrompt)

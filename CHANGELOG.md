@@ -32,6 +32,8 @@
 - "Pick up your quests" / "go get your class quest": the companion walks to the nearest quest giver with something for them (e.g. their class trainer), picks the quests up and comes back.
 
 ### Fixed
+- She took your quest counts for hers ("I have six") and answered every Questie progress line in party chat. Lines other addons post for you (Questie and similar) get no reply now, and her own numbers come from the journal.
+- She answered everything: bare acknowledgments ("ok", "indeed", "lol") get no reply, and an everyday fight (one or two enemies) no remark of its own; it still counts as something you did together.
 - Money is spelled out for her ("1 silver 68 copper"), which small models read reliably.
 - Amounts: "give me 1.5 gold" gave 5 gold, "give me -5 gold" gave 5, "give me 1,000 gold" asked for an item called "000 gold", and "sell 0 linen cloth" sold all of them. Amounts that are not whole positive numbers are refused now, and nothing changes.
 - Selling removed the items before the money was paid; at the gold cap (or a trial account's cap) they were gone without payment. The money is checked first; nothing is sold when she can't take it, and the reply says what she really got.

@@ -60,6 +60,13 @@ namespace truecompanion
         std::set<std::string> _commands;
     };
 
+    // Lines other addons post for the player ("{rt1} Questie: 8/8 Lynx Collar for [Unfortunate Measures]!"): the player's
+    // own progress, not words to her. She doesn't answer them (and doesn't take their numbers for her own).
+    bool IsAddonAnnouncement(std::string const& text);
+
+    // A bare acknowledgment ("ok", "indeed", "lol", "nice") that needs no answer.
+    bool IsBareAcknowledgment(std::string const& text);
+
     // Returns "en", "de" or "" (unknown).
     std::string DetectLanguage(std::string const& text);
 

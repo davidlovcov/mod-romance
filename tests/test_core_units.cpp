@@ -795,6 +795,22 @@ TEST(Prompt, FormsOfAddress)
     CHECK_CONTAINS(DialogueContextBuilder::BuildSystemPrompt(in), "term of endearment");
 }
 
+TEST(Text, AddonAnnouncementsAndAcknowledgments)
+{
+    // Questie posts the player's progress in party chat; she answered every line and took the numbers as hers
+    CHECK(IsAddonAnnouncement("{rt1} Questie: 8/8 Lynx Collar for [Unfortunate Measures]!"));
+    CHECK(IsAddonAnnouncement("Questie: 1/1 Solanian's Journal for [Solanian's Belongings]!"));
+    CHECK(IsAddonAnnouncement("{rt1} 3/8 Lynx Collar for [Unfortunate Measures]"));
+    CHECK(!IsAddonAnnouncement("how many lynx collars do you have?"));
+    CHECK(!IsAddonAnnouncement("I have 8/8 collars, what about you?"));
+    CHECK(IsBareAcknowledgment("Indeed"));
+    CHECK(IsBareAcknowledgment("ok!"));
+    CHECK(IsBareAcknowledgment(" lol "));
+    CHECK(!IsBareAcknowledgment("ty for the heal"));
+    CHECK(!IsBareAcknowledgment("yes"));   // may answer her question
+    CHECK(!IsBareAcknowledgment("ok how many do you need?"));
+}
+
 TEST(Text, LanguageDetection)
 {
     CHECK_EQ(DetectLanguage("Hallo, wie geht es dir heute? Ich bin müde."), std::string("de"));
