@@ -46,6 +46,7 @@ namespace truecompanion::ac
         constexpr float kHandOverDistance = 30.0f;   // gold is handed over directly, no trade window
         constexpr time_t kAutoSellCooldown = 60;
         constexpr time_t kBagsFullCooldown = 900;
+        constexpr float kShareRange = 100.0f;   // quest sharing: how far from the holder a companion may be
         constexpr size_t kMaxKnowledgeItems = 30;
         constexpr size_t kMaxKnowledgeSpells = 40;
 
@@ -298,7 +299,7 @@ namespace truecompanion::ac
 
         // Takes `q` from the quest giver `giver` (a creature or game object near her): the same checks and the same
         // AddQuestAndCheckCompletion call as the client's accept, so the giver's scripts run (escort starts, events).
-        // `giver` is null only for a shared quest (no quest giver involved, like the core's own quest sharing).
+        // For a shared quest `giver` is the group member who shares it (as in the core's quest sharing), or null.
         bool AcceptQuest(Player* p, Quest const* q, Object* giver)
         {
             if (!q || p->FindQuestSlot(q->GetQuestId()) < MAX_QUEST_LOG_SIZE || !p->CanTakeQuest(q, false) || !p->CanAddQuest(q, false))
@@ -2303,26 +2304,48 @@ namespace truecompanion::ac
             return "Unknown quest.";
         if (!q->HasFlag(QUEST_FLAGS_SHARABLE))
             return "\"" + q->GetTitle() + "\" can't be shared.";
+        // Like the core's quest sharing: someone must hold the quest (in the quest log, not failed) and be allowed to share
+        // it; the others get it from that person. Without a holder nobody gets anything.
+        auto holds = [&](Player* p)
+        {
+            uint16 slot = p->FindQuestSlot(questId);
+            QuestStatus st = p->GetQuestStatus(questId);
+            return slot < MAX_QUEST_LOG_SIZE && (st == QUEST_STATUS_INCOMPLETE || st == QUEST_STATUS_COMPLETE) && p->CanShareQuest(questId);
+        };
         std::vector<Player*> companions = OtherCompanions(owner, nullptr);
-        Player* holder = nullptr;   // a companion who has it (shares it with the player)
-        std::string got, cannot;
+        Player* holder = holds(owner) ? owner : nullptr;
+        for (Player* m : companions)
+            if (!holder && m->IsAlive() && SameWorld(m, owner) && holds(m))
+                holder = m;
+        if (!holder)
+            return "Nobody in your group has \"" + q->GetTitle() + "\" to share; take it from its quest giver first.";
+        std::string got, cannot, away;
         for (Player* m : companions)
         {
-            if (m->FindQuestSlot(questId) < MAX_QUEST_LOG_SIZE)
+            if (m == holder || m->FindQuestSlot(questId) < MAX_QUEST_LOG_SIZE)
+                continue;
+            // the core shares only with group members on the holder's map; she must also be around
+            if (!SameWorld(m, holder) || !m->IsInMap(holder) || m->GetDistance(holder) > kShareRange)
             {
-                holder = holder ? holder : m;
+                away += (away.empty() ? "" : ", ") + m->GetName();
                 continue;
             }
-            if (CanTakeNow(m, q) && AcceptQuest(m, q, nullptr))   // shared by the group, no quest giver
+            if (m->GetQuestStatus(questId) == QUEST_STATUS_COMPLETE || !CanTakeNow(m, q) || !m->SatisfyQuestStatus(q, false))
+            {
+                cannot += (cannot.empty() ? "" : ", ") + m->GetName();
+                continue;
+            }
+            // shared by the holder, no quest giver (timed quests start their own timer, as with the core's sharing)
+            if (AcceptQuest(m, q, holder))
                 got += (got.empty() ? "" : ", ") + m->GetName();
             else
                 cannot += (cannot.empty() ? "" : ", ") + m->GetName();
         }
-        bool toPlayer = holder && owner->FindQuestSlot(questId) >= MAX_QUEST_LOG_SIZE && owner->CanTakeQuest(q, false);
+        bool toPlayer = holder != owner && owner->FindQuestSlot(questId) >= MAX_QUEST_LOG_SIZE && owner->CanTakeQuest(q, false);
         if (toPlayer)
             _pending.push_back({ holder->GetGUID(), owner->GetGUID(), "share " + QuestLink(q), now, now + 30, false });
-        LOG_INFO("module", "[mod-true-companion] {} shares \"{}\": to {} / you: {} / can't: {}", owner->GetName(), q->GetTitle(), got,
-                 toPlayer ? "yes" : "no", cannot);
+        LOG_INFO("module", "[mod-true-companion] {} shares \"{}\" (holder {}): to {} / you: {} / can't: {} / too far: {}", owner->GetName(),
+                 q->GetTitle(), holder->GetName(), got, toPlayer ? "yes" : "no", cannot, away);
         std::string out = "\"" + q->GetTitle() + "\": ";
         if (!got.empty())
             out += "now also with " + got + ". ";
@@ -2330,7 +2353,9 @@ namespace truecompanion::ac
             out += holder->GetName() + " shares it with you (accept window). ";
         if (!cannot.empty())
             out += cannot + " can't take it (level, class, an earlier quest, full quest log or already done). ";
-        if (got.empty() && !toPlayer && cannot.empty())
+        if (!away.empty())
+            out += away + " too far away to share with. ";
+        if (got.empty() && !toPlayer && cannot.empty() && away.empty())
             out += "everyone who can take it has it already.";
         return out;
     }
