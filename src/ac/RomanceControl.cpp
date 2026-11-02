@@ -706,9 +706,9 @@ namespace romance::ac
 
         // Where to go for `q`: nearest spawn of an unfinished target, else the quest map marker (POI) of an objective.
         bool QuestDestination(Player* bot, Quest const* q, uint32& map, float& x, float& y, float& z, bool& haveZ,
-                              std::vector<std::pair<float, float>> const* avoid = nullptr)
+                              std::vector<std::pair<float, float>> const* avoid = nullptr, std::set<uint32> const* want = nullptr)
         {
-            std::set<uint32> entries = TargetEntries(bot, q);
+            std::set<uint32> entries = want ? *want : TargetEntries(bot, q);
             float best = -1;
             if (!entries.empty())
                 for (auto const& [spawnId, data] : sObjectMgr->GetAllCreatureData())
@@ -1375,20 +1375,38 @@ namespace romance::ac
         else if (h.current)
         {
             ++h.kills;
+            // a corpse of ours (tapped by the group) goes on the loot list
+            if (Creature* dead = current ? current->ToCreature() : nullptr)
+                if (dead->isTappedBy(owner))
+                    h.toLoot[h.current] = now;
             h.current = ObjectGuid::Empty;
-            // A few quiet seconds to loot: Playerbots loots only out of combat, and quest items (Lynx Collars, ...)
-            // are only in the loot. Without this the next enemy was marked at once and nothing was ever looted.
-            h.lootUntil = now + 6;
-            for (Player* b : bots)
-                PlayerbotsBridge::Command(b, owner, "add all loot");
         }
-        if (h.lootUntil > now)
+        // Loot state: out of combat, the bots loot every corpse of ours (quest items like Lynx Collars are only in the
+        // loot) before the next enemy is marked. A new fight ends it; looting goes on after it.
+        if (!h.toLoot.empty())
         {
             bool fighting = false;
             for (Player* b : bots)
                 fighting = fighting || b->IsInCombat();
             if (!fighting)
-                return true;   // looting; an enemy that attacks them ends the pause
+            {
+                for (auto it = h.toLoot.begin(); it != h.toLoot.end();)
+                {
+                    Creature* c = ObjectAccessor::GetCreature(*bots.front(), it->first);
+                    bool done = !c || c->IsAlive() || c->loot.isLooted() || now - it->second > 30;
+                    it = done ? h.toLoot.erase(it) : std::next(it);
+                }
+                if (!h.toLoot.empty())
+                {
+                    if (now - h.lastLootCmd >= 3)
+                    {
+                        h.lastLootCmd = now;
+                        for (Player* b : bots)
+                            PlayerbotsBridge::Command(b, owner, "add all loot");
+                    }
+                    return true;   // still looting
+                }
+            }
         }
 
         Player* anchor = bots.front();
@@ -1480,7 +1498,8 @@ namespace romance::ac
                             h.unfollowed.insert(b->GetGUID());
                         // through Playerbots' own movement (a plain MovePoint is cancelled by its strategies)
                         if (!PlayerbotsBridge::MoveTo(b, owner, next->GetPositionX(), next->GetPositionY(), next->GetPositionZ()))
-                            b->GetMotionMaster()->MovePoint(0, next->GetPositionX(), next->GetPositionY(), next->GetPositionZ());
+                            b->GetMotionMaster()->MovePoint(0, next->GetPositionX(), next->GetPositionY(), next->GetPositionZ(),
+                                                            FORCED_MOVEMENT_NONE, 0.f, 0.f, true, false);
                     }
             }
             return true;
@@ -1743,6 +1762,20 @@ namespace romance::ac
                std::to_string(int(dist)) + " yards away); they follow you. You wait if they fall behind. Tell them where you are going.";
     }
 
+    std::vector<Player*> CompanionControl::Questers(Player* owner, Player* bot, Quest const* q) const
+    {
+        std::vector<Player*> out;
+        auto has = [q](Player* p) { return p && p->IsInWorld() && p->FindQuestSlot(q->GetQuestId()) < MAX_QUEST_LOG_SIZE; };
+        if (has(bot))
+            out.push_back(bot);
+        if (has(owner))
+            out.push_back(owner);
+        for (Player* m : OtherCompanions(owner, bot))
+            if (has(m))
+                out.push_back(m);
+        return out;
+    }
+
     std::vector<Player*> CompanionControl::OtherCompanions(Player* owner, Player* bot) const
     {
         std::vector<Player*> out;
@@ -2000,7 +2033,7 @@ namespace romance::ac
                                        " and come back to them; tell them.");
                 return;
             }
-            if (lead.turnIn && bot->GetDistance2d(lead.x, lead.y) < 5.0f)
+            if (lead.turnIn && bot->GetDistance2d(lead.x, lead.y) < 12.0f)
             {
                 std::vector<Quest const*> handed;
                 for (auto const& [questId, npc] : QuestNpcs(bot, 30.0f, true))
@@ -2049,7 +2082,7 @@ namespace romance::ac
                     : "You turned in " + QuestList(handed) + " at " + lead.title + " and are coming back to them. Tell them briefly.");
                 return;
             }
-            if (bot->GetDistance2d(lead.x, lead.y) < 5.0f)
+            if (bot->GetDistance2d(lead.x, lead.y) < 12.0f)
             {
                 std::vector<Quest const*> taken;
                 size_t limit = (lead.fetchAll || !lead.fetchFilter.empty()) ? 99 : 1;
@@ -2075,6 +2108,15 @@ namespace romance::ac
                                 if (CanTakeNow(m, oq))
                                     m->AddQuestAndCheckCompletion(oq, nullptr);
                     }
+                }
+                if (lead.group)
+                {
+                    // the player gets the new quests shared (if they can take them; if not, she just goes on)
+                    time_t at = now;
+                    for (Quest const* tq : taken)
+                        if (owner->FindQuestSlot(tq->GetQuestId()) >= MAX_QUEST_LOG_SIZE && tq->HasFlag(QUEST_FLAGS_SHARABLE) &&
+                            owner->CanTakeQuest(tq, false))
+                            _pending.push_back({ bot->GetGUID(), owner->GetGUID(), "share " + QuestLink(tq), at++, now + 30, false });
                 }
                 lead.visited.insert(lead.fetchEntry);
                 if (lead.fetchAll)
@@ -2125,7 +2167,18 @@ namespace romance::ac
             FinishLead(owner, bot, "");
             return;
         }
-        if (!lead.fetch && bot->GetQuestStatus(lead.quest) == QUEST_STATUS_COMPLETE)
+        // the quest is done when everyone in the party who has it is done (they keep questing together until then)
+        bool partyDone = !lead.fetch;
+        std::set<uint32> partyTargets;
+        if (!lead.fetch)
+            for (Player* p : Questers(owner, bot, q))
+                if (p->GetQuestStatus(lead.quest) == QUEST_STATUS_INCOMPLETE)
+                {
+                    partyDone = false;
+                    for (uint32 e : TargetEntries(p, q))
+                        partyTargets.insert(e);
+                }
+        if (!lead.fetch && partyDone)
         {
             // walk to the quest ender (if one is around), turn the quest in and come back
             std::string title = lead.title;
@@ -2196,7 +2249,7 @@ namespace romance::ac
                 uint32 map = 0;
                 float x = 0, y = 0, z = 0;
                 bool haveZ = false;
-                if (lead.moves < 4 && QuestDestination(bot, q, map, x, y, z, haveZ, &lead.tried) && haveZ &&
+                if (lead.moves < 4 && QuestDestination(bot, q, map, x, y, z, haveZ, &lead.tried, &partyTargets) && haveZ &&
                     bot->GetDistance2d(x, y) < 400.0f)
                 {
                     ++lead.moves;
@@ -2224,7 +2277,7 @@ namespace romance::ac
         float dist = bot->GetDistance2d(lead.x, lead.y);
         if (!lead.fetch && dist < 25.0f)
         {
-            std::set<uint32> entries = TargetEntries(bot, q);
+            std::set<uint32> entries = partyTargets;   // what she and everyone else still needs
             if (entries.empty())
             {
                 std::string what;
@@ -2286,7 +2339,9 @@ namespace romance::ac
             if (nz <= INVALID_HEIGHT + 1.0f)
                 nz = bot->GetPositionZ();
         }
-        bot->GetMotionMaster()->MovePoint(0, nx, ny, nz);
+        // with a path only: when there is none (a quest giver up on a building) she must not fly there in a straight
+        // line; she goes as close as she can get
+        bot->GetMotionMaster()->MovePoint(0, nx, ny, nz, FORCED_MOVEMENT_NONE, 0.f, 0.f, true, false);
         lead.lastMove = now;
         lead.lastX = bot->GetPositionX();
         lead.lastY = bot->GetPositionY();

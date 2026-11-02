@@ -27,6 +27,10 @@
 - mod-romance's own bot commands respect `Playerbots.CommandPrefix` when one is set.
 - The Ollama connection no longer depends on exact header spacing or case in the server's reply (`Transfer-Encoding:chunked`, `CONTENT-LENGTH:  123`); a malformed `Content-Length` is ignored instead of misread.
 - The Character tab lagged when opened (and hitched on every refresh): finding nearby quest givers walked every creature spawn in the world each time. The quest-giving and quest-ending spawns are now indexed once per map, which also speeds up "pick up your quests", "turn in your quests" and quest questions.
+- Looting: out of combat the companions now loot every corpse of theirs before the next enemy is marked (a new fight interrupts, looting goes on after it), instead of a fixed short pause.
+- A companion walking to a quest giver up on a building flew there in a straight line and got stuck on the roof: movement now only follows real paths and stops as close as it gets; talking range (12 yards) is enough to pick up or turn in.
+- Questing together: when you or the other companions have the quest she leads to, she keeps fighting there until everyone has finished it (also the items each of you still needs), then leads you all to turn it in. Alone she goes as soon as she is done.
+- Quests she picks up during a "lead the way" round are shared with you (when you can take them; otherwise she just goes on). The companions who came along take them directly.
 - A "lead the way" round stopped after the first quest: once it was turned in she went back to following. The round now goes on: the next quests (e.g. the follow-up from the same quest giver) are picked up and she leads you to them.
 - After a quest she led you through, only she turned it in; the companions who came along now walk with her to the quest giver and turn in their finished quests too.
 - A companion walking behind the leading one knows it ("walking behind Sarian, who leads the way") and the Character tab shows it.

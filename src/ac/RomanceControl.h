@@ -110,7 +110,8 @@ namespace romance::ac
             std::set<ObjectGuid> unfollowed;          // bots whose Playerbots "follow" is off while they walk closer
             ObjectGuid only;                          // a single attack: just this enemy
             uint32 seen = 0, tapped = 0, other = 0;   // last search (for the log): enemies around, tagged by others, not wanted
-            time_t lootUntil = 0;                     // after a kill: a few quiet seconds so the bots loot (quest items!)
+            std::map<ObjectGuid, time_t> toLoot;      // our kills still to loot (quest items!), and since when
+            time_t lastLootCmd = 0;
             time_t chaseSince = 0, lastChase = 0;
         };
         // Lead mode: she walks to the quest area (you follow), then hunts the quest mobs there.
@@ -171,6 +172,8 @@ namespace romance::ac
         std::string Grind(Player* owner, Player* bot, time_t now);
         Quest const* NextQuest(Player* owner, Player* bot) const;
         std::vector<Player*> OtherCompanions(Player* owner, Player* bot) const;
+        // Everyone in the party with `q` in the quest log: the leader, the player, the other companions.
+        std::vector<Player*> Questers(Player* owner, Player* bot, Quest const* q) const;
         std::string RoundNext(Player* owner, Player* bot, time_t now);
         void Escort(Player* owner, Player* bot, Lead& lead, time_t now);
         void ReleaseEscort(Lead& lead, Player* owner);
