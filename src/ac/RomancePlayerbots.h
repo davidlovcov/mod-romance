@@ -49,6 +49,8 @@ namespace romance::ac
         // (see CompanionControl); StopLead switches back to following.
         static bool StartLead(Player* bot, Player* master);
         static bool StopLead(Player* bot, Player* master);
+        // Drops the current target and stops auto-attacking (the bot is still in combat if enemies fight back).
+        static bool StopAttack(Player* bot, Player* master);
     };
 }
 

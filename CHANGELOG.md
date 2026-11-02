@@ -25,6 +25,15 @@
 - mod-romance's own bot commands respect `Playerbots.CommandPrefix` when one is set.
 - The Ollama connection no longer depends on exact header spacing or case in the server's reply (`Transfer-Encoding:chunked`, `CONTENT-LENGTH:  123`); a malformed `Content-Length` is ignored instead of misread.
 - The Character tab lagged when opened (and hitched on every refresh): finding nearby quest givers walked every creature spawn in the world each time. The quest-giving and quest-ending spawns are now indexed once per map, which also speeds up "pick up your quests", "turn in your quests" and quest questions.
+- "Springpaw Cub is not in my sight" / "attack rti target: failed": Playerbots refuses to attack what it cannot see (or what it is already attacking). Attack orders now go out only for enemies in line of sight and not twice; when the next enemy is out of sight, the companions walk closer first and skip it after 20 seconds.
+- Lead mode and area clearing ignored quest mobs that count through a kill-credit creature (many "kill N wolves" quests), so she found no enemies at the destination and went back to following. These mobs are found now, also when choosing where to walk.
+- When a quest she is leading you through is finished, she now walks to the quest giver, turns it in and comes back (before: she only said it was done).
+- "Stop attacking" now also stops a single attack ("attack" on one enemy), drops her target and makes her follow again; before it only cancelled "attack all here".
+- "Sell 3 of your linen cloth" sold the whole stack: the amount is respected now, the rest stays in the bag.
+- "Pick up your quests" now goes to every quest giver around (not only one); "pick up a quest" takes the nearest quest only.
+- "Give me 5 copper" is verified now: if the gold does not arrive, she says so and the server log has a line about it (`gold handover failed`).
+- The server version is shown in the startup log and in the addon's Settings tab (`1.1.1-dev` while on develop).
+- Opening the Character tab for the first time still lagged: the quest-giver index is now built at server start.
 - Quests with a choice of rewards always gave the companion the first item. She now picks for herself: gear she can use that upgrades what she wears comes first (in her best armor type: cloth, leather, mail or plate), then other usable gear, then potions and bags, and last things she cannot use. Applies to turn-ins by command, quest sync and fetch errands.
 - Selling an item by name reported the whole stack even if part of it was skipped (e.g. in a trade window); it now reports what was actually sold.
 

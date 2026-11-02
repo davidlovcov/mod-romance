@@ -65,6 +65,9 @@ namespace romance::ac
 
         void Forget(ObjectGuid bot);
 
+        // Builds the quest-giver and kill-credit indexes now (at startup) instead of on the first request.
+        void WarmUp() const;
+
     private:
         struct Pending
         {
@@ -91,6 +94,8 @@ namespace romance::ac
             std::map<ObjectGuid, time_t> lastOrder;   // attack orders are re-sent at most every few seconds
             time_t currentSince = 0;                  // when the current target was marked
             std::set<ObjectGuid> skipped;             // targets nobody could reach (behind walls, ...)
+            ObjectGuid chase;                         // out of sight: walk closer first (Playerbots won't attack what it can't see)
+            time_t chaseSince = 0, lastChase = 0;
         };
         // Lead mode: she walks to the quest area (you follow), then hunts the quest mobs there.
         struct Lead
@@ -113,6 +118,9 @@ namespace romance::ac
             uint32 fetchEntry = 0;
             std::string fetchFilter;       // quest title words, "class" = class quests only
             bool turnIn = false;           // fetch mode, but turn finished quests in at fetchEntry
+            bool fetchAll = false;         // pick up from every giver around (else only one quest)
+            std::set<uint32> visited;      // givers already visited on this errand
+            std::vector<std::string> taken;   // quests picked up so far on this errand
         };
 
         std::string GiveItem(Player* owner, Player* bot, CompanionCommand const& cmd, time_t now);
@@ -128,6 +136,8 @@ namespace romance::ac
         bool HuntStep(Hunt& h, time_t now);           // false = finished
         void LeadStep(Player* owner, Player* bot, Lead& lead, time_t now);
         void FinishLead(Player* owner, Player* bot, std::string const& notice);
+        bool BeginErrand(Player* owner, Player* bot, uint32 entry, std::string const& name, float x, float y, float z, bool turnIn,
+                         std::string const& filter, bool all, time_t now);
         std::string StartLead(Player* owner, Player* bot, CompanionCommand const& cmd, time_t now);
         std::string StopLead(Player* owner, Player* bot);
         std::string ResumeLead(Player* owner, Player* bot);

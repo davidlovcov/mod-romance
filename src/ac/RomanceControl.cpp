@@ -3,6 +3,7 @@
  */
 
 #include "RomanceControl.h"
+#include "Log.h"
 #include "RomanceGift.h"
 #include "RomancePlayerbots.h"
 
@@ -383,6 +384,36 @@ namespace romance::ac
             return total;
         }
 
+        // Sells exactly `want` units of the given stacks (a part of a stack leaves the rest in the bag).
+        uint64 SellUnits(Player* bot, std::vector<Item*> const& items, uint32 want, uint32* units)
+        {
+            uint64 total = 0;
+            uint32 left = want;
+            for (Item* item : items)
+            {
+                if (!left)
+                    break;
+                ItemTemplate const* proto = item ? item->GetTemplate() : nullptr;
+                if (!proto || !proto->SellPrice || item->IsInTrade())
+                    continue;
+                uint32 take = std::min<uint32>(left, item->GetCount());
+                total += uint64(proto->SellPrice) * take;
+                left -= take;
+                if (take >= item->GetCount())
+                    bot->DestroyItem(item->GetBagSlot(), item->GetSlot(), true);
+                else
+                {
+                    item->SetCount(item->GetCount() - take);
+                    item->SetState(ITEM_CHANGED, bot);
+                }
+            }
+            if (total)
+                bot->ModifyMoney(int32(std::min<uint64>(total, 0x7FFFFFFF)));
+            if (units)
+                *units = want - left;
+            return total;
+        }
+
         std::vector<Item*> JunkItems(Player* bot)
         {
             std::vector<Item*> out;
@@ -460,6 +491,33 @@ namespace romance::ac
             static std::vector<QuestSpawn> const none;
             auto it = byMap.find(mapId);
             return it == byMap.end() ? none : it->second;
+        }
+
+        // Quests that say "kill 8 Sharptooth Wolves" often count a kill-credit creature: the wolves themselves carry
+        // that creature as KillCredit. Maps a credit entry to the creatures that give it (built once, like QuestSpawns).
+        std::vector<uint32> const& CreditMobs(uint32 credit)
+        {
+            static std::unordered_map<uint32, std::vector<uint32>> byCredit;
+            static size_t builtFor = std::numeric_limits<size_t>::max();
+            auto const& all = sObjectMgr->GetAllCreatureData();
+            if (builtFor != all.size())
+            {
+                byCredit.clear();
+                std::set<uint32> seen;
+                for (auto const& [spawnId, data] : all)
+                {
+                    if (!seen.insert(data.id).second)
+                        continue;
+                    if (CreatureTemplate const* ct = sObjectMgr->GetCreatureTemplate(data.id))
+                        for (uint32 c : ct->KillCredit)
+                            if (c && c != data.id)
+                                byCredit[c].push_back(data.id);
+                }
+                builtFor = all.size();
+            }
+            static std::vector<uint32> const none;
+            auto it = byCredit.find(credit);
+            return it == byCredit.end() ? none : it->second;
         }
 
         struct GiverInfo
@@ -602,7 +660,11 @@ namespace romance::ac
             for (uint8 i = 0; i < QUEST_OBJECTIVES_COUNT; ++i)
                 if (q->RequiredNpcOrGo[i] > 0 && q->RequiredNpcOrGoCount[i] &&
                     (slot >= MAX_QUEST_LOG_SIZE || p->GetQuestSlotCounter(slot, i) < q->RequiredNpcOrGoCount[i]))
+                {
                     out.insert(uint32(q->RequiredNpcOrGo[i]));
+                    for (uint32 mob : CreditMobs(uint32(q->RequiredNpcOrGo[i])))
+                        out.insert(mob);
+                }
             return out;
         }
 
@@ -689,6 +751,12 @@ namespace romance::ac
                 }
             return false;
         }
+    }
+
+    void CompanionControl::WarmUp() const
+    {
+        QuestSpawns(0);
+        CreditMobs(0);
     }
 
     // ------------------------------------------------------------------ knowledge
@@ -897,8 +965,15 @@ namespace romance::ac
             return "Nothing yet. They asked for " + Money(amount) + ", but you are too far apart; ask them to come closer.";
         if (amount == 0 || amount > uint64(std::numeric_limits<int32>::max()))
             return "Nothing. That is not an amount you can hand over at once; tell them.";
+        uint64 before = owner->GetMoney();
         if (!owner->ModifyMoney(int32(amount), false))
             return "Nothing. They can't carry any more gold; tell them.";
+        if (uint64(owner->GetMoney()) < before + amount)
+        {
+            LOG_WARN("module", "[mod-romance] gold handover failed: {} had {} copper, asked {}, has {} after", owner->GetName(), before,
+                     amount, owner->GetMoney());
+            return "Nothing. The gold did not arrive; tell them something went wrong.";
+        }
         bot->ModifyMoney(-int32(amount));
         (void)now;
         return "You handed them " + Money(amount) + " (it is in their bags now). You have " + Money(bot->GetMoney()) + " left.";
@@ -961,6 +1036,7 @@ namespace romance::ac
         Cell::VisitObjects(bot, searcher, range);
         Unit* best = nullptr;
         float bestDist = 0;
+        uint32 hidden = 0;
         for (Unit* u : units)
         {
             if (!u->IsAlive() || !bot->IsValidAttackTarget(u) || u->ToPlayer())
@@ -970,13 +1046,20 @@ namespace romance::ac
                          : type ? (c && c->GetCreatureType() == type) : MatchScore(u->GetName(), cmd.arg) > 0;
             if (!match)
                 continue;
-            float d = bot->GetDistance(u) + (bot->IsWithinLOSInMap(u) ? 0.0f : 1000.0f);
+            if (!bot->IsWithinLOSInMap(u))
+            {
+                ++hidden;   // Playerbots refuses to attack what it cannot see
+                continue;
+            }
+            float d = bot->GetDistance(u);
             if (!best || d < bestDist)
             {
                 best = u;
                 bestDist = d;
             }
         }
+        if (!best && hidden)
+            return "Nothing. The enemy is out of your sight; ask them to come closer or tell them you can't see it.";
         if (!best)
             return cmd.arg.empty() ? "Nothing. There is no enemy nearby to attack; tell them."
                                    : "Nothing. They told you to attack \"" + cmd.arg + "\", but there is no such enemy nearby; tell them.";
@@ -1028,11 +1111,20 @@ namespace romance::ac
         uint32 entry = best->proto->ItemId;
         ForEachBagItem(bot, [&](Item* item) { if (item->GetEntry() == entry) items.push_back(item); });
         uint32 n = 0, units = 0;
-        uint64 value = SellItems(bot, items, &n, &units);
+        uint64 value = 0;
+        if (cmd.amount && cmd.amount < best->count)
+        {
+            // "sell 3 of your linen cloth": exactly that many
+            value = SellUnits(bot, items, uint32(cmd.amount), &units);
+            n = units ? 1 : 0;
+        }
+        else
+            value = SellItems(bot, items, &n, &units);
         if (!n)
             return "Nothing. Your " + best->proto->Name1 + " could not be sold right now (it may be in a trade); tell them.";
-        return "You sold your " + best->proto->Name1 + (units > 1 ? " (" + std::to_string(units) + ")" : "") + " to " +
-               vendor->GetName() + " for " + Money(value) + ".";
+        return "You sold " + (units > 1 ? std::to_string(units) + " of your " : std::string("your ")) + best->proto->Name1 + " to " +
+               vendor->GetName() + " for " + Money(value) +
+               (best->count > units ? " (you still have " + std::to_string(best->count - units) + ")." : ".");
     }
 
     std::string CompanionControl::Share(Player* owner, Player* bot, CompanionCommand const& cmd, time_t now)
@@ -1107,12 +1199,18 @@ namespace romance::ac
     std::string CompanionControl::StopAttack(Player* owner, Player* bot)
     {
         auto it = _hunts.find(owner->GetGUID());
-        if (it == _hunts.end() || it->second.forLead)
-            return "You stop attacking new enemies (you were not clearing an area).";
-        if (Group* group = bot->GetGroup())
-            group->SetTargetIcon(kSkullIcon, owner->GetGUID(), ObjectGuid::Empty);
-        _hunts.erase(it);
-        return "You stop clearing the area and don't pick new fights.";
+        bool clearing = it != _hunts.end() && !it->second.forLead;
+        if (clearing)
+        {
+            if (Group* group = bot->GetGroup())
+                group->SetTargetIcon(kSkullIcon, owner->GetGUID(), ObjectGuid::Empty);
+            _hunts.erase(it);
+        }
+        PlayerbotsBridge::StopAttack(bot, owner);
+        if (!_leads.count(bot->GetGUID()))
+            PlayerbotsBridge::Command(bot, owner, "follow");   // back to the player (a leading companion keeps leading)
+        return clearing ? "You stop clearing the area, drop your target and follow them again."
+                        : "You stop attacking, drop your target and follow them again.";
     }
 
     bool CompanionControl::HuntStep(Hunt& h, time_t now)
@@ -1137,6 +1235,8 @@ namespace romance::ac
         {
             if (PlayerbotsBridge::IsHealer(b))
                 return;
+            if (current && (b->GetVictim() == current || !b->IsWithinLOSInMap(current)))
+                return;   // already on it, or Playerbots would answer "attack rti target: failed"
             bool engaged = b->IsInCombat() && current && (b->GetTarget() == current->GetGUID() || b->GetVictim() == current);
             time_t& last = h.lastOrder[b->GetGUID()];
             if (!force && (engaged || now - last < 5))
@@ -1211,6 +1311,31 @@ namespace romance::ac
             h.current = ObjectGuid::Empty;
             return false;
         }
+        if (!anchor->IsWithinLOSInMap(next))
+        {
+            // Out of sight (behind a wall or a hill): walk closer first, give up on it after 20 seconds.
+            if (h.chase != next->GetGUID())
+            {
+                h.chase = next->GetGUID();
+                h.chaseSince = now;
+                h.lastChase = 0;
+            }
+            if (now - h.chaseSince > 20)
+            {
+                h.skipped.insert(next->GetGUID());
+                h.chase = ObjectGuid::Empty;
+                return true;
+            }
+            if (now - h.lastChase >= 3)
+            {
+                h.lastChase = now;
+                for (Player* b : bots)
+                    if (!PlayerbotsBridge::IsHealer(b) && !b->IsInCombat())
+                        b->GetMotionMaster()->MovePoint(0, next->GetPositionX(), next->GetPositionY(), next->GetPositionZ());
+            }
+            return true;
+        }
+        h.chase = ObjectGuid::Empty;
         h.currentSince = now;
         h.current = next->GetGUID();
         current = next;
@@ -1223,7 +1348,12 @@ namespace romance::ac
     std::string CompanionControl::AcceptQuests(Player* owner, Player* bot, CompanionCommand const& cmd, time_t now)
     {
         bool classOnly = cmd.arg == "class";
-        auto offered = QuestNpcs(bot, _cfg.interactRange, false);
+        auto offeredMap = QuestNpcs(bot, _cfg.interactRange, false);
+        // nearest quest giver first ("pick up a quest" takes the nearest one)
+        std::vector<std::pair<uint32, Creature*>> offered(offeredMap.begin(), offeredMap.end());
+        std::stable_sort(offered.begin(), offered.end(),
+                         [bot](auto const& a, auto const& b) { return bot->GetDistance(a.second) < bot->GetDistance(b.second); });
+        size_t limit = (cmd.all || !cmd.arg.empty()) ? 8 : 1;
         std::vector<Quest const*> take;
         std::vector<std::string> cannot;
         for (int pass = 0; pass < 2 && take.empty(); ++pass)
@@ -1244,7 +1374,7 @@ namespace romance::ac
                     continue;
                 }
                 take.push_back(q);
-                if (take.size() >= 8)
+                if (take.size() >= limit)
                     break;
             }
         std::string names;
@@ -1256,40 +1386,35 @@ namespace romance::ac
         std::string refused;
         for (auto const& t : cannot)
             refused += (refused.empty() ? "\"" : ", \"") + t + "\"";
-        if (take.empty())
+
+        // "pick up all your quests": after the ones here, go on to the other quest givers around
+        std::string onward;
+        if (cmd.all || take.empty())
         {
-            // nothing right here: walk to the nearest quest giver in the area that has something for her
             auto givers = AvailableGivers(bot, kAreaRadius, cmd.arg);
             if (!givers.empty() && _cfg.leadMode && PlayerbotsBridge::Available())
             {
                 GiverInfo const& g = givers.front();
-                Lead lead;
-                lead.owner = owner->GetGUID();
-                lead.fetch = true;
-                lead.fetchEntry = g.entry;
-                lead.fetchFilter = cmd.arg;
-                lead.title = g.name;
-                lead.since = now;
-                lead.map = bot->GetMapId();
-                lead.x = g.x;
-                lead.y = g.y;
-                lead.z = g.z;
-                lead.haveZ = true;
-                lead.lastX = bot->GetPositionX();
-                lead.lastY = bot->GetPositionY();
-                if (PlayerbotsBridge::StartLead(bot, owner))
+                if (BeginErrand(owner, bot, g.entry, g.name, g.x, g.y, g.z, false, cmd.arg, cmd.all, now))
                 {
-                    _leads[bot->GetGUID()] = lead;
-                    return "You are going over to " + g.name + " (about " + std::to_string(int(g.dist)) + " yards " +
-                           Direction(bot, g.x, g.y) + ") to pick up " + QuestList(g.quests) + ", then you come back to them. Tell them.";
+                    if (!take.empty())
+                        onward = " Then you walk on to " + g.name + " (about " + std::to_string(int(g.dist)) + " yards " +
+                                 Direction(bot, g.x, g.y) + ") for more: " + QuestList(g.quests) + ", and come back to them.";
+                    else
+                        return "You are going over to " + g.name + " (about " + std::to_string(int(g.dist)) + " yards " +
+                               Direction(bot, g.x, g.y) + ") to pick up " + QuestList(g.quests) +
+                               (cmd.all ? " and the other quests around" : "") + ", then you come back to them. Tell them.";
                 }
             }
+        }
+        if (take.empty())
+        {
             if (!refused.empty())
                 return "Nothing. You cannot take " + refused + " (level, class or an earlier quest missing); tell them.";
             return classOnly ? "Nothing. There is no class quest for you around here right now; tell them."
                              : "Nothing. No quest giver around here has a quest you could take; tell them.";
         }
-        return "You took " + names + " from the quest giver." + (refused.empty() ? "" : " You could not take " + refused + ".");
+        return "You took " + names + " from the quest giver." + (refused.empty() ? "" : " You could not take " + refused + ".") + onward;
     }
 
     std::string CompanionControl::TurnInQuests(Player* owner, Player* bot, CompanionCommand const& cmd, time_t now)
@@ -1496,8 +1621,35 @@ namespace romance::ac
         return was ? "You stopped leading and follow them again." : "You follow them (you were not leading).";
     }
 
+    bool CompanionControl::BeginErrand(Player* owner, Player* bot, uint32 entry, std::string const& name, float x, float y, float z,
+                                       bool turnIn, std::string const& filter, bool all, time_t now)
+    {
+        if (!_cfg.leadMode || !PlayerbotsBridge::Available() || !PlayerbotsBridge::StartLead(bot, owner))
+            return false;
+        Lead lead;
+        lead.owner = owner->GetGUID();
+        lead.fetch = true;
+        lead.turnIn = turnIn;
+        lead.fetchAll = all;
+        lead.fetchEntry = entry;
+        lead.fetchFilter = filter;
+        lead.title = name;
+        lead.since = now;
+        lead.map = bot->GetMapId();
+        lead.x = x;
+        lead.y = y;
+        lead.z = z;
+        lead.haveZ = true;
+        lead.lastX = bot->GetPositionX();
+        lead.lastY = bot->GetPositionY();
+        _leads[bot->GetGUID()] = lead;
+        return true;
+    }
+
     void CompanionControl::FinishLead(Player* owner, Player* bot, std::string const& notice)
     {
+        if (_cfg.debugLogging)
+            LOG_INFO("module", "[mod-romance] {} stops leading: {}", bot->GetName(), notice.empty() ? "(no notice)" : notice);
         _leads.erase(bot->GetGUID());
         auto h = _hunts.find(owner->GetGUID());
         if (h != _hunts.end() && h->second.forLead)
@@ -1543,17 +1695,40 @@ namespace romance::ac
             if (bot->GetDistance2d(lead.x, lead.y) < 5.0f)
             {
                 std::vector<Quest const*> taken;
+                size_t limit = (lead.fetchAll || !lead.fetchFilter.empty()) ? 99 : 1;
                 for (GiverInfo const& g : AvailableGivers(bot, 30.0f, lead.fetchFilter))
                     if (g.entry == lead.fetchEntry)
                         for (Quest const* q : g.quests)
-                            if (CanTakeNow(bot, q))
+                            if (taken.size() < limit && CanTakeNow(bot, q))
                             {
                                 bot->AddQuestAndCheckCompletion(q, nullptr);
                                 taken.push_back(q);
+                                lead.taken.push_back(q->GetTitle());
                             }
-                FinishLead(owner, bot, taken.empty()
+                lead.visited.insert(lead.fetchEntry);
+                if (lead.fetchAll)
+                {
+                    // on to the next quest giver around, if any
+                    for (GiverInfo const& g : AvailableGivers(bot, kAreaRadius, lead.fetchFilter))
+                        if (!lead.visited.count(g.entry))
+                        {
+                            lead.fetchEntry = g.entry;
+                            lead.title = g.name;
+                            lead.x = g.x;
+                            lead.y = g.y;
+                            lead.z = g.z;
+                            lead.since = now;
+                            lead.lastMove = 0;
+                            lead.stuck = 0;
+                            return;
+                        }
+                }
+                std::string all;
+                for (std::string const& t : lead.taken)
+                    all += (all.empty() ? "\"" : ", \"") + t + "\"";
+                FinishLead(owner, bot, lead.taken.empty()
                     ? "You reached " + lead.title + " but there was no quest left for you. You are coming back to them; tell them."
-                    : "You picked up " + QuestList(taken) + " from " + lead.title + " and are coming back to them. Tell them briefly.");
+                    : "You picked up " + all + " and are coming back to them. Tell them briefly.");
                 return;
             }
         }
@@ -1565,7 +1740,24 @@ namespace romance::ac
         }
         if (!lead.fetch && bot->GetQuestStatus(lead.quest) == QUEST_STATUS_COMPLETE)
         {
-            FinishLead(owner, bot, "You finished the objectives of \"" + lead.title + "\" while leading. You follow them again now; "
+            // walk to the quest ender (if one is around), turn the quest in and come back
+            std::string title = lead.title;
+            auto enders = QuestEnders(bot, kAreaRadius, { q });
+            if (!enders.empty())
+            {
+                GiverInfo const& g = enders.front();
+                auto hunt = _hunts.find(owner->GetGUID());
+                if (hunt != _hunts.end() && hunt->second.forLead)
+                    _hunts.erase(hunt);
+                bot->GetMotionMaster()->Clear();
+                if (BeginErrand(owner, bot, g.entry, g.name, g.x, g.y, g.z, true, title, false, now))
+                {
+                    _notices.push_back({ bot->GetGUID(), "You finished \"" + title + "\" while leading and walk to " + g.name +
+                                                             " to turn it in; then you come back to them. Say it in a few words." });
+                    return;
+                }
+            }
+            FinishLead(owner, bot, "You finished the objectives of \"" + title + "\" while leading. You follow them again now; "
                                    "tell them it is done and suggest turning it in.");
             return;
         }

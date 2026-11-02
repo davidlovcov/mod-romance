@@ -29,6 +29,7 @@ namespace romance
 {
     constexpr char const* kAddonPrefix = "ARMN";
     constexpr int kProtocolVersion = 1;
+    constexpr char const* kModuleVersion = "1.1.1-dev";   // bump together with the addon's AR.version at every release
     constexpr size_t kMaxChunkData = 200;          // keeps prefix + header + data well below 255 bytes
     constexpr size_t kMaxInboundMessageBytes = 16 * 1024;
     constexpr size_t kMaxInboundChunks = 96;

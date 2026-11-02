@@ -145,6 +145,35 @@ TEST(Commands, PickUpQuests)
     CHECK(DetectKnowledgeTopics("what quests are available here?") & knowledge::Quests);
 }
 
+TEST(Commands, PickUpOneOrAllQuests)
+{
+    auto all = [](char const* text)
+    {
+        auto c = ParseCompanionCommand(text, "Elara");
+        return c && c->kind == CompanionCommandKind::AcceptQuests && c->all;
+    };
+    CHECK(all("pick up your quests"));
+    CHECK(all("pick up all your quests"));
+    CHECK(all("go get all quests nearby"));
+    CHECK(!all("pick up a quest"));                 // the nearest one
+    CHECK(!all("go get the quest"));
+    CHECK(!all("pick up your quest wolves"));       // a named quest
+    CHECK(!all("pick up the quest Wolves"));
+    CHECK_EQ(Arg("pick up your quest wolves"), std::string("wolves"));
+}
+
+TEST(Commands, SellAmountAndOf)
+{
+    auto c = ParseCompanionCommand("sell 3 of your linen cloth", "Elara");
+    CHECK(c && c->kind == CompanionCommandKind::SellItem);
+    CHECK_EQ(c->amount, uint64_t(3));
+    CHECK_EQ(c->arg, std::string("linen cloth"));
+    auto d = ParseCompanionCommand("sell 5 linen cloth", "Elara");
+    CHECK(d && d->amount == 5 && d->arg == "linen cloth");
+    auto e = ParseCompanionCommand("sell your linen cloth", "Elara");
+    CHECK(e && e->amount == 0 && e->arg == "linen cloth");
+}
+
 TEST(Commands, KnowledgeTopics)
 {
     using namespace knowledge;

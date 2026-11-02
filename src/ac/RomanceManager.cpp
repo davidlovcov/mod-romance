@@ -164,7 +164,8 @@ namespace romance::ac
         _schemaOk = _repo->CheckSchema();
         _enabled = _cfg.enabled && _schemaOk;
         Rebuild();
-        LOG_INFO("module", "[mod-romance] {} | Ollama {} at {} | model {} | Playerbots {}",
+        _control->WarmUp();   // index quest givers now, not on the first Character tab click
+        LOG_INFO("module", "[mod-romance] v{} {} | Ollama {} at {} | model {} | Playerbots {}", kModuleVersion,
                  _enabled ? "enabled" : "DISABLED", _cfg.ollamaEnabled ? "on" : "off", _cfg.ollamaUrl, _cfg.model,
                  PlayerbotsBridge::Available() ? "found" : "NOT found (summoning disabled)");
         if (std::string warn = PlayerbotsBridge::ConfigWarnings(); !warn.empty())
@@ -1279,6 +1280,7 @@ namespace romance::ac
             Json p = Json::MakeObject();
             p.Set("op", "hello");
             p.Set("protocol", kProtocolVersion);
+            p.Set("module", std::string(kModuleVersion));
             p.Set("enabled", _enabled);
             Json f = Json::MakeObject();
             f.Set("ollama", _cfg.ollamaEnabled);

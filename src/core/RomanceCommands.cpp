@@ -347,6 +347,9 @@ namespace romance
             bool turnIn = !accept && StripPrefix(t, { "turn in", "hand in", "complete", "finish", "deliver", "abgeben", "gib ab" });
             if (accept || turnIn)
             {
+                // "pick up all your quests" / "pick up your quests" = everything around; "a quest" / "the quest" = the nearest one
+                bool everything = StartsWith(t, "all ") || StartsWith(t, "every") || t == "everything";
+                bool plural = everything || t.find("quests") != std::string::npos;
                 StripDeterminers(t);
                 bool quest = StripPrefix(t, { "quests", "quest" }) || StripSuffix(t, { "quests", "quest" });
                 if (quest || (turnIn && t.empty()))
@@ -358,6 +361,7 @@ namespace romance
                     StripPrefix(t, { "available", "new" });
                     c.kind = accept ? CompanionCommandKind::AcceptQuests : CompanionCommandKind::TurnInQuests;
                     c.arg = t;
+                    c.all = accept && plural && t.empty();
                     return c;
                 }
             }
@@ -376,6 +380,7 @@ namespace romance
             {
                 c.kind = CompanionCommandKind::SellItem;
                 c.amount = LeadingCount(s);
+                StripPrefix(s, { "of your", "of my", "of the", "of" });
                 StripDeterminers(s);
                 c.arg = s;
             }
