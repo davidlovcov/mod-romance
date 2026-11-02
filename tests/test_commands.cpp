@@ -162,6 +162,19 @@ TEST(Commands, PickUpOneOrAllQuests)
     CHECK_EQ(Arg("pick up your quest wolves"), std::string("wolves"));
 }
 
+TEST(Commands, GiveAllMoney)
+{
+    for (char const* text : { "give me all your money", "Elara, give me all your copper please", "give me all your gold",
+                              "can i have all of your money?", "give me every coin" })
+    {
+        auto c = ParseCompanionCommand(text, "Elara");
+        CHECK(c && c->kind == CompanionCommandKind::GiveGold && c->arg == "all");
+    }
+    auto some = ParseCompanionCommand("give me 5 copper", "Elara");
+    CHECK(some && some->kind == CompanionCommandKind::GiveGold && some->arg.empty() && some->amount == 5);
+    CHECK(Kind("give me all your linen cloth") == CompanionCommandKind::GiveItem);
+}
+
 TEST(Commands, SellAmountAndOf)
 {
     auto c = ParseCompanionCommand("sell 3 of your linen cloth", "Elara");

@@ -53,6 +53,8 @@ namespace romance::ac
         static bool StopAttack(Player* bot, Player* master);
         // Adds / removes Playerbots' non-combat "follow" strategy only (no movement, no "Following" reply).
         static bool SetFollow(Player* bot, Player* master, bool on);
+        // Playerbots' own "go x;y;z" (its movement system, so its strategies don't cancel the walk).
+        static bool MoveTo(Player* bot, Player* master, float x, float y, float z);
     };
 }
 

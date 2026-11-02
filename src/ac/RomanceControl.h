@@ -30,6 +30,7 @@
 #include <vector>
 
 class Player;
+class Unit;
 
 namespace romance::ac
 {
@@ -104,6 +105,7 @@ namespace romance::ac
             ObjectGuid chase;                         // out of sight: walk closer first (Playerbots won't attack what it can't see)
             std::set<ObjectGuid> unfollowed;          // bots whose Playerbots "follow" is off while they walk closer
             ObjectGuid only;                          // a single attack: just this enemy
+            uint32 seen = 0, tapped = 0, other = 0;   // last search (for the log): enemies around, tagged by others, not wanted
             time_t chaseSince = 0, lastChase = 0;
         };
         // Lead mode: she walks to the quest area (you follow), then hunts the quest mobs there.
@@ -130,6 +132,8 @@ namespace romance::ac
             bool fetchAll = false;         // pick up from every giver around (else only one quest)
             std::set<uint32> visited;      // givers already visited on this errand
             std::vector<std::string> taken;   // quests picked up so far on this errand
+            uint32 moves = 0;              // lead: spots tried after one had no free quest mobs
+            std::vector<std::pair<float, float>> tried;
         };
 
         std::string GiveItem(Player* owner, Player* bot, CompanionCommand const& cmd, time_t now);

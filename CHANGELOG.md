@@ -3,6 +3,7 @@
 ## Unreleased
 
 ### Added
+- "Give me all your money" (gold, copper, coins): she hands over everything she has, up to `Romance.Control.MaxGoldPerRequest`.
 - Companions know which quests they could pick up around you (quest givers within ~250 yards, with direction, distance and class-quest marker); ask them or see "Available nearby" on the Character tab.
 - "Pick up your quests" / "go get your class quest": the companion walks to the nearest quest giver with something for them (e.g. their class trainer), picks the quests up and comes back.
 
@@ -25,6 +26,8 @@
 - mod-romance's own bot commands respect `Playerbots.CommandPrefix` when one is set.
 - The Ollama connection no longer depends on exact header spacing or case in the server's reply (`Transfer-Encoding:chunked`, `CONTENT-LENGTH:  123`); a malformed `Content-Length` is ignored instead of misread.
 - The Character tab lagged when opened (and hitched on every refresh): finding nearby quest givers walked every creature spawn in the world each time. The quest-giving and quest-ending spawns are now indexed once per map, which also speeds up "pick up your quests", "turn in your quests" and quest questions.
+- Lead mode still ended when she reached the quest mobs if none of them was free (in busy starting areas they are often tagged by other players or bots): she now leads on to the next spawn spot, up to four times, before giving up. Every lead start and end and every "no target left" is written to the server log with the reason (`[mod-romance] ... stops leading: ...`).
+- Walking closer to an enemy out of sight now goes through Playerbots' own movement ("go"), which its strategies don't cancel.
 - Lead mode dropped back to following right when she reached the enemies (and sometimes right after "lead the way"): the AI's own reply could contain a "follow" action, which was passed to Playerbots. While she leads, runs an errand or clears an area, the AI's movement actions are ignored now; your own "follow me" ends a lead or an area clearing properly.
 - Enemies out of sight: the companions now really walk closer (Playerbots' follow pulled them straight back before), also for a single "attack" on your target; they attack as soon as they see it.
 - An import sent one "memory changed" message per memory, and the addon reloaded its lists for each one ("get_memories: Too many requests" flood). One message per import now.

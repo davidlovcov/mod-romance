@@ -705,7 +705,8 @@ namespace romance::ac
         }
 
         // Where to go for `q`: nearest spawn of an unfinished target, else the quest map marker (POI) of an objective.
-        bool QuestDestination(Player* bot, Quest const* q, uint32& map, float& x, float& y, float& z, bool& haveZ)
+        bool QuestDestination(Player* bot, Quest const* q, uint32& map, float& x, float& y, float& z, bool& haveZ,
+                              std::vector<std::pair<float, float>> const* avoid = nullptr)
         {
             std::set<uint32> entries = TargetEntries(bot, q);
             float best = -1;
@@ -713,6 +714,16 @@ namespace romance::ac
                 for (auto const& [spawnId, data] : sObjectMgr->GetAllCreatureData())
                 {
                     if (data.mapid != bot->GetMapId() || !entries.count(data.id))
+                        continue;
+                    bool tried = false;
+                    if (avoid)
+                        for (auto const& [ax, ay] : *avoid)
+                            if (std::hypot(data.posX - ax, data.posY - ay) < 50.0f)
+                            {
+                                tried = true;
+                                break;
+                            }
+                    if (tried)
                         continue;
                     float d = bot->GetDistance(data.posX, data.posY, data.posZ);
                     if (best < 0 || d < best)
@@ -956,6 +967,16 @@ namespace romance::ac
     std::string CompanionControl::GiveGold(Player* owner, Player* bot, CompanionCommand const& cmd, time_t now)
     {
         uint64 amount = cmd.amount;
+        bool all = cmd.arg == "all";
+        if (all)
+        {
+            // "give me all your money": everything she has, but never more than MaxGoldPerRequest at once
+            amount = bot->GetMoney();
+            if (!amount)
+                return "Nothing. You have no money at all; tell them.";
+            if (_cfg.maxGoldPerRequest && amount > _cfg.maxGoldPerRequest)
+                amount = _cfg.maxGoldPerRequest;
+        }
         if (bot->GetMoney() < amount)
             return "Nothing. They asked for " + Money(amount) + ", but you only have " + Money(bot->GetMoney()) + "; tell them.";
         if (_cfg.maxGoldPerRequest && amount > _cfg.maxGoldPerRequest)
@@ -1347,13 +1368,18 @@ namespace romance::ac
         Cell::VisitObjects(anchor, searcher, h.radius);
         Unit* next = nullptr;
         float bestDist = 0;
+        h.seen = h.tapped = h.other = 0;
         for (Unit* u : units)
         {
             Creature* c = u->ToCreature();
             if (!c || !c->IsAlive() || !anchor->IsValidAttackTarget(c) || c->IsCivilian())
                 continue;
+            ++h.seen;
             if (c->hasLootRecipient() && !c->isTappedBy(owner))
+            {
+                ++h.tapped;
                 continue;   // someone else's fight
+            }
             if (h.skipped.count(c->GetGUID()))
                 continue;
             if (!h.only.IsEmpty())
@@ -1364,7 +1390,10 @@ namespace romance::ac
             else if (!h.entries.empty())
             {
                 if (!h.entries.count(c->GetEntry()))
+                {
+                    ++h.other;
                     continue;
+                }
             }
             else if (h.creatureType)
             {
@@ -1389,6 +1418,8 @@ namespace romance::ac
         if (!next)
         {
             h.current = ObjectGuid::Empty;
+            LOG_INFO("module", "[mod-romance] {}: no target left ({} enemies around, {} tagged by others, {} not wanted, {} skipped, {} killed)",
+                     anchor->GetName(), h.seen, h.tapped, h.other, h.skipped.size(), h.kills);
             return false;
         }
         if (!anchor->IsWithinLOSInMap(next))
@@ -1415,7 +1446,9 @@ namespace romance::ac
                         // Playerbots' "follow" would pull her straight back to the player: off while she walks closer
                         if (PlayerbotsBridge::FollowState(b) == "follow" && PlayerbotsBridge::SetFollow(b, owner, false))
                             h.unfollowed.insert(b->GetGUID());
-                        b->GetMotionMaster()->MovePoint(0, next->GetPositionX(), next->GetPositionY(), next->GetPositionZ());
+                        // through Playerbots' own movement (a plain MovePoint is cancelled by its strategies)
+                        if (!PlayerbotsBridge::MoveTo(b, owner, next->GetPositionX(), next->GetPositionY(), next->GetPositionZ()))
+                            b->GetMotionMaster()->MovePoint(0, next->GetPositionX(), next->GetPositionY(), next->GetPositionZ());
                     }
             }
             return true;
@@ -1675,6 +1708,8 @@ namespace romance::ac
         lead.lastY = bot->GetPositionY();
         float dist = bot->GetDistance2d(lead.x, lead.y);
         _leads[bot->GetGUID()] = lead;
+        LOG_INFO("module", "[mod-romance] {} leads to \"{}\": {} yards, {} target kinds, {}", bot->GetName(), pick->GetTitle(), int(dist),
+                 TargetEntries(bot, pick).size(), lead.haveZ ? "nearest spawn" : "quest map marker");
         LeadStep(owner, bot, _leads[bot->GetGUID()], now);
         std::string where = TargetEntries(bot, pick).empty() ? "the area of" : "where the targets of";
         return "You took the lead and are walking to " + where + " your quest \"" + pick->GetTitle() + "\" (about " +
@@ -1699,6 +1734,8 @@ namespace romance::ac
     std::string CompanionControl::StopLead(Player* owner, Player* bot)
     {
         bool was = _leads.erase(bot->GetGUID()) > 0;
+        if (was)
+            LOG_INFO("module", "[mod-romance] {} stops leading: told to (stop leading / follow me)", bot->GetName());
         auto h = _hunts.find(owner->GetGUID());
         if (h != _hunts.end() && h->second.forLead)
         {
@@ -1737,8 +1774,7 @@ namespace romance::ac
 
     void CompanionControl::FinishLead(Player* owner, Player* bot, std::string const& notice)
     {
-        if (_cfg.debugLogging)
-            LOG_INFO("module", "[mod-romance] {} stops leading: {}", bot->GetName(), notice.empty() ? "(no notice)" : notice);
+        LOG_INFO("module", "[mod-romance] {} stops leading: {}", bot->GetName(), notice.empty() ? "(quest gone from her log)" : notice);
         _leads.erase(bot->GetGUID());
         auto h = _hunts.find(owner->GetGUID());
         if (h != _hunts.end() && h->second.forLead)
@@ -1892,8 +1928,34 @@ namespace romance::ac
         {
             auto h = _hunts.find(owner->GetGUID());
             if (h == _hunts.end() || !h->second.forLead)
+            {
+                // nothing free here (tagged by other players / bots, or killed): try another spawn spot nearby first
+                lead.tried.push_back({ bot->GetPositionX(), bot->GetPositionY() });
+                uint32 map = 0;
+                float x = 0, y = 0, z = 0;
+                bool haveZ = false;
+                if (lead.moves < 4 && QuestDestination(bot, q, map, x, y, z, haveZ, &lead.tried) && haveZ &&
+                    bot->GetDistance2d(x, y) < 400.0f)
+                {
+                    ++lead.moves;
+                    lead.hunting = false;
+                    lead.x = x;
+                    lead.y = y;
+                    lead.z = z;
+                    lead.haveZ = true;
+                    lead.lastMove = 0;
+                    lead.stuck = 0;
+                    lead.lastX = bot->GetPositionX();
+                    lead.lastY = bot->GetPositionY();
+                    LOG_INFO("module", "[mod-romance] {}: no free quest mobs here, moving on ({} yards, try {})", bot->GetName(),
+                             int(bot->GetDistance2d(x, y)), lead.moves);
+                    _notices.push_back({ bot->GetGUID(), "There are no free creatures for \"" + lead.title + "\" here right now; you "
+                                                             "lead them on to another spot nearby. Say it in a few words." });
+                    return;
+                }
                 FinishLead(owner, bot, "You reached the area of \"" + lead.title + "\" but found no more of the creatures you need "
                                        "right now. You follow them again; tell them and suggest waiting for them to come back.");
+            }
             return;
         }
 

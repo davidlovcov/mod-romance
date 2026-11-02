@@ -4,6 +4,8 @@
 
 #include "RomancePlayerbots.h"
 
+#include <cstdio>
+
 #include "Player.h"
 #include "SharedDefines.h"
 #include "WorldSession.h"
@@ -193,6 +195,17 @@ namespace romance::ac
         ai->HandleCommand(CHAT_MSG_WHISPER, Cmd(on ? "nc +follow" : "nc -follow"), master);
         return true;
     }
+
+    bool PlayerbotsBridge::MoveTo(Player* bot, Player* master, float x, float y, float z)
+    {
+        PlayerbotAI* ai = bot ? GET_PLAYERBOT_AI(bot) : nullptr;
+        if (!ai || !ai->IsBotAI() || ai->GetMaster() != master)
+            return false;
+        char buf[96];
+        std::snprintf(buf, sizeof(buf), "go %.1f;%.1f;%.1f", x, y, z);
+        ai->HandleCommand(CHAT_MSG_WHISPER, Cmd(buf), master);
+        return true;
+    }
 #else
     bool PlayerbotsBridge::Available() { return false; }
     std::string PlayerbotsBridge::ConfigWarnings() { return ""; }
@@ -212,5 +225,6 @@ namespace romance::ac
     bool PlayerbotsBridge::StopLead(Player*, Player*) { return false; }
     bool PlayerbotsBridge::StopAttack(Player*, Player*) { return false; }
     bool PlayerbotsBridge::SetFollow(Player*, Player*, bool) { return false; }
+    bool PlayerbotsBridge::MoveTo(Player*, Player*, float, float, float) { return false; }
 #endif
 }

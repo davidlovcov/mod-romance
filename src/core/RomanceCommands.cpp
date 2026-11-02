@@ -427,6 +427,19 @@ namespace romance
         if (give)
         {
             StripSuffix(s, { "please", "if you have it", "if you have some", "if you have any", "if you can" });
+            // "give me all your money / gold / copper"
+            {
+                std::string t = s;
+                bool everything = StripPrefix(t, { "all of your", "all your", "all of the", "all the", "all", "every" });
+                StripPrefix(t, { "single", "last" });
+                if (everything && (t == "money" || t == "gold" || t == "copper" || t == "silver" || t == "coins" ||
+                                   t == "geld" || t == "your money" || t == "of your money" || t == "coin" || t == "piece of gold"))
+                {
+                    c.kind = CompanionCommandKind::GiveGold;
+                    c.arg = "all";
+                    return c;
+                }
+            }
             uint64_t copper = ParseMoney(s);
             if (copper > 0)
             {
