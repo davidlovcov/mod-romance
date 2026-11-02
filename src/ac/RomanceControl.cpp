@@ -2060,6 +2060,9 @@ namespace romance::ac
                 }
         if (!found)
             return "No quest giver around here offers \"" + q->GetTitle() + "\".";
+        // taken on purpose: no longer ignored (the addon drops it from its list too)
+        if (auto ig = _ignored.find(owner->GetGUID()); ig != _ignored.end())
+            ig->second.erase(questId);
         // who goes: the companion leading now, else the one selected in the addon, else the first who can take it
         Player* actor = nullptr;
         bool round = false;
