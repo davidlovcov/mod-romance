@@ -529,6 +529,61 @@ namespace romance::ac
             std::vector<Quest const*> quests;
         };
 
+        // Merchants (spawned creatures with the vendor flag), grouped by map; built once like QuestSpawns.
+        std::vector<QuestSpawn> const& VendorSpawns(uint32 mapId)
+        {
+            static std::unordered_map<uint32, std::vector<QuestSpawn>> byMap;
+            static size_t builtFor = std::numeric_limits<size_t>::max();
+            auto const& all = sObjectMgr->GetAllCreatureData();
+            if (builtFor != all.size())
+            {
+                byMap.clear();
+                std::unordered_map<uint32, bool> isVendor;
+                for (auto const& [spawnId, data] : all)
+                {
+                    auto it = isVendor.find(data.id);
+                    if (it == isVendor.end())
+                    {
+                        CreatureTemplate const* ct = sObjectMgr->GetCreatureTemplate(data.id);
+                        it = isVendor.emplace(data.id, ct && (ct->npcflag & UNIT_NPC_FLAG_VENDOR)).first;
+                    }
+                    if (it->second)
+                        byMap[data.mapid].push_back({ data.id, data.posX, data.posY, data.posZ });
+                }
+                builtFor = all.size();
+            }
+            static std::vector<QuestSpawn> const none;
+            auto it = byMap.find(mapId);
+            return it == byMap.end() ? none : it->second;
+        }
+
+        // The nearest friendly merchant within `radius`.
+        bool NearestVendor(Player* p, float radius, GiverInfo& out)
+        {
+            FactionTemplateEntry const* mine = p->GetFactionTemplateEntry();
+            float best = -1;
+            for (QuestSpawn const& v : VendorSpawns(p->GetMapId()))
+            {
+                float d = p->GetDistance2d(v.posX, v.posY);
+                if (d > radius || (best >= 0 && d >= best))
+                    continue;
+                CreatureTemplate const* ct = sObjectMgr->GetCreatureTemplate(v.id);
+                if (!ct)
+                    continue;
+                if (FactionTemplateEntry const* ft = sFactionTemplateStore.LookupEntry(ct->faction))
+                    if (mine && mine->IsHostileTo(*ft))
+                        continue;
+                best = d;
+                out.entry = v.id;
+                out.name = ct->Name;
+                out.x = v.posX;
+                out.y = v.posY;
+                out.z = v.posZ;
+                out.dist = d;
+            }
+            return best >= 0;
+        }
+
         // Quest givers (spawned creatures) within `radius` that offer quests `p` can take right now; nearest first.
         std::vector<GiverInfo> AvailableGivers(Player* p, float radius, std::string const& filter, int maxLevel = 0)
         {
@@ -770,6 +825,7 @@ namespace romance::ac
     {
         QuestSpawns(0);
         CreditMobs(0);
+        VendorSpawns(0);
     }
 
     // ------------------------------------------------------------------ knowledge
@@ -842,7 +898,7 @@ namespace romance::ac
             for (auto const& [q, slot] : mine)
             {
                 bool theyHave = owner->FindQuestSlot(q->GetQuestId()) < MAX_QUEST_LOG_SIZE;
-                k.push_back("Your quest \"" + q->GetTitle() + "\" (level " + std::to_string(q->GetQuestLevel()) + "): " +
+                k.push_back("Your quest \"" + q->GetTitle() + "\" (level " + std::to_string(q->GetQuestLevel() > 0 ? q->GetQuestLevel() : int(bot->GetLevel())) + "): " +
                             QuestProgress(bot, q, slot) + (theyHave ? " - they have it too" : " - they don't have it"));
             }
             auto givers = AvailableGivers(bot, kAreaRadius, "");
@@ -1806,36 +1862,35 @@ namespace romance::ac
     }
 
     // The quest to lead to: one they share that she can fight for, then any she can fight for, then any unfinished one.
-    // The quest to lead to: the order chosen in the addon first; then one they share that someone can still fight for,
-    // then any to fight for, then any unfinished one. A quest counts while anyone in the party still needs it, and
-    // quests far above the group's level are left for later.
+    // The quest to lead to: the first one in the list (her quest log as the Character tab shows it, or the order chosen
+    // in the addon) that someone in the party still needs and that she can find (creatures to fight or a map marker).
+    // Quests far above the group are skipped unless the player put them in the order.
     Quest const* CompanionControl::NextQuest(Player* owner, Player* bot) const
     {
         auto log = QuestLog(bot);
-        if (auto order = _questOrder.find(bot->GetGUID()); order != _questOrder.end())
+        std::vector<uint32> const* order = nullptr;
+        if (auto it = _questOrder.find(bot->GetGUID()); it != _questOrder.end() && !it->second.empty())
+            order = &it->second;
+        auto rank = [&](Quest const* q)
         {
-            auto rank = [&](Quest const* q)
-            {
-                auto at = std::find(order->second.begin(), order->second.end(), q->GetQuestId());
-                return at == order->second.end() ? order->second.size() : size_t(at - order->second.begin());
-            };
-            std::stable_sort(log.begin(), log.end(), [&](auto const& a, auto const& b) { return rank(a.first) < rank(b.first); });
-            for (auto const& [q, slot] : log)
-                if (rank(q) < order->second.size() && PartyNeeds(owner, bot, q))
-                    return q;   // the player's choice beats everything else (also the level cap)
-        }
+            if (!order)
+                return size_t(0);
+            auto at = std::find(order->begin(), order->end(), q->GetQuestId());
+            return at == order->end() ? order->size() : size_t(at - order->begin());
+        };
+        std::stable_sort(log.begin(), log.end(), [&](auto const& a, auto const& b) { return rank(a.first) < rank(b.first); });
         int cap = LevelCap(owner, bot);
-        for (int pass = 0; pass < 3; ++pass)
-            for (auto const& [q, slot] : log)
-            {
-                if (!PartyNeeds(owner, bot, q) || q->GetQuestLevel() > cap)
-                    continue;
-                if (pass == 0 && owner->FindQuestSlot(q->GetQuestId()) >= MAX_QUEST_LOG_SIZE)
-                    continue;
-                if (pass < 2 && PartyTargets(owner, bot, q).empty())
-                    continue;
-                return q;
-            }
+        for (auto const& [q, slot] : log)
+        {
+            if (!PartyNeeds(owner, bot, q))
+                continue;
+            bool chosen = order && rank(q) < order->size();
+            if (!chosen && q->GetQuestLevel() > cap)
+                continue;
+            if (PartyTargets(owner, bot, q).empty() && !sObjectMgr->GetQuestPOIVector(q->GetQuestId()))
+                continue;   // nothing she could lead them to (e.g. "speak to ...")
+            return q;
+        }
         return nullptr;
     }
 
@@ -1872,72 +1927,129 @@ namespace romance::ac
     // "Lead the way" without a quest: to the quest givers around (everyone picks up), then to the quests; else grind.
     std::string CompanionControl::QuestRound(Player* owner, Player* bot, time_t now)
     {
-        auto givers = AvailableGivers(bot, kAreaRadius, "", LevelCap(owner, bot));
-        if (!givers.empty())
-        {
-            GiverInfo const& g = givers.front();
-            if (BeginErrand(owner, bot, g.entry, g.name, g.x, g.y, g.z, false, "", true, now))
-            {
-                {
-                    Lead& r = _leads[bot->GetGUID()];
-                    r.group = r.round = true;
-                }
-                LOG_INFO("module", "[mod-romance] {} leads to quest giver {} ({} yards) to pick up quests", bot->GetName(), g.name,
-                         int(g.dist));
-                return "You have no quest right now, so you take the lead to " + g.name + " (about " + std::to_string(int(g.dist)) +
-                       " yards " + Direction(bot, g.x, g.y) + ") to pick up quests (" + QuestList(g.quests) +
-                       "), then to the other quest givers around, and then you lead them to the quests. They follow you. Tell them.";
-            }
-        }
-        std::vector<Quest const*> ready;
-        for (auto const& [q, slot] : QuestLog(bot))
-            if (bot->GetQuestStatus(q->GetQuestId()) == QUEST_STATUS_COMPLETE && bot->CanRewardQuest(q, false))
-                ready.push_back(q);
-        if (!ready.empty())
-        {
-            auto enders = QuestEnders(bot, kAreaRadius, ready);
-            if (!enders.empty())
-            {
-                GiverInfo const& g = enders.front();
-                if (BeginErrand(owner, bot, g.entry, g.name, g.x, g.y, g.z, true, "", false, now))
-                {
-                    {
-                    Lead& r = _leads[bot->GetGUID()];
-                    r.group = r.round = true;
-                }
-                    return "You lead them to " + g.name + " (about " + std::to_string(int(g.dist)) + " yards " + Direction(bot, g.x, g.y) +
-                           ") to turn in " + QuestList(g.quests) + "; they follow you. Tell them.";
-                }
-            }
-        }
-        return Grind(owner, bot, now);
+        return RoundNext(owner, bot, now);
     }
 
-    // After a turn-in during a round: more quest givers, else a quest to lead to, else grind.
+    bool CompanionControl::NeedsSelling(Player* owner, Player* bot, time_t now) const
+    {
+        if (auto last = _lastSellTrip.find(bot->GetGUID()); last != _lastSellTrip.end() && now - last->second < 180)
+            return false;   // just was at a merchant
+        std::vector<Player*> all = OtherCompanions(owner, bot);
+        all.push_back(bot);
+        for (Player* p : all)
+        {
+            size_t junk = JunkItems(p).size();
+            if (junk && (p->GetFreeInventorySpace() <= 4 || junk >= 8))
+                return true;
+        }
+        return false;
+    }
+
+    // The next step of a "lead the way" round, in this order: a merchant when bags are full of junk; the next quest
+    // someone still needs (in the player's order); when every quest is done, turning them in (and taking the new ones
+    // at those quest givers); new quests from the givers around; grinding.
     std::string CompanionControl::RoundNext(Player* owner, Player* bot, time_t now)
     {
-        auto givers = AvailableGivers(bot, kAreaRadius, "", LevelCap(owner, bot));
-        if (!givers.empty())
+        auto setRound = [&]()
         {
-            GiverInfo const& g = givers.front();
-            if (BeginErrand(owner, bot, g.entry, g.name, g.x, g.y, g.z, false, "", true, now))
+            Lead& r = _leads[bot->GetGUID()];
+            r.group = r.round = true;
+        };
+        int cap = LevelCap(owner, bot);
+        if (NeedsSelling(owner, bot, now))
+        {
+            GiverInfo v;
+            if (NearestVendor(bot, kAreaRadius, v) && BeginErrand(owner, bot, v.entry, v.name, v.x, v.y, v.z, false, "", false, now))
             {
-                {
-                    Lead& r = _leads[bot->GetGUID()];
-                    r.group = r.round = true;
-                }
-                return "Next you lead them to " + g.name + " (about " + std::to_string(int(g.dist)) + " yards " + Direction(bot, g.x, g.y) +
-                       ") to pick up " + QuestList(g.quests) + ". Say it in a few words.";
+                setRound();
+                _leads[bot->GetGUID()].sell = true;
+                _lastSellTrip[bot->GetGUID()] = now;
+                LOG_INFO("module", "[mod-romance] {} leads to merchant {} ({} yards) to sell junk", bot->GetName(), v.name, int(v.dist));
+                return "Bags are getting full of junk, so you lead them to the merchant " + v.name + " (about " + std::to_string(int(v.dist)) +
+                       " yards " + Direction(bot, v.x, v.y) + ") to sell it first. Say it in a few words.";
             }
         }
         if (Quest const* nq = NextQuest(owner, bot))
         {
             std::string said = BeginQuestLead(owner, bot, nq, now);
             if (said.compare(0, 7, "Nothing") != 0)
+            {
+                setRound();
                 return said;
+            }
         }
-        FinishLead(owner, bot, "");
+        else
+        {
+            std::vector<Quest const*> ready;
+            for (auto const& [q, slot] : QuestLog(bot))
+                if (bot->GetQuestStatus(q->GetQuestId()) == QUEST_STATUS_COMPLETE && bot->CanRewardQuest(q, false))
+                    ready.push_back(q);
+            if (!ready.empty())
+            {
+                auto enders = QuestEnders(bot, kAreaRadius, ready);
+                if (!enders.empty())
+                {
+                    GiverInfo const& g = enders.front();
+                    if (BeginErrand(owner, bot, g.entry, g.name, g.x, g.y, g.z, true, "", false, now))
+                    {
+                        setRound();
+                        LOG_INFO("module", "[mod-romance] {} leads to {} ({} yards) to turn in", bot->GetName(), g.name, int(g.dist));
+                        return "Every quest is done, so you lead them to " + g.name + " (about " + std::to_string(int(g.dist)) + " yards " +
+                               Direction(bot, g.x, g.y) + ") to turn in " + QuestList(g.quests) + " (and take any new quests there). Tell them.";
+                    }
+                }
+            }
+        }
+        auto givers = AvailableGivers(bot, kAreaRadius, "", cap);
+        if (!givers.empty())
+        {
+            GiverInfo const& g = givers.front();
+            if (BeginErrand(owner, bot, g.entry, g.name, g.x, g.y, g.z, false, "", true, now))
+            {
+                setRound();
+                LOG_INFO("module", "[mod-romance] {} leads to quest giver {} ({} yards) to pick up quests", bot->GetName(), g.name, int(g.dist));
+                return "You lead them to " + g.name + " (about " + std::to_string(int(g.dist)) + " yards " + Direction(bot, g.x, g.y) +
+                       ") to pick up quests (" + QuestList(g.quests) + "), then to the other quest givers around, and then to the quests. "
+                       "They follow you. Tell them.";
+            }
+        }
+        if (_leads.count(bot->GetGUID()))
+            FinishLead(owner, bot, "");
         return Grind(owner, bot, now);
+    }
+
+    std::vector<Quest const*> CompanionControl::PickUpAt(Player* owner, Player* bot, uint32 entry, std::string const& filter, size_t limit,
+                                                         bool group, time_t now)
+    {
+        std::vector<Quest const*> taken;
+        int cap = filter.empty() ? LevelCap(owner, bot) : 0;
+        for (GiverInfo const& g : AvailableGivers(bot, 30.0f, filter, cap))
+            if (g.entry == entry)
+                for (Quest const* q : g.quests)
+                    if (taken.size() < limit && CanTakeNow(bot, q))
+                    {
+                        bot->AddQuestAndCheckCompletion(q, nullptr);
+                        taken.push_back(q);
+                    }
+        if (!group)
+            return taken;
+        // the other companions (they came along) take what they can from this quest giver too
+        QuestRelationBounds b = sObjectMgr->GetCreatureQuestRelationBounds(entry);
+        for (Player* m : OtherCompanions(owner, bot))
+        {
+            if (!m->IsAlive() || m->GetMapId() != bot->GetMapId() || m->GetDistance(bot) > 100.0f)
+                continue;
+            for (auto it = b.first; it != b.second; ++it)
+                if (Quest const* oq = sObjectMgr->GetQuestTemplate(it->second))
+                    if (CanTakeNow(m, oq) && (cap <= 0 || oq->GetQuestLevel() <= cap))
+                        m->AddQuestAndCheckCompletion(oq, nullptr);
+        }
+        // the player gets the new quests shared (if they can take them; if not, she just goes on)
+        time_t at = now;
+        for (Quest const* tq : taken)
+            if (owner->FindQuestSlot(tq->GetQuestId()) >= MAX_QUEST_LOG_SIZE && tq->HasFlag(QUEST_FLAGS_SHARABLE) && owner->CanTakeQuest(tq, false))
+                _pending.push_back({ bot->GetGUID(), owner->GetGUID(), "share " + QuestLink(tq), at++, now + 30, false });
+        return taken;
     }
 
     // While she leads, the other companions walk a few yards behind her (Playerbots can only follow the player).
@@ -2098,6 +2210,31 @@ namespace romance::ac
                                        " and come back to them; tell them.");
                 return;
             }
+            if (lead.sell && bot->GetDistance2d(lead.x, lead.y) < 12.0f)
+            {
+                // everyone who came along sells their junk here
+                uint32 items = 0;
+                uint64 value = 0;
+                if (NearbyVendor(bot, _cfg.interactRange))
+                {
+                    std::vector<Player*> sellers = { bot };
+                    for (Player* m : OtherCompanions(owner, bot))
+                        if (m->IsAlive() && m->GetMapId() == bot->GetMapId() && m->GetDistance(bot) < 40.0f)
+                            sellers.push_back(m);
+                    for (Player* p2 : sellers)
+                    {
+                        uint32 n = 0;
+                        value += SellItems(p2, JunkItems(p2), &n);
+                        items += n;
+                    }
+                }
+                LOG_INFO("module", "[mod-romance] {}: sold {} junk items at {}", bot->GetName(), items, lead.title);
+                std::string done = items ? "You all sold your junk (" + std::to_string(items) + " items, " + Money(value) + ") at " +
+                                               lead.title + ". "
+                                         : "";
+                _notices.push_back({ bot->GetGUID(), done + RoundNext(owner, bot, now) });
+                return;
+            }
             if (lead.turnIn && bot->GetDistance2d(lead.x, lead.y) < 12.0f)
             {
                 std::vector<Quest const*> handed;
@@ -2137,7 +2274,10 @@ namespace romance::ac
                 }
                 if (lead.round)
                 {
-                    std::string done = handed.empty() ? "" : "You turned in " + QuestList(handed) + ". ";
+                    // turned in first; then whatever this quest giver has new for them
+                    std::vector<Quest const*> fresh = PickUpAt(owner, bot, lead.fetchEntry, "", 99, true, now);
+                    std::string done = (handed.empty() ? "" : "You turned in " + QuestList(handed) + ". ") +
+                                       (fresh.empty() ? "" : "You took " + QuestList(fresh) + " there. ");
                     std::string next = RoundNext(owner, bot, now);
                     _notices.push_back({ bot->GetGUID(), done + next });
                     return;
@@ -2149,41 +2289,9 @@ namespace romance::ac
             }
             if (bot->GetDistance2d(lead.x, lead.y) < 12.0f)
             {
-                std::vector<Quest const*> taken;
                 size_t limit = (lead.fetchAll || !lead.fetchFilter.empty()) ? 99 : 1;
-                for (GiverInfo const& g : AvailableGivers(bot, 30.0f, lead.fetchFilter,
-                                                          lead.fetchFilter.empty() ? LevelCap(owner, bot) : 0))
-                    if (g.entry == lead.fetchEntry)
-                        for (Quest const* q : g.quests)
-                            if (taken.size() < limit && CanTakeNow(bot, q))
-                            {
-                                bot->AddQuestAndCheckCompletion(q, nullptr);
-                                taken.push_back(q);
-                                lead.taken.push_back(q->GetTitle());
-                            }
-                if (lead.group)
-                {
-                    // the other companions (they came along) take what they can from this giver too
-                    QuestRelationBounds b = sObjectMgr->GetCreatureQuestRelationBounds(lead.fetchEntry);
-                    for (Player* m : OtherCompanions(owner, bot))
-                    {
-                        if (!m->IsAlive() || m->GetMapId() != bot->GetMapId() || m->GetDistance(bot) > 100.0f)
-                            continue;
-                        for (auto it = b.first; it != b.second; ++it)
-                            if (Quest const* oq = sObjectMgr->GetQuestTemplate(it->second))
-                                if (CanTakeNow(m, oq) && oq->GetQuestLevel() <= LevelCap(owner, bot))
-                                    m->AddQuestAndCheckCompletion(oq, nullptr);
-                    }
-                }
-                if (lead.group)
-                {
-                    // the player gets the new quests shared (if they can take them; if not, she just goes on)
-                    time_t at = now;
-                    for (Quest const* tq : taken)
-                        if (owner->FindQuestSlot(tq->GetQuestId()) >= MAX_QUEST_LOG_SIZE && tq->HasFlag(QUEST_FLAGS_SHARABLE) &&
-                            owner->CanTakeQuest(tq, false))
-                            _pending.push_back({ bot->GetGUID(), owner->GetGUID(), "share " + QuestLink(tq), at++, now + 30, false });
-                }
+                for (Quest const* tq : PickUpAt(owner, bot, lead.fetchEntry, lead.fetchFilter, limit, lead.group, now))
+                    lead.taken.push_back(tq->GetTitle());
                 lead.visited.insert(lead.fetchEntry);
                 if (lead.fetchAll)
                 {
@@ -2208,18 +2316,9 @@ namespace romance::ac
                     all += (all.empty() ? "\"" : ", \"") + t + "\"";
                 if (lead.round)
                 {
-                    // all quests picked up: now lead them to one (or grind when there is nothing to do)
-                    if (Quest const* nq = NextQuest(owner, bot))
-                    {
-                        std::string said = BeginQuestLead(owner, bot, nq, now);
-                        if (said.compare(0, 7, "Nothing") != 0)
-                        {
-                            _notices.push_back({ bot->GetGUID(), (all.empty() ? std::string("") : "You picked up " + all + ". ") + said });
-                            return;
-                        }
-                    }
-                    FinishLead(owner, bot, "");
-                    _notices.push_back({ bot->GetGUID(), (all.empty() ? std::string("") : "You picked up " + all + ". ") + Grind(owner, bot, now) });
+                    // all quests picked up: on with the round (the quests, in the player's order)
+                    std::string said = RoundNext(owner, bot, now);
+                    _notices.push_back({ bot->GetGUID(), (all.empty() ? std::string("") : "You picked up " + all + ". ") + said });
                     return;
                 }
                 FinishLead(owner, bot, lead.taken.empty()
@@ -2250,6 +2349,19 @@ namespace romance::ac
             // walk to the quest ender (if one is around), turn the quest in and come back
             std::string title = lead.title;
             bool round = lead.round;
+            if (round)
+            {
+                auto hunt = _hunts.find(owner->GetGUID());
+                if (hunt != _hunts.end() && hunt->second.forLead)
+                {
+                    ReleaseChasers(hunt->second);
+                    _hunts.erase(hunt);
+                }
+                bot->GetMotionMaster()->Clear();
+                std::string next = RoundNext(owner, bot, now);
+                _notices.push_back({ bot->GetGUID(), "You finished \"" + title + "\". " + next });
+                return;
+            }
             auto enders = QuestEnders(bot, kAreaRadius, { q });
             if (!enders.empty())
             {
@@ -2487,11 +2599,11 @@ namespace romance::ac
 
         // bags nearly full
         uint32 freeSlots = bot->GetFreeInventorySpace();
-        if (freeSlots <= _cfg.autoSellFreeSlots && !bot->IsInCombat())
+        if (freeSlots <= std::max<uint32>(_cfg.autoSellFreeSlots, 4) && !bot->IsInCombat())
         {
             Creature* vendor = _cfg.autoSellJunk ? NearbyVendor(bot, _cfg.interactRange) : nullptr;
             std::vector<Item*> junk = vendor ? JunkItems(bot) : std::vector<Item*>();
-            if (vendor && !junk.empty() && now - _lastAutoSell[g] > kAutoSellCooldown)
+            if (vendor && !junk.empty() && freeSlots <= _cfg.autoSellFreeSlots && now - _lastAutoSell[g] > kAutoSellCooldown)
             {
                 _lastAutoSell[g] = now;
                 uint32 n = 0;
@@ -2499,7 +2611,11 @@ namespace romance::ac
                 return "Your bags were almost full, so you sold " + std::to_string(n) + " junk items to " + vendor->GetName() +
                        " for " + Money(value) + ". Mention it briefly.";
             }
-            if (now - _lastBagsFull[g] > kBagsFullCooldown)
+            // while a round is going she takes them to a merchant herself; otherwise she says so
+            bool leading = false;
+            for (auto const& [leader, l] : _leads)
+                leading = leading || (l.owner == owner->GetGUID() && l.round);
+            if (!leading && now - _lastBagsFull[g] > kBagsFullCooldown)
             {
                 _lastBagsFull[g] = now;
                 return freeSlots == 0 ? "Your bags are completely full; you can't pick up anything else. Mention it and suggest visiting a merchant."
@@ -2602,7 +2718,7 @@ namespace romance::ac
             Json qj = Json::MakeObject();
             qj.Set("id", int64_t(q->GetQuestId()));
             qj.Set("title", q->GetTitle());
-            qj.Set("level", int64_t(q->GetQuestLevel()));
+            qj.Set("level", int64_t(q->GetQuestLevel() > 0 ? q->GetQuestLevel() : int(bot->GetLevel())));   // -1 = scales with her level
             qj.Set("progress", QuestProgress(bot, q, slot));
             qj.Set("complete", bot->GetQuestStatus(q->GetQuestId()) == QUEST_STATUS_COMPLETE);
             qj.Set("shared", owner && owner->FindQuestSlot(q->GetQuestId()) < MAX_QUEST_LOG_SIZE);

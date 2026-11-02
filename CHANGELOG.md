@@ -31,6 +31,9 @@
 - mod-romance's own bot commands respect `Playerbots.CommandPrefix` when one is set.
 - The Ollama connection no longer depends on exact header spacing or case in the server's reply (`Transfer-Encoding:chunked`, `CONTENT-LENGTH:  123`); a malformed `Content-Length` is ignored instead of misread.
 - The Character tab lagged when opened (and hitched on every refresh): finding nearby quest givers walked every creature spawn in the world each time. The quest-giving and quest-ending spawns are now indexed once per map, which also speeds up "pick up your quests", "turn in your quests" and quest questions.
+- "Lead the way" round order: every quest first (in the order of her quest log as the Character tab shows it, or your quest order), and only when all are done she leads you to turn them in; at each quest giver she turns in first and then takes the new quests there, then the other quest givers around. Before, she went off to turn in after each quest, and her own priority ignored the list order.
+- During a round she leads everyone to the nearest merchant when bags are filling up with junk (4 or fewer free slots, or 8+ gray items) and all sell there. When she isn't leading, she tells you her bags are almost full (from 4 free slots).
+- Quests that scale with your level showed "[-1]"; they show her level now.
 - Restarting "lead the way" when her quest was done but yours (or another companion's) not: she went to turn hers in. A quest counts until everyone in the party who has it is done, so she leads you back to it.
 - She still flew up onto buildings: the height of every step was taken from far above her (roofs). It is now the ground near her own height.
 - Looting: out of combat the companions now loot every corpse of theirs before the next enemy is marked (a new fight interrupts, looting goes on after it), instead of a fixed short pause.

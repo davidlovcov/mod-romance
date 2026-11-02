@@ -145,6 +145,7 @@ namespace romance::ac
             bool group = false;            // "lead the way" without a quest: the player and the other companions come
                                            // along, everyone picks up quests, then she leads to them (or grinds)
             bool round = false;            // a "lead the way" round: after a giver / turn-in she goes on to the next
+            bool sell = false;             // errand to a merchant: everyone sells their junk there
             std::set<ObjectGuid> escort;   // other companions walking behind her (their Playerbots follow is off)
             time_t lastEscort = 0;
             std::set<uint32> visited;      // givers already visited on this errand
@@ -185,6 +186,11 @@ namespace romance::ac
         // Highest quest level worth doing: the group's average level plus 1..4 (more people, a little higher).
         int LevelCap(Player* owner, Player* bot) const;
         std::string RoundNext(Player* owner, Player* bot, time_t now);
+        // Quests from quest giver `entry` (within talking range) for her, and with `group` for the companions too and
+        // shared with the player.
+        std::vector<Quest const*> PickUpAt(Player* owner, Player* bot, uint32 entry, std::string const& filter, size_t limit, bool group,
+                                           time_t now);
+        bool NeedsSelling(Player* owner, Player* bot, time_t now) const;
         void Escort(Player* owner, Player* bot, Lead& lead, time_t now);
         void ReleaseEscort(Lead& lead, Player* owner);
         void Trade(Player* owner, Player* bot, std::string const& command, time_t now);
@@ -196,6 +202,7 @@ namespace romance::ac
         std::vector<std::pair<ObjectGuid, std::string>> _notices;
         std::map<ObjectGuid, std::vector<uint32>> _questOrder;   // by companion
         std::set<ObjectGuid> _waitLoot;
+        std::map<ObjectGuid, time_t> _lastSellTrip;
         time_t _lastStep = 0;
         std::map<ObjectGuid, time_t> _lastAutoSell;
         std::map<ObjectGuid, time_t> _lastBagsFull;
