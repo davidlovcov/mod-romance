@@ -89,6 +89,9 @@ namespace romance::ac
 
         void Forget(ObjectGuid bot);
 
+        // A companion was called: Playerbots' follow back on (a lead before a restart may have left it off).
+        void OnActivated(Player* owner, Player* bot);
+
         // Builds the quest-giver and kill-credit indexes now (at startup) instead of on the first request.
         void WarmUp() const;
 
@@ -154,6 +157,7 @@ namespace romance::ac
             bool round = false;            // a "lead the way" round: after a giver / turn-in she goes on to the next
             bool sell = false;             // errand to a merchant: everyone sells their junk there
             std::set<ObjectGuid> escort;   // other companions walking behind her (their Playerbots follow is off)
+            std::set<ObjectGuid> escortSkip;   // told "follow me" by the player: they follow the player, not her
             time_t lastEscort = 0;
             std::set<uint32> visited;      // givers already visited on this errand
             std::vector<std::string> taken;   // quests picked up so far on this errand
@@ -185,6 +189,12 @@ namespace romance::ac
         std::string QuestRound(Player* owner, Player* bot, time_t now);
         std::string Grind(Player* owner, Player* bot, time_t now);
         Quest const* NextQuest(Player* owner, Player* bot) const;
+        // Every quest she could lead to now, best first (the group's quest order, the group's quest logs).
+        std::vector<Quest const*> QuestCandidates(Player* owner, Player* bot) const;
+        // Starts a lead to the first candidate that has a known place; "" if none.
+        std::string LeadToNextQuest(Player* owner, Player* bot, time_t now);
+        // In a round: leave `quest` for now (she can't do it / can't get there) and go on with the next step.
+        std::string RoundSkip(Player* owner, Player* bot, uint32 quest, time_t now);
         std::vector<Player*> OtherCompanions(Player* owner, Player* bot) const;
         // Everyone in the party with `q` in the quest log: the leader, the player, the other companions.
         std::vector<Player*> Questers(Player* owner, Player* bot, Quest const* q) const;
@@ -212,6 +222,8 @@ namespace romance::ac
         std::set<uint32> const* Ignored(Player* owner) const;
         std::set<ObjectGuid> _waitLoot;
         std::map<ObjectGuid, time_t> _lastSellTrip;
+        std::map<ObjectGuid, std::set<uint32>> _roundSkip;      // by player: quests left out of this round
+        std::map<ObjectGuid, std::set<uint32>> _roundVisited;   // by player: NPCs already visited in this phase of the round
         time_t _lastStep = 0;
         std::map<ObjectGuid, time_t> _lastAutoSell;
         std::map<ObjectGuid, time_t> _lastBagsFull;

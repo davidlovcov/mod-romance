@@ -1262,6 +1262,7 @@ namespace romance::ac
             return false;
         }
         _trackers.erase(key);
+        _control->OnActivated(owner, bot);
         if (announce)
             _service->OnGameEvent(key, { GameEventType::Summoned, AreaName(owner->GetZoneId()), 0, now }, now);
         Json p = Json::MakeObject();
