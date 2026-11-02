@@ -3,6 +3,7 @@
  */
 
 #include "RomanceControl.h"
+#include "RomanceGift.h"
 #include "RomancePlayerbots.h"
 
 #include "Bag.h"
@@ -253,6 +254,40 @@ namespace romance::ac
             return out;
         }
 
+        // The reward slot a companion takes from a quest that offers a choice of items (0 when there is no choice):
+        // gear that upgrades what she wears and that she can use, in her best armor type, comes first.
+        uint32 BestRewardChoice(Player* bot, Quest const* q)
+        {
+            std::vector<GiftItem> options;
+            for (uint32 i = 0; i < QUEST_REWARD_CHOICES_COUNT; ++i)
+            {
+                GiftItem g;   // entry 0 = empty slot
+                ItemTemplate const* proto = q->RewardChoiceItemId[i] ? sObjectMgr->GetItemTemplate(q->RewardChoiceItemId[i]) : nullptr;
+                if (proto)
+                {
+                    g.entry = proto->ItemId;
+                    g.itemClass = int(proto->Class);
+                    g.itemSubClass = int(proto->SubClass);
+                    g.inventoryType = int(proto->InventoryType);
+                    g.sellPrice = proto->SellPrice;
+                    g.itemLevel = int(proto->ItemLevel);
+                    g.isEquippable = proto->InventoryType != INVTYPE_NON_EQUIP;
+                    if (g.isEquippable)
+                    {
+                        g.usableByCompanion = bot->CanUseItem(proto) == EQUIP_ERR_OK;
+                        uint8 slot = bot->FindEquipSlot(proto, NULL_SLOT, true);
+                        if (slot < EQUIPMENT_SLOT_END)
+                        {
+                            Item* worn = bot->GetItemByPos(INVENTORY_SLOT_BAG_0, slot);
+                            g.equippedItemLevel = worn && worn->GetTemplate() ? int(worn->GetTemplate()->ItemLevel) : -1;
+                        }
+                    }
+                }
+                options.push_back(g);
+            }
+            return uint32(PickQuestReward(options, PreferredArmorTier(int(bot->getClass()), int(bot->GetLevel()))));
+        }
+
         std::vector<std::pair<Quest const*, uint16>> QuestLog(Player* p)
         {
             std::vector<std::pair<Quest const*, uint16>> out;
@@ -325,16 +360,17 @@ namespace romance::ac
         }
 
         // Sells items directly (like the vendor window would): money in, items gone.
-        uint64 SellItems(Player* bot, std::vector<Item*> const& items, uint32* sold)
+        uint64 SellItems(Player* bot, std::vector<Item*> const& items, uint32* sold, uint32* units = nullptr)
         {
             uint64 total = 0;
-            uint32 n = 0;
+            uint32 n = 0, count = 0;
             for (Item* item : items)
             {
                 ItemTemplate const* proto = item ? item->GetTemplate() : nullptr;
                 if (!proto || !proto->SellPrice || item->IsInTrade())
                     continue;
                 total += uint64(proto->SellPrice) * item->GetCount();
+                count += item->GetCount();
                 ++n;
                 bot->DestroyItem(item->GetBagSlot(), item->GetSlot(), true);
             }
@@ -342,6 +378,8 @@ namespace romance::ac
                 bot->ModifyMoney(int32(std::min<uint64>(total, 0x7FFFFFFF)));
             if (sold)
                 *sold = n;
+            if (units)
+                *units = count;
             return total;
         }
 
@@ -989,9 +1027,11 @@ namespace romance::ac
         std::vector<Item*> items;
         uint32 entry = best->proto->ItemId;
         ForEachBagItem(bot, [&](Item* item) { if (item->GetEntry() == entry) items.push_back(item); });
-        uint32 n = 0;
-        uint64 value = SellItems(bot, items, &n);
-        return "You sold your " + best->proto->Name1 + (best->count > 1 ? " (" + std::to_string(best->count) + ")" : "") + " to " +
+        uint32 n = 0, units = 0;
+        uint64 value = SellItems(bot, items, &n, &units);
+        if (!n)
+            return "Nothing. Your " + best->proto->Name1 + " could not be sold right now (it may be in a trade); tell them.";
+        return "You sold your " + best->proto->Name1 + (units > 1 ? " (" + std::to_string(units) + ")" : "") + " to " +
                vendor->GetName() + " for " + Money(value) + ".";
     }
 
@@ -1268,7 +1308,7 @@ namespace romance::ac
                 notReady += (notReady.empty() ? "\"" : ", \"") + q->GetTitle() + "\"";
                 continue;
             }
-            bot->RewardQuest(q, 0, it->second, false);
+            bot->RewardQuest(q, BestRewardChoice(bot, q), it->second, false);
             done += (done.empty() ? "\"" : ", \"") + q->GetTitle() + "\"";
         }
         std::vector<Quest const*> ready;
@@ -1341,7 +1381,7 @@ namespace romance::ac
         auto it = enders.find(questId);
         if (it == enders.end())
             return "";
-        bot->RewardQuest(q, 0, it->second, false);
+        bot->RewardQuest(q, BestRewardChoice(bot, q), it->second, false);
         return "";   // the quest-complete event already makes her comment
     }
 
@@ -1492,7 +1532,7 @@ namespace romance::ac
                         continue;
                     if (!lead.fetchFilter.empty() && MatchScore(q->GetTitle(), lead.fetchFilter) == 0)
                         continue;
-                    bot->RewardQuest(q, 0, npc, false);
+                    bot->RewardQuest(q, BestRewardChoice(bot, q), npc, false);
                     handed.push_back(q);
                 }
                 FinishLead(owner, bot, handed.empty()

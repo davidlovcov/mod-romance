@@ -287,4 +287,73 @@ namespace romance
         g.memorable = g.score >= 35 || g.romantic || g.isRing || item.quality >= 4;
         return g;
     }
+
+    int PreferredArmorTier(int classId, int level)
+    {
+        switch (classId)
+        {
+            case 1:    // warrior
+            case 2:    // paladin
+                return level >= 40 ? 4 : 3;
+            case 6:    // death knight
+                return 4;
+            case 3:    // hunter
+            case 7:    // shaman
+                return level >= 40 ? 3 : 2;
+            case 4:    // rogue
+            case 11:   // druid
+                return 2;
+            default:   // priest, mage, warlock
+                return 1;
+        }
+    }
+
+    namespace
+    {
+        // Cloth..plate for body armor; 0 for cloaks, jewelry, weapons and everything else.
+        int BodyArmorTier(GiftItem const& g)
+        {
+            if (g.itemClass != ITEM_CLASS_ARMOR || g.itemSubClass < 1 || g.itemSubClass > 4)
+                return 0;
+            switch (g.inventoryType)
+            {
+                case 1: case 3: case 5: case 6: case 7: case 8: case 9: case 10: case 20:   // head..hands, robe
+                    return g.itemSubClass;
+                default:
+                    return 0;
+            }
+        }
+    }
+
+    size_t PickQuestReward(std::vector<GiftItem> const& options, int preferredArmorTier)
+    {
+        size_t best = 0;
+        long long bestScore = -1;
+        for (size_t i = 0; i < options.size(); ++i)
+        {
+            GiftItem const& g = options[i];
+            if (!g.entry)
+                continue;
+            long long worth = std::min<long long>(g.sellPrice / 100, 9999);
+            long long score;
+            if (!g.usableByCompanion && g.isEquippable)
+                score = worth;                                         // cannot use it: sell value only
+            else if (g.isEquippable)
+            {
+                long long gain = g.equippedItemLevel < 0 ? g.itemLevel : g.itemLevel - g.equippedItemLevel;
+                score = gain > 0 ? 100000 + gain * 100 : 50000 + worth;   // upgrade / usable but no better
+                int tier = BodyArmorTier(g);
+                if (gain > 0 && tier > 0 && preferredArmorTier > 0 && tier < preferredArmorTier)
+                    score -= 40000;                                    // an upgrade, but not her armor type
+            }
+            else
+                score = 20000 + worth;                                 // potions, bags, trinkets without a slot
+            if (score > bestScore)
+            {
+                bestScore = score;
+                best = i;
+            }
+        }
+        return best;
+    }
 }

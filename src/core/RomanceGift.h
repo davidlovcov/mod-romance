@@ -64,6 +64,15 @@ namespace romance
     private:
         RomanceConfig const& _cfg;
     };
+
+    // Armor type a class wears best: 1 cloth, 2 leather, 3 mail, 4 plate (WoW class ids; mail/plate from level 40).
+    int PreferredArmorTier(int classId, int level);
+
+    // Which of a quest's choose-one rewards the companion should take: an index into `options`
+    // (entry == 0 marks an empty slot, which is never picked; 0 if there is nothing to pick).
+    // Order: gear that upgrades what she wears (her best armor type first), then other usable gear,
+    // then usable non-gear (potions, bags), then things she cannot use (the more valuable the better).
+    size_t PickQuestReward(std::vector<GiftItem> const& options, int preferredArmorTier);
 }
 
 #endif

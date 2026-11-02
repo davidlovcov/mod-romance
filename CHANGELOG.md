@@ -25,6 +25,8 @@
 - mod-romance's own bot commands respect `Playerbots.CommandPrefix` when one is set.
 - The Ollama connection no longer depends on exact header spacing or case in the server's reply (`Transfer-Encoding:chunked`, `CONTENT-LENGTH:  123`); a malformed `Content-Length` is ignored instead of misread.
 - The Character tab lagged when opened (and hitched on every refresh): finding nearby quest givers walked every creature spawn in the world each time. The quest-giving and quest-ending spawns are now indexed once per map, which also speeds up "pick up your quests", "turn in your quests" and quest questions.
+- Quests with a choice of rewards always gave the companion the first item. She now picks for herself: gear she can use that upgrades what she wears comes first (in her best armor type: cloth, leather, mail or plate), then other usable gear, then potions and bags, and last things she cannot use. Applies to turn-ins by command, quest sync and fetch errands.
+- Selling an item by name reported the whole stack even if part of it was skipped (e.g. in a trade window); it now reports what was actually sold.
 
 ### Changed
 - Documentation and config descriptions use neutral wording, since companions can be male or female.

@@ -404,6 +404,66 @@ namespace
     }
 }
 
+TEST(Gift, QuestRewardChoicePrefersUsableUpgradesOfHerArmorType)
+{
+    auto gear = [](uint32_t entry, int sub, int inv, int ilvl, int equipped, bool usable, uint32_t price)
+    {
+        GiftItem g;
+        g.entry = entry;
+        g.itemClass = 4;
+        g.itemSubClass = sub;
+        g.inventoryType = inv;
+        g.itemLevel = ilvl;
+        g.equippedItemLevel = equipped;
+        g.isEquippable = true;
+        g.usableByCompanion = usable;
+        g.sellPrice = price;
+        return g;
+    };
+    GiftItem potion;
+    potion.entry = 9;
+    potion.sellPrice = 5000;
+
+    CHECK_EQ(PreferredArmorTier(8, 60), 1);    // mage: cloth
+    CHECK_EQ(PreferredArmorTier(4, 20), 2);    // rogue: leather
+    CHECK_EQ(PreferredArmorTier(2, 30), 3);    // paladin: mail until 40
+    CHECK_EQ(PreferredArmorTier(2, 40), 4);    // then plate
+    CHECK_EQ(PreferredArmorTier(7, 20), 2);    // shaman: leather until 40
+    CHECK_EQ(PreferredArmorTier(7, 45), 3);    // then mail
+    CHECK_EQ(PreferredArmorTier(6, 10), 4);    // death knight: plate
+
+    CHECK_EQ(PickQuestReward({}, 3), size_t(0));
+
+    // an upgrade beats a potion, which beats a piece she cannot use
+    std::vector<GiftItem> a = { gear(1, 3, 7, 20, 25, false, 90000), potion, gear(3, 3, 7, 30, 25, true, 100) };
+    CHECK_EQ(PickQuestReward(a, 3), size_t(2));
+    a[2].itemLevel = 24;                                   // no longer an upgrade, but still usable gear
+    CHECK_EQ(PickQuestReward(a, 3), size_t(2));            // usable gear still beats the potion
+    a[2].usableByCompanion = false;
+    CHECK_EQ(PickQuestReward(a, 3), size_t(1));            // potion beats gear she cannot use
+
+    // bigger upgrade wins; an empty slot counts as a full upgrade
+    std::vector<GiftItem> b = { gear(1, 3, 5, 30, 25, true, 0), gear(2, 3, 7, 33, 25, true, 0), gear(3, 3, 8, 28, -1, true, 0) };
+    CHECK_EQ(PickQuestReward(b, 3), size_t(2));            // item level 28 into an empty slot: the biggest gain
+    b[2].itemLevel = 5;
+    CHECK_EQ(PickQuestReward(b, 3), size_t(1));            // an empty slot gains only 5 now; the legs (+8) win
+
+
+    // a plate upgrade for a plate wearer beats a bigger cloth upgrade; for a cloth wearer the reverse
+    std::vector<GiftItem> c = { gear(1, 1, 5, 35, 25, true, 0), gear(2, 4, 5, 30, 25, true, 0) };
+    CHECK_EQ(PickQuestReward(c, 4), size_t(1));
+    CHECK_EQ(PickQuestReward(c, 1), size_t(0));
+    // cloaks are cloth for everyone: no armor-type penalty
+    std::vector<GiftItem> d = { gear(1, 1, 16, 35, 25, true, 0), gear(2, 4, 5, 30, 25, true, 0) };
+    CHECK_EQ(PickQuestReward(d, 4), size_t(0));
+
+    // empty slots (entry 0) are never picked, even when they are first
+    std::vector<GiftItem> e = { GiftItem(), potion };
+    CHECK_EQ(PickQuestReward(e, 3), size_t(1));
+    // nothing but empty slots: slot 0
+    CHECK_EQ(PickQuestReward({ GiftItem(), GiftItem() }, 3), size_t(0));
+}
+
 TEST(Gift, CategoriesAndRingMeansMoreToPartner)
 {
     RomanceConfig cfg;
