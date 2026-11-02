@@ -44,6 +44,16 @@ one, in this order:
 Quest givers and turn-in NPCs visited in the current phase are not visited again until a new quest starts, so a
 quest that can't be taken or turned in never causes a loop.
 
+## Quests tab actions
+
+| Action | Behaviour |
+|---|---|
+| Share | Every companion who lacks the quest and can take it gets it; you get it shared (accept window) from a companion who has it. Quests that can't be shared: nothing happens, the tab says so. |
+| Take | The companions who can take the quest take it: right away when its quest giver is within 25 yards, else the leading companion (or the selected one, or the first who can take it) leads everyone there and they take exactly that quest; you get it shared. A running round goes on afterwards. Taking an ignored quest removes it from the ignore list. |
+| Lead | The selected companion leads to that quest now (a finished one: to turn it in). |
+| Ignore | Never picked up or led to. |
+| Abandon | Dropped by every companion (not by you). |
+
 ## Fighting and looting
 
 - At the quest area the group fights the quest creatures (also ones marked "civilian", like Springpaw Cubs).

@@ -1454,7 +1454,8 @@ namespace romance::ac
         }
 
         // ---- the player's group: quest order, ignored quests, abandoning (all companions at once)
-        if (op == "get_group_quests" || op == "set_group_quest_order" || op == "set_ignored_quests" || op == "abandon_quest")
+        if (op == "get_group_quests" || op == "set_group_quest_order" || op == "set_ignored_quests" || op == "abandon_quest" ||
+            op == "share_quest" || op == "take_quest")
         {
             auto ids = [&]()
             {
@@ -1479,6 +1480,15 @@ namespace romance::ac
                 {
                     auto list = ids();
                     _control->SetIgnoredQuests(player->GetGUID(), std::set<uint32>(list.begin(), list.end()));
+                }
+                else if (op == "share_quest" || op == "take_quest")
+                {
+                    int64_t quest = msg.GetInt("quest", 0);
+                    std::string result = quest <= 0 ? "Unknown quest."
+                                         : op == "share_quest"
+                                             ? _control->ShareQuest(player, uint32(quest), now)
+                                             : _control->TakeQuest(player, uint32(quest), PlayerGuid(uint32(msg.GetInt("guid", 0))), now);
+                    p.Set("result", result);
                 }
                 else
                 {

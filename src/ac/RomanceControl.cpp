@@ -1966,6 +1966,113 @@ namespace romance::ac
         return n;
     }
 
+    std::string CompanionControl::ShareQuest(Player* owner, uint32 questId, time_t now)
+    {
+        Quest const* q = sObjectMgr->GetQuestTemplate(questId);
+        if (!q)
+            return "Unknown quest.";
+        if (!q->HasFlag(QUEST_FLAGS_SHARABLE))
+            return "\"" + q->GetTitle() + "\" can't be shared.";
+        std::vector<Player*> companions = OtherCompanions(owner, nullptr);
+        Player* holder = nullptr;   // a companion who has it (shares it with the player)
+        std::string got, cannot;
+        for (Player* m : companions)
+        {
+            if (m->FindQuestSlot(questId) < MAX_QUEST_LOG_SIZE)
+            {
+                holder = holder ? holder : m;
+                continue;
+            }
+            if (CanTakeNow(m, q))
+            {
+                m->AddQuestAndCheckCompletion(q, nullptr);
+                got += (got.empty() ? "" : ", ") + m->GetName();
+            }
+            else
+                cannot += (cannot.empty() ? "" : ", ") + m->GetName();
+        }
+        bool toPlayer = holder && owner->FindQuestSlot(questId) >= MAX_QUEST_LOG_SIZE && owner->CanTakeQuest(q, false);
+        if (toPlayer)
+            _pending.push_back({ holder->GetGUID(), owner->GetGUID(), "share " + QuestLink(q), now, now + 30, false });
+        LOG_INFO("module", "[mod-romance] {} shares \"{}\": to {} / you: {} / can't: {}", owner->GetName(), q->GetTitle(), got,
+                 toPlayer ? "yes" : "no", cannot);
+        std::string out = "\"" + q->GetTitle() + "\": ";
+        if (!got.empty())
+            out += "now also with " + got + ". ";
+        if (toPlayer)
+            out += holder->GetName() + " shares it with you (accept window). ";
+        if (!cannot.empty())
+            out += cannot + " can't take it (level, class, an earlier quest, full quest log or already done). ";
+        if (got.empty() && !toPlayer && cannot.empty())
+            out += "everyone who can take it has it already.";
+        return out;
+    }
+
+    std::string CompanionControl::TakeQuest(Player* owner, uint32 questId, ObjectGuid preferred, time_t now)
+    {
+        Quest const* q = sObjectMgr->GetQuestTemplate(questId);
+        if (!q)
+            return "Unknown quest.";
+        std::vector<Player*> companions = OtherCompanions(owner, nullptr);
+        std::vector<Player*> takers;
+        for (Player* m : companions)
+            if (CanTakeNow(m, q))
+                takers.push_back(m);
+        if (takers.empty())
+            return "None of your companions can take \"" + q->GetTitle() + "\" right now" +
+                   (owner->FindQuestSlot(questId) >= MAX_QUEST_LOG_SIZE && owner->CanTakeQuest(q, false) ? " (you can)." : ".");
+        // the quest giver offering it, nearest to one of them
+        GiverInfo giver;
+        bool found = false;
+        for (Player* m : takers)
+            for (GiverInfo const& g : AvailableGivers(m, kAreaRadius, ""))
+                if (std::find(g.quests.begin(), g.quests.end(), q) != g.quests.end() && (!found || g.dist < giver.dist))
+                {
+                    giver = g;
+                    found = true;
+                }
+        if (!found)
+            return "No quest giver around here offers \"" + q->GetTitle() + "\".";
+        // who goes: the companion leading now, else the one selected in the addon, else the first who can take it
+        Player* actor = nullptr;
+        bool round = false;
+        for (auto const& [g, l] : _leads)
+            if (l.owner == owner->GetGUID() && (!l.fetch || l.group))
+                if (Player* p = ObjectAccessor::FindConnectedPlayer(g))
+                {
+                    actor = p;
+                    round = l.round;
+                }
+        if (!actor)
+            for (Player* m : companions)
+                if (m->GetGUID() == preferred)
+                    actor = m;
+        if (!actor)
+            actor = takers.front();
+        // right here: everyone takes it at once
+        if (actor->GetDistance2d(giver.x, giver.y) < 25.0f)
+        {
+            PickUpAt(owner, actor, giver.entry, "", 1, true, now, questId);
+            std::string who;
+            for (Player* m : takers)
+                if (m->FindQuestSlot(questId) < MAX_QUEST_LOG_SIZE)
+                    who += (who.empty() ? "" : ", ") + m->GetName();
+            return who.empty() ? "They couldn't take \"" + q->GetTitle() + "\" from " + giver.name + "."
+                               : who + " took \"" + q->GetTitle() + "\".";
+        }
+        if (!BeginErrand(owner, actor, giver.entry, giver.name, giver.x, giver.y, giver.z, false, "", false, now))
+            return "Leading is not possible right now.";
+        Lead& l = _leads[actor->GetGUID()];
+        l.group = true;   // the others come along and take it too
+        l.round = round;
+        l.onlyQuest = questId;
+        _notices.push_back({ actor->GetGUID(), "They want you all to take \"" + q->GetTitle() + "\" from " + giver.name + " (about " +
+                                                   std::to_string(int(giver.dist)) + " yards " + Direction(actor, giver.x, giver.y) +
+                                                   "); you lead them there. Say it in a few words." });
+        LOG_INFO("module", "[mod-romance] {} leads to {} to take \"{}\"", actor->GetName(), giver.name, q->GetTitle());
+        return actor->GetName() + " leads you to " + giver.name + " to take \"" + q->GetTitle() + "\".";
+    }
+
     Json CompanionControl::GroupQuests(Player* owner) const
     {
         std::vector<Player*> members = { owner };
@@ -1989,6 +2096,14 @@ namespace romance::ac
                     r.Set("title", q->GetTitle());
                     r.Set("level", int64_t(q->GetQuestLevel() > 0 ? q->GetQuestLevel() : int(owner->GetLevel())));
                     r.Set("ignored", ignored && ignored->count(id));
+                    r.Set("sharable", q->HasFlag(QUEST_FLAGS_SHARABLE));
+                    // who lacks it and could get it shared
+                    Json missing = Json::MakeArray();
+                    for (Player* other : members)
+                        if (other->FindQuestSlot(id) >= MAX_QUEST_LOG_SIZE && !other->GetQuestRewardStatus(id) &&
+                            other->CanTakeQuest(q, false) && other->CanAddQuest(q, false))
+                            missing.Push(other == owner ? std::string("you") : other->GetName());
+                    r.Set("missing", missing);
                     r.Set("who", Json::MakeArray());
                     rows[id] = r;
                     if (std::find(ids.begin(), ids.end(), id) == ids.end())
@@ -2023,6 +2138,13 @@ namespace romance::ac
                         a.Set("classQuest", IsClassQuest(q));
                         a.Set("tooHigh", cap > 0 && q->GetQuestLevel() > cap);
                         a.Set("ignored", ignored && ignored->count(q->GetQuestId()));
+                        Json takers = Json::MakeArray();
+                        for (size_t k = 1; k < members.size(); ++k)
+                            if (CanTakeNow(members[k], q))
+                                takers.Push(members[k]->GetName());
+                        a.Set("takers", takers);
+                        a.Set("you", owner->FindQuestSlot(q->GetQuestId()) >= MAX_QUEST_LOG_SIZE &&
+                                         !owner->GetQuestRewardStatus(q->GetQuestId()) && owner->CanTakeQuest(q, false));
                         available.Push(a);
                     }
         Json j = Json::MakeObject();
@@ -2274,14 +2396,16 @@ namespace romance::ac
     }
 
     std::vector<Quest const*> CompanionControl::PickUpAt(Player* owner, Player* bot, uint32 entry, std::string const& filter, size_t limit,
-                                                         bool group, time_t now)
+                                                         bool group, time_t now, uint32 onlyQuest)
     {
         std::vector<Quest const*> taken;
-        int cap = filter.empty() ? LevelCap(owner, bot) : 0;
-        for (GiverInfo const& g : AvailableGivers(bot, 30.0f, filter, cap, filter.empty() ? Ignored(owner) : nullptr))
+        // one chosen quest (Take): no level cap, not hidden by the ignore list
+        bool chosen = onlyQuest != 0 || !filter.empty();
+        int cap = chosen ? 0 : LevelCap(owner, bot);
+        for (GiverInfo const& g : AvailableGivers(bot, 30.0f, filter, cap, chosen ? nullptr : Ignored(owner)))
             if (g.entry == entry)
                 for (Quest const* q : g.quests)
-                    if (taken.size() < limit && CanTakeNow(bot, q))
+                    if (taken.size() < limit && (!onlyQuest || q->GetQuestId() == onlyQuest) && CanTakeNow(bot, q))
                     {
                         bot->AddQuestAndCheckCompletion(q, nullptr);
                         taken.push_back(q);
@@ -2296,8 +2420,8 @@ namespace romance::ac
                 continue;
             for (auto it = b.first; it != b.second; ++it)
                 if (Quest const* oq = sObjectMgr->GetQuestTemplate(it->second))
-                    if (CanTakeNow(m, oq) && (cap <= 0 || oq->GetQuestLevel() <= cap) &&
-                        !(filter.empty() && Ignored(owner) && Ignored(owner)->count(oq->GetQuestId())))
+                    if ((!onlyQuest || oq->GetQuestId() == onlyQuest) && CanTakeNow(m, oq) && (cap <= 0 || oq->GetQuestLevel() <= cap) &&
+                        !(!chosen && Ignored(owner) && Ignored(owner)->count(oq->GetQuestId())))
                         m->AddQuestAndCheckCompletion(oq, nullptr);
         }
         // the player gets the new quests shared (if they can take them; if not, she just goes on)
@@ -2556,9 +2680,16 @@ namespace romance::ac
             }
             if (bot->GetDistance2d(lead.x, lead.y) < 12.0f)
             {
-                size_t limit = (lead.fetchAll || !lead.fetchFilter.empty()) ? 99 : 1;
-                for (Quest const* tq : PickUpAt(owner, bot, lead.fetchEntry, lead.fetchFilter, limit, lead.group, now))
+                size_t limit = lead.onlyQuest ? 1 : (lead.fetchAll || !lead.fetchFilter.empty()) ? 99 : 1;
+                for (Quest const* tq : PickUpAt(owner, bot, lead.fetchEntry, lead.fetchFilter, limit, lead.group, now, lead.onlyQuest))
                     lead.taken.push_back(tq->GetTitle());
+                if (lead.onlyQuest && lead.taken.empty())
+                {
+                    // the chosen quest: whoever could take it has it now (maybe only the others), or it is gone
+                    Quest const* oq = sObjectMgr->GetQuestTemplate(lead.onlyQuest);
+                    if (oq && !Questers(owner, bot, oq).empty())
+                        lead.taken.push_back(oq->GetTitle());
+                }
                 lead.visited.insert(lead.fetchEntry);
                 if (lead.round)
                     _roundVisited[owner->GetGUID()].insert(lead.fetchEntry);

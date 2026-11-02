@@ -74,6 +74,11 @@ namespace romance::ac
         uint32 AbandonForCompanions(Player* owner, uint32 questId);
         // Everything for the addon's group quest tab: the party's quests (who has which), quests available around.
         Json GroupQuests(Player* owner) const;
+        // Gives the quest to every companion who lacks it and can take it, and shares it with the player (from a
+        // companion who has it). Returns what happened, for the addon.
+        std::string ShareQuest(Player* owner, uint32 questId, time_t now);
+        // The companions take this quest from its quest giver around here (walking there first if needed).
+        std::string TakeQuest(Player* owner, uint32 questId, ObjectGuid preferred, time_t now);
         // "Wait for me to loot" (companion setting): after a fight she also waits for the player's loot.
         void SetWaitForPlayerLoot(ObjectGuid bot, bool on) { if (on) _waitLoot.insert(bot); else _waitLoot.erase(bot); }
 
@@ -156,6 +161,7 @@ namespace romance::ac
                                            // along, everyone picks up quests, then she leads to them (or grinds)
             bool round = false;            // a "lead the way" round: after a giver / turn-in she goes on to the next
             bool sell = false;             // errand to a merchant: everyone sells their junk there
+            uint32 onlyQuest = 0;          // errand to take exactly this quest (Quests tab: Take)
             std::set<ObjectGuid> escort;   // other companions walking behind her (their Playerbots follow is off)
             std::set<ObjectGuid> escortSkip;   // told "follow me" by the player: they follow the player, not her
             time_t lastEscort = 0;
@@ -206,7 +212,7 @@ namespace romance::ac
         // Quests from quest giver `entry` (within talking range) for her, and with `group` for the companions too and
         // shared with the player.
         std::vector<Quest const*> PickUpAt(Player* owner, Player* bot, uint32 entry, std::string const& filter, size_t limit, bool group,
-                                           time_t now);
+                                           time_t now, uint32 onlyQuest = 0);
         bool NeedsSelling(Player* owner, Player* bot, time_t now) const;
         void Escort(Player* owner, Player* bot, Lead& lead, time_t now);
         void ReleaseEscort(Lead& lead, Player* owner);

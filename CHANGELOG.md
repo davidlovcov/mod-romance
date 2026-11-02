@@ -3,6 +3,7 @@
 ## Unreleased
 
 ### Added
+- Quests tab actions: "Share" gives a quest to every companion who lacks it and can take it, and a companion who has it shares it with you; "Take" sends the companions to take a quest available around (right away when the quest giver is near, else the leading or selected companion leads everyone there and they take exactly that quest). The tab shows who could still get each quest and who can take each available one.
 - Group quests (for the addon's new Quests tab): the party's quests with who has which, the quests available around, a quest order for the whole group ("Apply" switches the leading companion right away), ignored quests (never picked up or led to) and "abandon for all companions".
 - "Lead me to <quest>" for a quest that is already done: she leads you to turn it in.
 - A lead you give one companion directly (whisper, the addon, or her name in party chat) takes over from the companion leading now; "lead the way" to everyone still picks just one.
