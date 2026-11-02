@@ -345,9 +345,14 @@ namespace romance
             if (w.inDungeon || w.inRaid)
                 o << "- You are inside a " << (w.inRaid ? "raid" : "dungeon") << ".\n";
             if (!w.followState.empty() && w.followState != "unknown")
-                o << "- You are currently "
-                  << (w.followState == "stay" ? "waiting where you were told to stay"
-                      : w.followState == "lead" ? "leading the way (they follow you)" : "following them") << ".\n";
+            {
+                std::string state = w.followState == "stay" ? "waiting where you were told to stay"
+                                    : w.followState == "lead" ? "leading the way (they follow you)"
+                                    : w.followState.rfind("behind:", 0) == 0
+                                        ? "walking behind " + w.followState.substr(7) + ", who leads the way"
+                                        : "following them";
+                o << "- You are currently " << state << ".\n";
+            }
             if (!w.equipmentSummary.empty())
                 o << "- Your gear: " << w.equipmentSummary << "\n";
             for (auto const& e : w.recentEvents)

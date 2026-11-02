@@ -27,6 +27,8 @@
 - mod-romance's own bot commands respect `Playerbots.CommandPrefix` when one is set.
 - The Ollama connection no longer depends on exact header spacing or case in the server's reply (`Transfer-Encoding:chunked`, `CONTENT-LENGTH:  123`); a malformed `Content-Length` is ignored instead of misread.
 - The Character tab lagged when opened (and hitched on every refresh): finding nearby quest givers walked every creature spawn in the world each time. The quest-giving and quest-ending spawns are now indexed once per map, which also speeds up "pick up your quests", "turn in your quests" and quest questions.
+- After a quest she led you through, only she turned it in; the companions who came along now walk with her to the quest giver and turn in their finished quests too.
+- A companion walking behind the leading one knows it ("walking behind Sarian, who leads the way") and the Character tab shows it.
 - "Lead the way" in party chat (to all companions) made two of them lead, to different places. One leads now; a quest giver or turn-in round counts as leading too. The other companions walk behind the leading one (not just after you), and pick up the same quests at each quest giver.
 - A leading companion no longer drops the lead for a "pick up / turn in your quests" meant for another one; a companion that goes on her own errand leaves an area clearing first.
 - "Attack all here" ignored creatures marked "civilian" in the world database (Springpaw Cubs, ...). Like Playerbots' grind it now attacks them too; friendly townsfolk are never attacked.

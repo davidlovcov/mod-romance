@@ -65,6 +65,9 @@ namespace romance::ac
 
         bool IsLeading(ObjectGuid bot) const { return _leads.count(bot) > 0; }
 
+        // The companion she walks behind while that one leads (empty if none).
+        ObjectGuid EscortedBy(ObjectGuid bot) const;
+
         // True while she is leading, on an errand or clearing an area: then the AI's own movement actions
         // (follow / stay / attack / flee in a reply) must not interfere.
         bool IsBusy(ObjectGuid owner, ObjectGuid bot) const;
@@ -134,6 +137,7 @@ namespace romance::ac
             bool fetchAll = false;         // pick up from every giver around (else only one quest)
             bool group = false;            // "lead the way" without a quest: the player and the other companions come
                                            // along, everyone picks up quests, then she leads to them (or grinds)
+            bool round = false;            // a "lead the way" round: after a giver / turn-in she goes on to the next
             std::set<ObjectGuid> escort;   // other companions walking behind her (their Playerbots follow is off)
             time_t lastEscort = 0;
             std::set<uint32> visited;      // givers already visited on this errand

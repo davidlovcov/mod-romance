@@ -868,6 +868,22 @@ TEST(Prompt, KnowsOtherCompanionsInTheParty)
     CHECK_CONTAINS(sys, "leading the way");
 }
 
+TEST(Prompt, KnowsWhoSheWalksBehind)
+{
+    PersonalityProfile p;
+    p.name = "Trine";
+    RelationshipState st = RelationshipEngine::InitialFor(Stage::Friends, true, kNow);
+    PromptInput in;
+    in.personality = &p;
+    in.relationship = &st;
+    in.companionName = "Trine";
+    in.playerName = "Devid";
+    in.world.zone = "Eversong Woods";
+    in.world.followState = "behind:Sarian";
+    std::string sys = DialogueContextBuilder::BuildSystemPrompt(in);
+    CHECK_CONTAINS(sys, "walking behind Sarian, who leads the way");
+}
+
 TEST(Prompt, SystemPromptContainsPersonaMemoriesAndRules)
 {
     PersonalityProfile p = Elara();

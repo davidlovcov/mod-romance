@@ -1143,6 +1143,14 @@ namespace romance::ac
         h.unfollowed.clear();
     }
 
+    ObjectGuid CompanionControl::EscortedBy(ObjectGuid bot) const
+    {
+        for (auto const& [leader, l] : _leads)
+            if (l.escort.count(bot))
+                return leader;
+        return ObjectGuid::Empty;
+    }
+
     bool CompanionControl::IsBusy(ObjectGuid owner, ObjectGuid bot) const
     {
         if (_leads.count(bot))
@@ -1769,7 +1777,10 @@ namespace romance::ac
             GiverInfo const& g = givers.front();
             if (BeginErrand(owner, bot, g.entry, g.name, g.x, g.y, g.z, false, "", true, now))
             {
-                _leads[bot->GetGUID()].group = true;
+                {
+                    Lead& r = _leads[bot->GetGUID()];
+                    r.group = r.round = true;
+                }
                 LOG_INFO("module", "[mod-romance] {} leads to quest giver {} ({} yards) to pick up quests", bot->GetName(), g.name,
                          int(g.dist));
                 return "You have no quest right now, so you take the lead to " + g.name + " (about " + std::to_string(int(g.dist)) +
@@ -1789,7 +1800,10 @@ namespace romance::ac
                 GiverInfo const& g = enders.front();
                 if (BeginErrand(owner, bot, g.entry, g.name, g.x, g.y, g.z, true, "", false, now))
                 {
-                    _leads[bot->GetGUID()].group = true;
+                    {
+                    Lead& r = _leads[bot->GetGUID()];
+                    r.group = r.round = true;
+                }
                     return "You lead them to " + g.name + " (about " + std::to_string(int(g.dist)) + " yards " + Direction(bot, g.x, g.y) +
                            ") to turn in " + QuestList(g.quests) + "; they follow you. Tell them.";
                 }
@@ -1807,7 +1821,10 @@ namespace romance::ac
             GiverInfo const& g = givers.front();
             if (BeginErrand(owner, bot, g.entry, g.name, g.x, g.y, g.z, false, "", true, now))
             {
-                _leads[bot->GetGUID()].group = true;
+                {
+                    Lead& r = _leads[bot->GetGUID()];
+                    r.group = r.round = true;
+                }
                 return "Next you lead them to " + g.name + " (about " + std::to_string(int(g.dist)) + " yards " + Direction(bot, g.x, g.y) +
                        ") to pick up " + QuestList(g.quests) + ". Say it in a few words.";
             }
@@ -1996,6 +2013,28 @@ namespace romance::ac
                 }
                 if (lead.group)
                 {
+                    // the companions who came along turn in their finished quests here too
+                    Creature* ender = nullptr;
+                    for (auto const& [questId, npc] : QuestNpcs(bot, 30.0f, true))
+                        if (npc->GetEntry() == lead.fetchEntry)
+                        {
+                            ender = npc;
+                            break;
+                        }
+                    QuestRelationBounds ends = sObjectMgr->GetCreatureQuestInvolvedRelationBounds(lead.fetchEntry);
+                    if (ender)
+                        for (Player* m : OtherCompanions(owner, bot))
+                        {
+                            if (!m->IsAlive() || m->GetMapId() != bot->GetMapId() || m->GetDistance(bot) > 100.0f)
+                                continue;
+                            for (auto it = ends.first; it != ends.second; ++it)
+                                if (Quest const* oq = sObjectMgr->GetQuestTemplate(it->second))
+                                    if (m->GetQuestStatus(oq->GetQuestId()) == QUEST_STATUS_COMPLETE && m->CanRewardQuest(oq, false))
+                                        m->RewardQuest(oq, BestRewardChoice(m, oq), ender, false);
+                        }
+                }
+                if (lead.round)
+                {
                     std::string done = handed.empty() ? "" : "You turned in " + QuestList(handed) + ". ";
                     std::string next = RoundNext(owner, bot, now);
                     _notices.push_back({ bot->GetGUID(), done + next });
@@ -2054,7 +2093,7 @@ namespace romance::ac
                 std::string all;
                 for (std::string const& t : lead.taken)
                     all += (all.empty() ? "\"" : ", \"") + t + "\"";
-                if (lead.group)
+                if (lead.round)
                 {
                     // all quests picked up: now lead them to one (or grind when there is nothing to do)
                     if (Quest const* nq = NextQuest(owner, bot))
@@ -2097,10 +2136,11 @@ namespace romance::ac
                     _hunts.erase(hunt);
                 }
                 bot->GetMotionMaster()->Clear();
-                if (BeginErrand(owner, bot, g.entry, g.name, g.x, g.y, g.z, true, title, false, now))
+                if (BeginErrand(owner, bot, g.entry, g.name, g.x, g.y, g.z, true, "", false, now))
                 {
-                    _notices.push_back({ bot->GetGUID(), "You finished \"" + title + "\" while leading and walk to " + g.name +
-                                                             " to turn it in; then you come back to them. Say it in a few words." });
+                    _leads[bot->GetGUID()].group = true;   // the others come along and turn theirs in too
+                    _notices.push_back({ bot->GetGUID(), "You finished \"" + title + "\" while leading and lead them to " + g.name +
+                                                             " to turn it in. Say it in a few words." });
                     return;
                 }
             }
@@ -2376,6 +2416,12 @@ namespace romance::ac
             j.Set("leadQuest", lead->second.title);
         if (lead != _leads.end())
             j.Set("follow", std::string("lead"));
+        else if (ObjectGuid leader = EscortedBy(bot->GetGUID()); !leader.IsEmpty())
+        {
+            Player* l = ObjectAccessor::FindConnectedPlayer(leader);
+            j.Set("follow", std::string("behind"));
+            j.Set("leader", l ? l->GetName() : std::string("?"));
+        }
 
         Json items = Json::MakeArray();
         for (ItemGroup const& g : GroupedBagItems(bot))

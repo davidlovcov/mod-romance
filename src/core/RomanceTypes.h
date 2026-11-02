@@ -290,7 +290,7 @@ namespace romance
         bool sameGroup = false;
         bool companionInWorld = false;
         int partySize = 0;
-        std::string followState;       // follow | stay | unknown
+        std::string followState;       // follow | stay | lead | behind:<leader name> | unknown
         std::string timeOfDay;         // morning | afternoon | evening | night
         std::vector<std::string> recentEvents; // short, server-observed descriptions
         std::string equipmentSummary;

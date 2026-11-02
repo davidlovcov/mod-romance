@@ -626,6 +626,10 @@ namespace romance::ac
             c.sameGroup = group && group->IsMember(bot->GetGUID());
             c.partySize = group ? int(group->GetMembersCount()) : 1;
             c.followState = _control && _control->IsLeading(bot->GetGUID()) ? std::string("lead") : PlayerbotsBridge::FollowState(bot);
+            if (_control)
+                if (ObjectGuid leader = _control->EscortedBy(bot->GetGUID()); !leader.IsEmpty())
+                    if (Player* l = ObjectAccessor::FindConnectedPlayer(leader))
+                        c.followState = "behind:" + l->GetName();
             // other AI companions in the same group (so she knows who else may answer)
             if (Group* g = owner->GetGroup())
                 for (CompanionKey const& other : _service->ActiveForOwner(key.owner))
