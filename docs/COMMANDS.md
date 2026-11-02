@@ -1,6 +1,6 @@
 # Commands
 
-Everything you can say or type to control your companion. Examples use the companion **Elara**; use your companion's name (the one you gave her on the Personality tab or her character name).
+Everything you can say or type to control your companion. Examples use a female companion, **Elara**; male companions understand exactly the same. Use your companion's name (the one from the Personality tab, or the character name).
 
 ## Where you can talk to her
 

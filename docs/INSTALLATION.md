@@ -140,8 +140,8 @@ Database changes in future versions are applied automatically on the next worlds
 2. Pick a character (e.g. Elara). Greyed-out characters can't be used right now; hover over them to see why.
 3. **Personality** tab: choose a preset (e.g. *Anime Girlfriend*), then adjust it and save.
 4. **Relationship** tab: choose a starting relationship (e.g. *Dating / Couple*) with an optional backstory.
-5. **Companion** tab: **Call companion**. She logs in as your Playerbot and joins your party.
-6. Whisper her, or use the **Chat** tab. Trade her an item to give a gift.
+5. **Companion** tab: **Call companion**. Your companion logs in as your Playerbot and joins your party.
+6. Whisper your companion, or use the **Chat** tab. Trade them an item to give a gift.
 
 Chat-command alternatives: `.romance summon Elara`, `.romance dismiss`, `.romance status`, `.romance on|off` (on a targeted bot of yours).
 

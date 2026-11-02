@@ -42,18 +42,18 @@ There are two layers:
 | `Romance.Chat.MaxProfileFieldChars` / `MaxInstructionChars` | 600 / 1200 | Text limits for personality and profile |
 | `Romance.Presets.MaxCustomPerAccount` | 20 | Custom personality presets a player account can save (0 = none) |
 | `Romance.Control.Enable` | 1 | Natural-language commands and game knowledge (see [COMMANDS.md](COMMANDS.md)) |
-| `Romance.Control.GiveMinStage` | 2 | Relationship stage before she hands over items or gold (2 = friends) |
+| `Romance.Control.GiveMinStage` | 2 | Relationship stage before the companion hands over items or gold (2 = friends) |
 | `Romance.Control.MaxGoldPerRequest` | 50 | Most gold per request (0 = no limit) |
 | `Romance.Control.AutoSellJunk` / `AutoSellFreeSlots` | 1 / 2 | Sell gray items at a vendor when bags are nearly full |
-| `Romance.Control.LeadMode` | 1 | "lead the way" walks her to one of her quests, then she fights the quest creatures |
+| `Romance.Control.LeadMode` | 1 | "lead the way" walks the companion to one of their quests, then they fight the quest creatures |
 | `Romance.Control.InteractRange` | 30 | Merchants and quest givers this close work without targeting them |
 | `Romance.Control.QuestSync` | 1 | Companions take and turn in quests together with you |
 | `Romance.Party.UnaddressedReplies` | all | Party lines without a name (bots-only group): `all` companions or the `last` one you talked to |
 | `Romance.Control.CommandRange` | 50 | Yards to search for an enemy named in a command |
-| `Romance.Estrangement.Enable` | 1 | She leaves when mistreated again and again |
-| `Romance.Estrangement.Resentment` | 100 | Resentment at which she leaves |
-| `Romance.Estrangement.CooldownHours` | 72 | Hours she refuses calls (x2 the second time, x4 after) |
-| `Romance.Estrangement.ReconcilePerDay` | 25 | Reconciliation points per day after she returns (100 needed) |
+| `Romance.Estrangement.Enable` | 1 | The companion leaves when mistreated again and again |
+| `Romance.Estrangement.Resentment` | 100 | Resentment at which the companion leaves |
+| `Romance.Estrangement.CooldownHours` | 72 | Hours the companion refuses calls (x2 the second time, x4 after) |
+| `Romance.Estrangement.ReconcilePerDay` | 25 | Reconciliation points per day after the companion returns (100 needed) |
 | `Romance.Chat.PartyOnly` | 0 | Always answer in party chat |
 | `Romance.Chat.Language` | `auto` | `auto` (EN/DE per message), `en`, `de` |
 | `Romance.Chat.NaturalLanguageCommands` | 1 | "follow me" → Playerbots `follow` (allow-list) |

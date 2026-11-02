@@ -4,7 +4,7 @@
 
 An AI companion and relationship module for **AzerothCore (WotLK 3.3.5a)** with **mod-playerbots** and a local **Ollama** model.
 
-Turn one of your own characters into a companion who remembers you. She keeps her configured personality, reacts to fights, level-ups and gifts, sometimes starts conversations, and her relationship with you grows over time. Combat, movement and spellcasting stay with the normal Playerbots AI. Ollama only supplies her conversation, and **only for the companion you explicitly select**, never for your other bots.
+Turn one of your own characters into a companion who remembers you. Your companion keeps the personality you configured, reacts to fights, level-ups and gifts, sometimes starts conversations, and the relationship between you grows over time. Male and female companions work the same way. Combat, movement and spellcasting stay with the normal Playerbots AI. Ollama only supplies the conversation, and **only for the companion you explicitly select**, never for your other bots.
 
 The in-game interface is the companion addon: **[azerothcore-romance-addon](https://github.com/davidlovcov/azerothcore-romance-addon)**.
 
@@ -14,7 +14,7 @@ The in-game interface is the companion addon: **[azerothcore-romance-addon](http
 |---|---|---|
 | ![Companion tab](docs/images/companion.jpg) | ![Chat tab](docs/images/chat.jpg) | ![Character tab](docs/images/character.jpg) |
 
-Her memory after a short questing session (editable in the addon):
+A companion's memory after a short questing session (editable in the addon):
 
 ![Memory viewer](docs/images/memories.jpg)
 
@@ -30,10 +30,10 @@ More screenshots in the [addon repository](https://github.com/davidlovcov/azerot
 | Relationship | Friendship, affection, attraction, trust, familiarity, comfort and satisfaction, plus mood. Eight stages from Strangers to Married, with a selectable starting stage. Progress is gradual and capped per day. Dating, engagement and marriage need an accepted proposal, which the server decides. |
 | Gifts | Detected only after a **completed** trade, with the item confirmed in the companion's bags. The score weighs usefulness, upgrades, class fit, rarity, likes and dislikes, and romance (jewelry and rings count extra). Repeats count for less, there is a daily cap, and the same item instance is never rewarded twice. |
 | World awareness | Zone, party, health, fights and near-death moments, deaths, level-ups, quests and notable loot. Only events the server observed are given to the model. |
-| Initiative | Proactive lines with cooldowns, an hourly cap and a back-off when you don't reply; she stays quiet during combat. |
-| Game knowledge | Ask her about her bags, gold, XP, gear, spells, quests (with progress, and which you share) or your target. She answers from real game data. |
-| Commands | Plain sentences: follow, stay, give items or gold (she opens the trade), cast a spell on you or your target, attack an enemy by name or creature type, sell junk at a vendor, share quests, and (experimental) lead the way to a quest. Playerbots commands pass through untouched (`follow`, `co +dps`, `!stay`). See [docs/COMMANDS.md](docs/COMMANDS.md). |
-| Estrangement | Treat her badly again and again and she leaves you: she refuses your calls for days and comes back cold. Winning her back takes sincere apologies over several days. |
+| Initiative | Proactive lines with cooldowns, an hourly cap and a back-off when you don't reply; companions stay quiet during combat. |
+| Game knowledge | Ask about your companion's bags, gold, XP, gear, spells, quests (with progress, and which you share) or your target. The answer comes from real game data. |
+| Commands | Plain sentences: follow, stay, give items or gold (your companion opens the trade), cast a spell on you or your target, attack an enemy by name or creature type, sell junk at a vendor, share quests, and (experimental) lead the way to a quest. Playerbots commands pass through untouched (`follow`, `co +dps`, `!stay`). See [docs/COMMANDS.md](docs/COMMANDS.md). |
+| Estrangement | Treat your companion badly again and again and they leave you: they refuse your calls for days and come back cold. Winning them back takes sincere apologies over several days. |
 | Safety | Ollama requests run on a bounded worker pool with timeouts and cancellation, never on the world thread. The server keeps running when Ollama is down. The addon protocol is rate- and size-limited. Model output is sanitized and validated. |
 
 ## Presets
@@ -41,7 +41,7 @@ More screenshots in the [addon repository](https://github.com/davidlovcov/azerot
 A preset is a complete personality: traits, response style, age, gender, pronouns, every story field and custom instructions.
 
 - **Apply preset** replaces all of these. Your companion's name and nickname stay, and so do the reply language, custom stage labels and the "always says yes" setting.
-- **Reset to preset** applies her current preset again, so every field goes back to the preset's values.
+- **Reset to preset** applies the companion's current preset again, so every field goes back to the preset's values.
 - **Undo changes** throws away edits you haven't saved yet.
 - **Save as preset** stores the current personality as your own preset (per account, without the name). You can apply it to any companion, overwrite it by saving under the same name, or delete it.
 - The list shows presets for your companion's gender. Tick "All genders" to see every preset.

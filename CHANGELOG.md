@@ -3,17 +3,20 @@
 ## Unreleased
 
 ### Added
-- She knows which quests she could pick up around you (quest givers within ~250 yards, with direction, distance and class-quest marker); ask her or see "Available nearby" on the Character tab.
-- "Pick up your quests" / "go get your class quest": she walks to the nearest quest giver with something for her (e.g. her class trainer), picks the quests up and comes back.
+- Companions know which quests they could pick up around you (quest givers within ~250 yards, with direction, distance and class-quest marker); ask them or see "Available nearby" on the Character tab.
+- "Pick up your quests" / "go get your class quest": the companion walks to the nearest quest giver with something for them (e.g. their class trainer), picks the quests up and comes back.
 
 ### Fixed
-- A reply that was still queued (or in flight) when a companion was dismissed could appear in the next session after she was called again, and change her relationship. Every activation now gets its own generation, and cancelled requests never change anything.
+- A reply that was still queued (or in flight) when a companion was dismissed could appear in the next session after the companion was called again, and change the relationship. Every activation now gets its own generation, and cancelled requests never change anything.
 - The addon Chat tab skipped companion commands (give, cast, sell, quests, ...) and game knowledge; whisper, party and addon chat now share one path.
 - Export / import failed for larger memory sets (one message was limited to 16 KiB): exports and imports now travel in pages and an import is applied only when every part arrived.
 - Build with clang and warnings as errors (AzerothCore CI): unused parameters.
 - Tests include the standard headers they use (GCC 14).
 - Party chat lines could open a trade window ("how many more to kill?"): that is Playerbots' `EnableAutoTradeOnItemMention`. mod-romance now warns about it at startup; set `Playerbots.EnableAutoTradeOnItemMention = 0` (see docs/INSTALLATION.md).
 - mod-romance's own bot commands respect `Playerbots.CommandPrefix` when one is set.
+
+### Changed
+- Documentation and config descriptions use neutral wording, since companions can be male or female.
 - Clearing an area with a healer companion spammed "attack rti target: useless": Playerbots never lets healers take attack orders. Healers now keep healing while the others fight (and say so), and attack orders are re-sent at most every 5 seconds.
 - Clearing an area picks enemies she can see first; an enemy nobody reaches within 15 seconds (behind a wall, no path) is skipped.
 - Lead mode: saying "wait" made her give up leading (the Playerbots stay held her in place and the lead controller took that for being stuck). "Wait" now pauses the lead, and "lead again", "go on" or "keep going" continues it.
