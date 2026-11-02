@@ -46,12 +46,13 @@ The server **never** takes identity from the payload. The owner is always the se
 | `list_presets` | | `presets` {presets[]} |
 | `save_preset` | `label`, `description`, `personality`, `replace?` (`custom:<n>` to overwrite) | `presets` {ok, savedId, code?, message?, presets[]} |
 | `delete_preset` | `preset` (`custom:<n>`) | `presets` {ok, code?, message?, presets[]} |
-| `get_character_sheet` | `guid` | `character_sheet` {name, level, class, race, xp, xpNext, money, health, freeSlots, totalSlots, follow (follow/stay/lead), leadQuest?, items[{entry, name, count, quality, soulbound}], gear[{slot, entry, name, quality}], spells[{id, name}], quests[{id, title, level, progress, complete, shared}]} or `ack` {ok: false, code: not_online} |
+| `get_character_sheet` | `guid` | `character_sheet` {name, level, class, race, xp, xpNext, money, health, freeSlots, totalSlots, follow (follow/stay/lead), leadQuest?, items[{entry, name, count, quality, soulbound}], gear[{slot, entry, name, quality}], spells[{id, name}], learnable[{id, name, rank, cost, level}] (her class trainer can teach these now), learnableCost, learnSoon[...] (the next two levels), quests[{id, title, level, progress, complete, shared}]} or `ack` {ok: false, code: not_online} |
 | `set_relationship` | `guid`, `stage`, `romantic`, `backstory` | `ack`, `companion` |
 | `save_settings` | `guid`, `settings` | `ack`, `companion` |
 | `summon` | `guid` | `ack` {ok, code: online_as_player, controlled_elsewhere, limit_reached, already_loading, not_owner, playerbots_not_installed, estranged ...} |
 | `dismiss` | `guid`, `logout` | `ack` |
 | `chat` | `guid`, `text` | pushes (`typing`, `chat_msg`) or `error` {busy, not_active, ai_disabled} |
+| `get_lead` | | `lead_state` {leader?, leaderGuid?, you (nobody leads), kind (quest, turn_in, pick_up, take, merchant, grind), target, distance, direction, paused, errands[{name, kind, target}]}; also as `lead` in `group_quests` |
 | `get_history` | `guid`, `limit ≤ 50` | `history` {items[{from, text, ts}]} |
 | `get_memories` | `guid`, `kind?`, `search?`, `offset`, `limit ≤ 25` | `memories` {items[MemoryEntry], total, offset} |
 | `edit_memory` | `guid`, `id`, `text`, `importance?` | `ack` |

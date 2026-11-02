@@ -74,6 +74,9 @@ namespace truecompanion::ac
         uint32 AbandonForCompanions(Player* owner, uint32 questId);
         // Everything for the addon's group quest tab: the party's quests (who has which), quests available around.
         Json GroupQuests(Player* owner) const;
+        // Who leads the player now and where to: {leader, leaderGuid, you, kind, target, distance, direction, paused,
+        // errands[{name, kind, target}]}. kind: quest, turn_in, pick_up, take, merchant, grind.
+        Json LeadState(Player* owner) const;
         // Gives the quest to every companion who lacks it and can take it, and shares it with the player (from a
         // companion who has it). Returns what happened, for the addon.
         std::string ShareQuest(Player* owner, uint32 questId, time_t now);

@@ -16,7 +16,7 @@ the behaviour and the cases it handles; check new changes against it before impl
 | Said to her | Result |
 |---|---|
 | "lead the way" (no quest named) | A **round** (below). |
-| "lead me to <quest>" | A single lead to that quest. The quest may be hers, the player's or another companion's. A finished quest: she leads to its quest giver to turn it in. |
+| "lead me to <quest>" | A single lead to that quest. The quest may be hers, the player's or another companion's. A finished quest (finished by her, the player or another companion): she leads to its quest giver; companions turn in their copy there, and she tells the player what they can turn in. |
 | "lead ..." to everyone in party chat | One companion leads, the others say so and follow her. |
 | "lead ..." to one companion directly (whisper, the addon, or her name in party chat) | She takes over; the old leader becomes a follower. |
 | "lead ..." while she walks to a quest giver / merchant (errand) | Named quest or told directly: the errand is dropped and she leads (finished quests are turned in later). A plain "lead the way" to everyone: she finishes the errand first. |

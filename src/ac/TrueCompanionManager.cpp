@@ -1454,7 +1454,7 @@ namespace truecompanion::ac
         }
 
         // ---- the player's group: quest order, ignored quests, abandoning (all companions at once)
-        if (op == "get_group_quests" || op == "set_group_quest_order" || op == "set_ignored_quests" || op == "abandon_quest" ||
+        if (op == "get_group_quests" || op == "get_lead" || op == "set_group_quest_order" || op == "set_ignored_quests" || op == "abandon_quest" ||
             op == "share_quest" || op == "take_quest")
         {
             auto ids = [&]()
@@ -1470,7 +1470,13 @@ namespace truecompanion::ac
             if (op == "get_group_quests")
             {
                 p = _control->GroupQuests(player);
+                p.Set("lead", _control->LeadState(player));
                 p.Set("op", "group_quests");
+            }
+            else if (op == "get_lead")
+            {
+                p = _control->LeadState(player);
+                p.Set("op", "lead_state");
             }
             else
             {
@@ -1636,7 +1642,9 @@ namespace truecompanion::ac
             else if (res.result == TrueCompanionService::MessageResult::Busy)
                 ReplyError(player, msg, "busy", name + " is still answering.");
             else if (res.result == TrueCompanionService::MessageResult::AiDisabled)
-                ReplyError(player, msg, "ai_disabled");
+                ReplyError(player, msg, "ai_disabled", _cfg.ollamaEnabled
+                    ? name + "'s AI conversation is off (Settings tab). Commands still work."
+                    : "Conversation needs the AI, which is off on this server. Commands (\"lead the way\", \"sell your junk\", ...) still work.");
         }
         else if (op == "get_history")
         {

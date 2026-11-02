@@ -23,6 +23,7 @@
 #include "SharedDefines.h"
 #include "SpellInfo.h"
 #include "SpellMgr.h"
+#include "Trainer.h"
 
 #include <algorithm>
 #include <cctype>
@@ -443,6 +444,31 @@ namespace truecompanion::ac
         }
 
         constexpr float kAreaRadius = 250.0f;
+
+        // Every class-trainer spell of a class, once per spell: (trainer creature entry, spell id). Built once per class;
+        // the trainer and its spell are looked up again on each use, so a ".reload" of trainers can't leave stale pointers.
+        std::vector<std::pair<uint32, uint32>> const& ClassTrainerSpells(uint8 classId)
+        {
+            static std::unordered_map<uint8, std::vector<std::pair<uint32, uint32>>> byClass;
+            auto it = byClass.find(classId);
+            if (it != byClass.end())
+                return it->second;
+            std::vector<std::pair<uint32, uint32>> list;
+            std::set<uint32> seen;
+            if (CreatureTemplateContainer const* all = sObjectMgr->GetCreatureTemplates())
+                for (auto const& [entry, ct] : *all)
+                {
+                    if (!(ct.npcflag & UNIT_NPC_FLAG_TRAINER))
+                        continue;
+                    Trainer::Trainer* trainer = sObjectMgr->GetTrainer(entry);
+                    if (!trainer || trainer->GetTrainerType() != Trainer::Type::Class || trainer->GetTrainerRequirement() != classId)
+                        continue;
+                    for (Trainer::Spell const& sp : trainer->GetSpells())
+                        if (seen.insert(sp.SpellId).second)
+                            list.emplace_back(entry, sp.SpellId);
+                }
+            return byClass.emplace(classId, std::move(list)).first->second;
+        }
 
         // "north-east" etc. from `from` towards (x, y); in WoW +x is north and +y is west.
         char const* Direction(WorldObject const* from, float x, float y)
@@ -1835,8 +1861,16 @@ namespace truecompanion::ac
         }
         if (!PartyNeeds(owner, bot, pick))
         {
-            // finished: lead them to turn it in
-            if (bot->GetQuestStatus(pick->GetQuestId()) == QUEST_STATUS_COMPLETE && bot->CanRewardQuest(pick, false))
+            // finished (by her, the player or another companion): lead them to turn it in. Companions who come
+            // along turn in their copy there; the player turns in their own.
+            std::vector<Player*> done;
+            for (Player* m : std::vector<Player*>{ bot, owner })
+                if (m->GetQuestStatus(pick->GetQuestId()) == QUEST_STATUS_COMPLETE)
+                    done.push_back(m);
+            for (Player* m : OtherCompanions(owner, bot))
+                if (m->GetQuestStatus(pick->GetQuestId()) == QUEST_STATUS_COMPLETE)
+                    done.push_back(m);
+            if (!done.empty())
             {
                 auto enders = QuestEnders(bot, kAreaRadius, { pick });
                 if (!enders.empty())
@@ -1850,8 +1884,11 @@ namespace truecompanion::ac
                         r.group = true;
                         r.round = round;
                         r.thenQuest = then == pick->GetQuestId() ? 0 : then;
-                        return "\"" + pick->GetTitle() + "\" is done, so you lead them to " + g.name + " (about " + std::to_string(int(g.dist)) +
-                               " yards " + Direction(bot, g.x, g.y) + ") to turn it in. Tell them.";
+                        std::string who;
+                        for (Player* m : done)
+                            who += (who.empty() ? "" : ", ") + (m == bot ? std::string("you") : m == owner ? std::string("them") : m->GetName());
+                        return "\"" + pick->GetTitle() + "\" is done for " + who + ", so you lead them to " + g.name + " (about " +
+                               std::to_string(int(g.dist)) + " yards " + Direction(bot, g.x, g.y) + ") to turn it in. Tell them.";
                     }
                 }
                 return "Nothing. \"" + pick->GetTitle() + "\" is done, but the quest giver to turn it in is not around here; tell them.";
@@ -2103,6 +2140,58 @@ namespace truecompanion::ac
                                                    "); you lead them there. Say it in a few words." });
         LOG_INFO("module", "[mod-true-companion] {} leads to {} to take \"{}\"", actor->GetName(), giver.name, q->GetTitle());
         return actor->GetName() + " leads you to " + giver.name + " to take \"" + q->GetTitle() + "\".";
+    }
+
+    Json CompanionControl::LeadState(Player* owner) const
+    {
+        auto kindOf = [](Lead const& l) -> std::string
+        {
+            if (!l.fetch)
+                return l.quest ? "quest" : "grind";
+            if (l.sell)
+                return "merchant";
+            if (l.turnIn)
+                return "turn_in";
+            return l.onlyQuest ? "take" : "pick_up";
+        };
+        Json j = Json::MakeObject();
+        Json errands = Json::MakeArray();
+        bool found = false;
+        for (auto const& [guid, l] : _leads)
+        {
+            if (l.owner != owner->GetGUID())
+                continue;
+            Player* bot = ObjectAccessor::FindConnectedPlayer(guid);
+            if (!bot)
+                continue;
+            if (l.fetch && !l.group)
+            {
+                // alone to a quest giver or merchant: not leading the player
+                Json e = Json::MakeObject();
+                e.Set("name", bot->GetName());
+                e.Set("kind", kindOf(l));
+                e.Set("target", l.title);
+                errands.Push(e);
+                continue;
+            }
+            if (found)
+                continue;
+            found = true;
+            j.Set("leader", bot->GetName());
+            j.Set("leaderGuid", int64_t(guid.GetCounter()));
+            j.Set("kind", kindOf(l));
+            j.Set("target", l.title);
+            bool here = bot->GetMapId() == l.map;
+            j.Set("distance", int64_t(here ? bot->GetDistance2d(l.x, l.y) : -1));
+            j.Set("direction", here ? std::string(Direction(bot, l.x, l.y)) : std::string());
+            j.Set("paused", l.paused);
+        }
+        // nobody leads: the companions follow the player (and maybe clear the area with them: "attack all here")
+        j.Set("you", !found);
+        if (auto h = _hunts.find(owner->GetGUID()); h != _hunts.end() && !h->second.forLead && !h->second.bots.empty())
+            j.Set("fighting", true);
+        j.Set("errands", errands);
+        return j;
     }
 
     Json CompanionControl::GroupQuests(Player* owner) const
@@ -2661,6 +2750,7 @@ namespace truecompanion::ac
                 if (lead.round)
                     _roundVisited[owner->GetGUID()].insert(lead.fetchEntry);
                 std::vector<Quest const*> handed;
+                std::string playerTurnIn;
                 for (auto const& [questId, npc] : QuestNpcs(bot, 30.0f, true))
                 {
                     if (npc->GetEntry() != lead.fetchEntry)
@@ -2692,25 +2782,39 @@ namespace truecompanion::ac
                             for (auto it = ends.first; it != ends.second; ++it)
                                 if (Quest const* oq = sObjectMgr->GetQuestTemplate(it->second))
                                     if (m->GetQuestStatus(oq->GetQuestId()) == QUEST_STATUS_COMPLETE && m->CanRewardQuest(oq, false))
+                                    {
                                         m->RewardQuest(oq, BestRewardChoice(m, oq), ender, false);
+                                        if (std::find(handed.begin(), handed.end(), oq) == handed.end())
+                                            handed.push_back(oq);
+                                    }
                         }
+                    // the player turns in their own; say what they can hand in here
+                    std::vector<Quest const*> theirs;
+                    for (auto it = ends.first; it != ends.second; ++it)
+                        if (Quest const* oq = sObjectMgr->GetQuestTemplate(it->second))
+                            if (owner->GetQuestStatus(oq->GetQuestId()) == QUEST_STATUS_COMPLETE)
+                                theirs.push_back(oq);
+                    if (!theirs.empty())
+                        playerTurnIn = " They can turn in " + QuestList(theirs) + " here too.";
                 }
                 if (lead.round)
                 {
                     // turned in first; then whatever this quest giver has new for them
                     std::vector<Quest const*> fresh = PickUpAt(owner, bot, lead.fetchEntry, "", 99, true, now);
                     std::string done = (handed.empty() ? "" : "You turned in " + QuestList(handed) + ". ") +
-                                       (fresh.empty() ? "" : "You took " + QuestList(fresh) + " there. ");
+                                       (fresh.empty() ? "" : "You took " + QuestList(fresh) + " there. ") +
+                                       (playerTurnIn.empty() ? "" : playerTurnIn.substr(1) + " ");
                     std::string next = RoundNext(owner, bot, now);
                     _notices.push_back({ bot->GetGUID(), done + next });
                     return;
                 }
                 if (lead.thenQuest && BackToQuest(owner, bot, lead.thenQuest,
-                        handed.empty() ? "" : "You turned in " + QuestList(handed) + " at " + lead.title + ". ", now))
+                        (handed.empty() ? "" : "You turned in " + QuestList(handed) + " at " + lead.title + ".") + playerTurnIn + " ", now))
                     return;
-                FinishLead(owner, bot, handed.empty()
+                FinishLead(owner, bot, handed.empty() && playerTurnIn.empty()
                     ? "You reached " + lead.title + " but could not turn anything in there. You are coming back to them; tell them."
-                    : "You turned in " + QuestList(handed) + " at " + lead.title + " and are coming back to them. Tell them briefly.");
+                    : handed.empty() ? "You reached " + lead.title + "." + playerTurnIn + " Tell them."
+                    : "You turned in " + QuestList(handed) + " at " + lead.title + " and are coming back to them." + playerTurnIn + " Tell them briefly.");
                 return;
             }
             if (bot->GetDistance2d(lead.x, lead.y) < 12.0f)
@@ -3175,6 +3279,57 @@ namespace truecompanion::ac
             spells.Push(s);
         }
         j.Set("spells", spells);
+
+        // spells her class trainer can teach her now, and the ones coming in the next two levels
+        Json learnable = Json::MakeArray();
+        Json soon = Json::MakeArray();
+        uint32 learnCost = 0;
+        std::set<uint32> learnNow;
+        std::vector<std::pair<Trainer::Spell const*, Json>> later;
+        for (auto const& [entry, spellId] : ClassTrainerSpells(bot->getClass()))
+        {
+            Trainer::Trainer* trainer = sObjectMgr->GetTrainer(entry);
+            Trainer::Spell const* sp = trainer ? trainer->GetSpell(spellId) : nullptr;
+            SpellInfo const* teaches = sp ? sSpellMgr->GetSpellInfo(sp->SpellId) : nullptr;
+            if (!sp || !teaches || !trainer->IsTrainerValidForPlayer(bot))
+                continue;
+            // a trainer spell usually casts "learn X": show X, the spell she gets
+            SpellInfo const* learned = teaches;
+            for (uint8 e = 0; e < MAX_SPELL_EFFECTS; ++e)
+                if (teaches->Effects[e].Effect == SPELL_EFFECT_LEARN_SPELL && teaches->Effects[e].TriggerSpell)
+                    if (SpellInfo const* t = sSpellMgr->GetSpellInfo(teaches->Effects[e].TriggerSpell))
+                        learned = t;
+            if (bot->HasSpell(learned->Id) || bot->HasSpell(sp->SpellId))
+                continue;
+            Json s = Json::MakeObject();
+            s.Set("id", int64_t(learned->Id));
+            s.Set("name", std::string(learned->SpellName[0]));
+            s.Set("rank", std::string(learned->Rank[0] ? learned->Rank[0] : ""));
+            s.Set("cost", int64_t(sp->MoneyCost));
+            s.Set("level", int64_t(sp->ReqLevel));
+            if (trainer->CanTeachSpell(bot, sp))
+            {
+                learnCost += sp->MoneyCost;
+                learnable.Push(s);
+                learnNow.insert(sp->SpellId);
+            }
+            else if (sp->ReqLevel > bot->GetLevel() && sp->ReqLevel <= bot->GetLevel() + 2)
+                later.emplace_back(sp, s);
+        }
+        // coming soon: only what she will really be able to learn (not talent spells she lacks, nor ranks after
+        // one she can't get)
+        for (auto const& [sp, s] : later)
+        {
+            bool ok = true;
+            for (uint32 req : sp->ReqAbility)
+                if (req && !bot->HasSpell(req) && !learnNow.count(req))
+                    ok = false;
+            if (ok && soon.AsArray().size() < 12)
+                soon.Push(s);
+        }
+        j.Set("learnable", learnable);
+        j.Set("learnableCost", int64_t(learnCost));
+        j.Set("learnSoon", soon);
 
         Json quests = Json::MakeArray();
         auto log = QuestLog(bot);

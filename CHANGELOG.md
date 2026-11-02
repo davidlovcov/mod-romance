@@ -7,6 +7,10 @@
 - Upgrading keeps everything: a new SQL update renames the `romance_*` tables (only when the old ones exist, so it is safe to run again), `scripts/migrate-from-mod-romance.sh` converts your config, and memory exports made before the rename can still be imported. Steps: docs/INSTALLATION.md, "Upgrading from mod-romance".
 
 ### Added
+- Who leads also says when you lead and the companions clear the area with you ("attack all here"): `fighting`.
+- Spells to learn: the character sheet lists what her class trainer can teach her now (with the total cost) and what comes in the next two levels.
+- Who leads (`get_lead`, also in the Quests tab data): the leading companion, where to and how far, or that you lead; companions on an errand.
+- "Lead me to <quest>" for a quest only you or another companion has finished (e.g. a rogue's "Rogue Training" asked of the warlock): she leads everyone to its quest giver; companions turn in their copy and she tells you what you can hand in there. Before: "only needs to be turned in".
 - Works without Ollama: with `TrueCompanion.Ollama.Enable = 0`, or while Ollama is unreachable or fails, commands, lead mode, quests and the addon keep working, and she says what she did in plain words ("I took the lead ...", "I turned in ..."). Only free conversation needs the AI.
 - Quests tab actions: "Share" gives a quest to every companion who lacks it and can take it, and a companion who has it shares it with you; "Take" sends the companions to take a quest available around (right away when the quest giver is near, else the leading or selected companion leads everyone there and they take exactly that quest). The tab shows who could still get each quest and who can take each available one.
 - Group quests (for the addon's new Quests tab): the party's quests with who has which, the quests available around, a quest order for the whole group ("Apply" switches the leading companion right away), ignored quests (never picked up or led to) and "abandon for all companions".
@@ -23,6 +27,8 @@
 - "Pick up your quests" / "go get your class quest": the companion walks to the nearest quest giver with something for them (e.g. their class trainer), picks the quests up and comes back.
 
 ### Fixed
+- Chat without the AI (Ollama off, or her AI conversation off) answered with a bare "ai_disabled"; it now says why and that commands still work.
+- Spells "soon": spells that need a talent she doesn't have (or a rank she can't learn yet) are left out.
 - Companion commands that start with a Playerbots command word ("sell your junk", "Vendor, sell trash", "attack", "accept the quest", "go on") went to Playerbots instead: nothing was sold or accepted and the companion didn't answer. mod-true-companion now handles them; `!` still sends a line to Playerbots unchanged.
 - "Give me 1 gold" said yes but gave nothing: gold is now handed over directly (within 30 yards), no trade window.
 - "Turn in your quests" only worked right at the quest ender: she now walks to the quest ender (up to ~250 yards), turns the quests in and comes back.
