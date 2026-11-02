@@ -17,7 +17,7 @@ There are two layers:
 | `TrueCompanion.AllowInitialStageSelection` | 1 | Players may choose the starting relationship |
 | `TrueCompanion.MaxInitialStage` | 7 | Highest selectable starting stage (0 strangers … 7 married) |
 | **Ollama** | | |
-| `TrueCompanion.Ollama.Enable` | 1 | Off = companions behave as regular Playerbots |
+| `TrueCompanion.Ollama.Enable` | 1 | Off = no conversation, but commands, lead mode, quests and the addon still work; she says what she did in plain words. The same happens while Ollama is unreachable. |
 | `TrueCompanion.Ollama.Url` | `http://127.0.0.1:11434` | Ollama base URL (http only) |
 | `TrueCompanion.Ollama.Model` | `qwen3.5:4b` | Default model |
 | `TrueCompanion.Ollama.FallbackModel` | `qwen3:4b-instruct` | Used if the default model isn't installed |

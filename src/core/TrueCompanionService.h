@@ -298,6 +298,7 @@ namespace truecompanion
             std::string eventMemory;          // memory text to store with a reaction (e.g. ceremony)
             CancelToken token;
             bool allowActions = false;
+            std::string fallback;             // said without the AI if the request fails (what a command did)
         };
 
         struct JobResult
@@ -323,12 +324,17 @@ namespace truecompanion
         PromptInput MakePrompt(Session& s, TriggerKind trigger, std::string const& triggerText, WorldContext const& ctx,
                                TimePoint now, bool withHistory);
         void RequestReaction(Session& s, TriggerKind trigger, std::string const& text, WorldContext const& ctx, TimePoint now,
-                             std::string const& eventMemory = std::string(), bool shortHint = true);
+                             std::string const& eventMemory = std::string(), bool shortHint = true,
+                             std::string const& fallback = std::string());
 
         void ProcessResult(JobResult& r, TimePoint now);
         void HandleReply(Session& s, JobResult& r, TimePoint now);
         void HandleSummary(Session& s, JobResult& r, TimePoint now);
         void HandleFailure(Session& s, JobResult& r, TimePoint now);
+        // The AI can answer now: Ollama is on and not known to be offline. Without it, commands still work and
+        // she says what she did in plain words (PlainCompanionLine).
+        bool AiAvailable() const { return _cfg.ollamaEnabled && !(_status.checked && !_status.online); }
+        void SayPlain(Session& s, std::string const& note, TimePoint now, ChatChannel channel = ChatChannel::Whisper);
         void ApplyProposalOutcome(Session& s, ProposalDecision const& d, TimePoint now);
         void PushMemoryChanged(CompanionKey const& key, int64_t id);
         void Leave(Session& s, TimePoint now);

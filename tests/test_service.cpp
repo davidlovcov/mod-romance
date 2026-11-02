@@ -1309,3 +1309,50 @@ TEST(Acceptance, ElaraCoupleRingRestartRemember)
     h.svc->ListMemories(h.Key(), MemoryKind::Gift, "ring", 0, 10, &total);
     CHECK_EQ(total, size_t(0));
 }
+
+TEST(Service, WithoutOllamaCommandsStillWorkAndSheSaysWhatSheDid)
+{
+    Harness h;
+    h.cfg.ollamaEnabled = false;
+    h.Restart();
+    h.Activate(h.Key());
+    int calls = 0;
+    h.llm->SetResponder([&](LlmRequest const&) { ++calls; LlmResult r; r.status = LlmResult::Status::Ok; r.content = ReplyJson("hi"); return r; });
+    WorldContext ctx = h.ctx;
+    ctx.commandOutcome = "Nothing. You have no junk to sell; tell them.";
+    ctx.commandHandled = true;
+    auto r = h.svc->OnPlayerMessage(h.Key(), "sell your junk", ChatChannel::Whisper, ctx, h.now);
+    CHECK(r.result == TrueCompanionService::MessageResult::Accepted);   // not passed on to Playerbots as text
+    CHECK(h.WaitSpeak(h.Key()));
+    CHECK_EQ(h.Spoken(h.Key()).back(), std::string("I have no junk to sell."));
+    // what happens later (a turn-in on an errand) is said too
+    h.svc->OnGameEvent(h.Key(), { GameEventType::CompanionNotice, "You turned in \"A\" at Bob and are coming back to them. Tell them briefly.", 2, h.now }, h.now);
+    CHECK(h.WaitSpeak(h.Key(), 2));
+    CHECK_EQ(h.Spoken(h.Key()).back(), std::string("I turned in \"A\" at Bob and am coming back to you."));
+    // plain chat needs the AI: left to Playerbots as before
+    auto chat = h.svc->OnPlayerMessage(h.Key(), "how are you today?", ChatChannel::Whisper, h.ctx, h.now);
+    CHECK(chat.result == TrueCompanionService::MessageResult::AiDisabled);
+    CHECK_EQ(calls, 0);
+}
+
+TEST(Service, WhenOllamaFailsTheCommandOutcomeStillReachesThePlayer)
+{
+    Harness h;
+    h.Activate(h.Key());
+    h.llm->SetOnline(false);   // Ollama is down (requests and health checks fail)
+    WorldContext ctx = h.ctx;
+    ctx.commandOutcome = "You took the lead; they follow you. Tell them where you are going.";
+    ctx.commandHandled = true;
+    auto r = h.svc->OnPlayerMessage(h.Key(), "lead the way", ChatChannel::Whisper, ctx, h.now);
+    CHECK(r.result == TrueCompanionService::MessageResult::Accepted);
+    CHECK(h.WaitSpeak(h.Key()));
+    CHECK_EQ(h.Spoken(h.Key()).back(), std::string("I took the lead; you follow me."));
+    // now known offline: the next command is answered right away, without a request
+    size_t calls = h.llm->CallCount();
+    h.now += 5;
+    ctx.commandOutcome = "Nothing. There is no enemy nearby to attack; tell them.";
+    h.svc->OnPlayerMessage(h.Key(), "attack", ChatChannel::Whisper, ctx, h.now);
+    CHECK(h.WaitSpeak(h.Key(), 2));
+    CHECK_EQ(h.Spoken(h.Key()).back(), std::string("There is no enemy nearby to attack."));
+    CHECK_EQ(h.llm->CallCount(), calls);
+}

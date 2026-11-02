@@ -51,7 +51,9 @@ TrueCompanion.MaxInitialStage = 7
 ###################################################################################################
 
 #    TrueCompanion.Ollama.Enable
-#        Description: Use Ollama for conversations. When 0, companions are regular Playerbots.
+#        Description: Use Ollama for conversations. When 0 (or while Ollama is unreachable), there is no
+#                     conversation, but everything else works: commands ("lead the way", "sell your junk"),
+#                     lead mode, quests, the addon. She then says what she did in plain words.
 #        Default:     1
 TrueCompanion.Ollama.Enable = 1
 

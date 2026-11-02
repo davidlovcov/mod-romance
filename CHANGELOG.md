@@ -7,6 +7,7 @@
 - Upgrading keeps everything: a new SQL update renames the `romance_*` tables (only when the old ones exist, so it is safe to run again), `scripts/migrate-from-mod-romance.sh` converts your config, and memory exports made before the rename can still be imported. Steps: docs/INSTALLATION.md, "Upgrading from mod-romance".
 
 ### Added
+- Works without Ollama: with `TrueCompanion.Ollama.Enable = 0`, or while Ollama is unreachable or fails, commands, lead mode, quests and the addon keep working, and she says what she did in plain words ("I took the lead ...", "I turned in ..."). Only free conversation needs the AI.
 - Quests tab actions: "Share" gives a quest to every companion who lacks it and can take it, and a companion who has it shares it with you; "Take" sends the companions to take a quest available around (right away when the quest giver is near, else the leading or selected companion leads everyone there and they take exactly that quest). The tab shows who could still get each quest and who can take each available one.
 - Group quests (for the addon's new Quests tab): the party's quests with who has which, the quests available around, a quest order for the whole group ("Apply" switches the leading companion right away), ignored quests (never picked up or led to) and "abandon for all companions".
 - "Lead me to <quest>" for a quest that is already done: she leads you to turn it in.

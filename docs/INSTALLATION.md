@@ -159,7 +159,7 @@ Chat-command alternatives: `.companion summon Elara`, `.companion dismiss`, `.co
 | Replies take very long or time out | The model is too big for your hardware. Use a smaller model, keep `TrueCompanion.Ollama.Thinking = 0`, or raise `RequestTimeoutMs`. The first request after idle loads the model; `KeepAlive` keeps it loaded. |
 | "Cannot call: limit_reached" | `TrueCompanion.MaxActiveCompanionsPerPlayer` is reached. Send the other companion home first. |
 | Character shows "Online as a player" | That character is logged in with a real client. Log it out. |
-| Bot joins but doesn't talk with AI | AI is disabled for that companion (Companion tab → Enable AI), or `TrueCompanion.Ollama.Enable = 0`. |
+| Bot joins but doesn't talk with AI | AI is disabled for that companion (Companion tab → Enable AI), or `TrueCompanion.Ollama.Enable = 0` / Ollama unreachable. Commands still work then; she answers them in plain words. |
 | Gift not recognized | Only completed trades count, and each item instance is rewarded once. Mail isn't treated as a gift. The bot must be your active companion. |
 | Two bots answer the same whisper | **mod-ollama-chat** is also installed and answers bot whispers. Disable it, or don't use both on the same character. |
 | Muted for chat flood | Very large imports. The addon paces its traffic below `ChatFlood.AddonMessageCount`; if you lowered that setting, raise it again. |

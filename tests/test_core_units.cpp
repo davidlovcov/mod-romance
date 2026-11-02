@@ -1085,3 +1085,27 @@ TEST(Personality, CustomPresetIds)
     CHECK_EQ(CustomPresetNumber("anime_girlfriend"), 0u);
     CHECK_EQ(CustomPresetId(3), std::string("custom:3"));
 }
+
+TEST(Text, PlainCompanionLineWithoutTheAi)
+{
+    using truecompanion::PlainCompanionLine;
+    CHECK_EQ(PlainCompanionLine("You took the lead and are walking to the area of your quest \"Solanian's Belongings\" (about 322 yards "
+                                "away); they follow you. You wait if they fall behind. Tell them where you are going."),
+             std::string("I took the lead and am walking to the area of my quest \"Solanian's Belongings\" (about 322 yards "
+                         "away); you follow me. I wait if you fall behind."));
+    CHECK_EQ(PlainCompanionLine("Nothing. You have no junk to sell; tell them."), std::string("I have no junk to sell."));
+    CHECK_EQ(PlainCompanionLine("Nothing yet. You are still on your way to Lanthan Perilon to turn in quests; you can lead them as "
+                                "soon as you are back. Tell them."),
+             std::string("I am still on my way to Lanthan Perilon to turn in quests; I can lead you as soon as I am back."));
+    CHECK_EQ(PlainCompanionLine("You turned in \"Report to Lanthan Perilon\" at Lanthan Perilon and are coming back to them. Tell them briefly."),
+             std::string("I turned in \"Report to Lanthan Perilon\" at Lanthan Perilon and am coming back to you."));
+    CHECK_EQ(PlainCompanionLine("\"Unfortunate Measures\" is done, so you lead them to Magistrix Erona (about 78 yards south) to turn it in. Tell them."),
+             std::string("\"Unfortunate Measures\" is done, so I lead you to Magistrix Erona (about 78 yards south) to turn it in."));
+    CHECK_EQ(PlainCompanionLine("They want you all to take \"Thirst Unending\" from Arcanist Helion; you lead them there. Say it in a few words."),
+             std::string("You want us all to take \"Thirst Unending\" from Arcanist Helion; I lead you there."));
+    CHECK_EQ(PlainCompanionLine("Nothing. They want to do \"x\", but nobody in the group has that quest; tell them and ask which one."),
+             std::string("You want to do \"x\", but nobody in the group has that quest."));
+    // quest names keep their words; only instructions -> nothing to say
+    CHECK_EQ(PlainCompanionLine("You picked up \"You Are Rakh'likh, Demon\". Tell them."), std::string("I picked up \"You Are Rakh'likh, Demon\"."));
+    CHECK_EQ(PlainCompanionLine("Tell them."), std::string(""));
+}

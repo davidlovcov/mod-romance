@@ -79,6 +79,12 @@ namespace truecompanion
 
     // Counts occurrences of `name` (case-insensitive, whole word) in text.
     size_t CountName(std::string const& text, std::string const& name);
+
+    // Turns a note written for the AI about what the companion just did ("You took the lead ...; they follow
+    // you. Tell them where you are going.") into a line she can say herself without the AI ("I took the lead
+    // ...; you follow me."): instructions to the AI are dropped, "Nothing." is dropped, and the persons are
+    // swapped (you -> I/me, they/them -> you). Text in double quotes (quest and item names) is kept as is.
+    std::string PlainCompanionLine(std::string const& note);
 }
 
 #endif

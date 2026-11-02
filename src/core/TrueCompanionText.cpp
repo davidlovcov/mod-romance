@@ -442,4 +442,163 @@ namespace truecompanion
         }
         return count;
     }
+
+    namespace
+    {
+        bool IsDirective(std::string const& lower)
+        {
+            static char const* const starts[] = { "tell them", "say it", "say so", "say that", "say a few", "answer them",
+                                                  "ask them", "suggest", "let them know" };
+            for (char const* st : starts)
+                if (lower.compare(0, std::char_traits<char>::length(st), st) == 0)
+                    return true;
+            return false;
+        }
+
+        // the note split at ". ", "; " and ", " boundaries (outside quotes), keeping the separators
+        std::vector<std::string> SplitClauses(std::string const& s)
+        {
+            std::vector<std::string> out;
+            std::string cur;
+            bool quoted = false;
+            for (size_t i = 0; i < s.size(); ++i)
+            {
+                char c = s[i];
+                cur += c;
+                if (c == '"')
+                    quoted = !quoted;
+                if (!quoted && (c == '.' || c == ';' || c == ',' || c == '!' || c == '?') && (i + 1 == s.size() || s[i + 1] == ' '))
+                {
+                    out.push_back(cur);
+                    cur.clear();
+                }
+            }
+            if (!cur.empty())
+                out.push_back(cur);
+            return out;
+        }
+
+        std::string SwapPersons(std::string const& text)
+        {
+            static std::set<std::string> const subjectAfter = {
+                "and", "but", "so", "because", "that", "when", "if", "as", "while", "until", "then", "or", "where", "what",
+                "which", "who", "how", "why", "once", "before", "after", "since", "unless", "than", "though", "although" };
+            std::string out;
+            bool quoted = false;
+            bool clauseStart = true;      // the next word may be a subject
+            bool subjectI = false;        // the clause is about her ("I ... and am ...")
+            std::string prevLower;
+            size_t i = 0;
+            while (i < text.size())
+            {
+                char c = text[i];
+                if (c == '"')
+                    quoted = !quoted;
+                if (quoted || !std::isalpha(static_cast<unsigned char>(c)))
+                {
+                    out += c;
+                    if (!quoted && (c == ';' || c == ',' || c == ':' || c == '(' || c == '.'))
+                        clauseStart = true;
+                    if (!quoted && (c == '.' || c == ';'))
+                        subjectI = false;
+                    ++i;
+                    continue;
+                }
+                size_t j = i;
+                while (j < text.size() && (std::isalpha(static_cast<unsigned char>(text[j])) || text[j] == '\'' ))
+                    ++j;
+                std::string w = text.substr(i, j - i);
+                std::string lw = ToLower(w);
+                bool cap = std::isupper(static_cast<unsigned char>(w[0])) != 0;
+                std::string next;
+                for (size_t k = j; k < text.size() && text[k] == ' '; ++k)
+                    if (k + 1 < text.size() && std::isalpha(static_cast<unsigned char>(text[k + 1])))
+                    {
+                        size_t e = k + 1;
+                        while (e < text.size() && std::isalpha(static_cast<unsigned char>(text[e])))
+                            ++e;
+                        next = ToLower(text.substr(k + 1, e - k - 1));
+                        break;
+                    }
+                bool subject = clauseStart || subjectAfter.count(prevLower) > 0;
+                std::string r = w;
+                if (lw == "you")
+                {
+                    if (next == "all")
+                        r = subject ? "we" : "us";
+                    else
+                        r = subject ? "I" : "me";
+                    if (subject && next != "all")
+                        subjectI = true;
+                }
+                else if (lw == "you're") { r = "I'm"; subjectI = true; }
+                else if (lw == "you've") { r = "I've"; subjectI = true; }
+                else if (lw == "you'll") { r = "I'll"; subjectI = true; }
+                else if (lw == "you'd") { r = "I'd"; subjectI = true; }
+                else if (lw == "your") r = "my";
+                else if (lw == "yours") r = "mine";
+                else if (lw == "yourself") r = "myself";
+                else if (lw == "they" || lw == "them") { r = "you"; if (subject) subjectI = false; }
+                else if (lw == "their") r = "your";
+                else if (lw == "theirs") r = "yours";
+                else if (lw == "themselves") r = "yourself";
+                else if (lw == "they're") { r = "you're"; subjectI = false; }
+                else if (lw == "they've") { r = "you've"; subjectI = false; }
+                else if (lw == "are" && (prevLower == "you" && out.size() >= 2 && out.compare(out.size() - 2, 2, "I ") == 0))
+                    r = "am";
+                else if (lw == "are" && subjectI && (prevLower == "and" || prevLower == "but" || prevLower == "still"))
+                    r = "am";
+                else if (lw == "were" && out.size() >= 2 && out.compare(out.size() - 2, 2, "I ") == 0)
+                    r = "was";
+                else if (lw == "aren't" && out.size() >= 2 && out.compare(out.size() - 2, 2, "I ") == 0)
+                    r = "am not";
+                bool pronounI = r == "I" || r.compare(0, 2, "I'") == 0;
+                if (r != w && cap)
+                    r[0] = char(std::toupper(static_cast<unsigned char>(r[0])));   // "They" -> "You"
+                else if (r != w && !pronounI)
+                    r[0] = char(std::tolower(static_cast<unsigned char>(r[0])));
+                out += r;
+                prevLower = lw;
+                clauseStart = false;
+                i = j;
+            }
+            return out;
+        }
+    }
+
+    std::string PlainCompanionLine(std::string const& note)
+    {
+        std::string s = Trim(note);
+        for (char const* lead : { "Nothing yet. ", "Nothing. " })
+            if (s.compare(0, std::char_traits<char>::length(lead), lead) == 0)
+                s = s.substr(std::char_traits<char>::length(lead));
+        // drop the instructions to the AI ("Tell them.", "; tell them and ask which one.")
+        std::string kept;
+        for (std::string const& clause : SplitClauses(s))
+        {
+            std::string body = Trim(clause);
+            if (IsDirective(ToLower(body)))
+            {
+                // "...; tell them." -> the clause before ends the sentence
+                while (!kept.empty() && (kept.back() == ' ' || kept.back() == ';' || kept.back() == ','))
+                    kept.pop_back();
+                if (!kept.empty() && kept.back() != '.' && kept.back() != '!' && kept.back() != '?')
+                    kept += '.';
+                continue;
+            }
+            if (!kept.empty() && kept.back() != ' ')
+                kept += ' ';
+            kept += body;
+        }
+        kept = Trim(kept);
+        while (!kept.empty() && (kept.back() == ';' || kept.back() == ','))
+            kept.pop_back();
+        if (kept.empty())
+            return "";
+        if (kept.back() != '.' && kept.back() != '!' && kept.back() != '?' && kept.back() != '"' && kept.back() != ')')
+            kept += '.';
+        std::string r = SwapPersons(kept);
+        r[0] = char(std::toupper(static_cast<unsigned char>(r[0])));
+        return r;
+    }
 }

@@ -863,6 +863,31 @@ namespace truecompanion
             return hr;
         }
 
+        // A command was carried out but the AI can't answer (Ollama off or offline): she says what she did in plain words.
+        if (ctx.commandHandled && s->rec.settings.aiEnabled && !AiAvailable())
+        {
+            std::string said = SanitizePlayerText(cm.text, _cfg.maxPlayerMessageChars);
+            if (!said.empty())
+            {
+                ChatTurn turn{ ChatTurn::Role::Player, said, now };
+                s->history.push_back(turn);
+                while (s->history.size() > _cfg.storedChatTurns)
+                    s->history.pop_front();
+                _repo.AppendChat(key, turn);
+                Json p = Json::MakeObject();
+                p.Set("op", "chat_msg");
+                p.Set("guid", int64_t(key.companion));
+                p.Set("from", "player");
+                p.Set("text", said);
+                p.Set("ts", int64_t(now));
+                _out.push_back({ OutgoingAction::Type::UiPush, key, "", ChatChannel::Addon, ActionType::None, p });
+            }
+            s->lastActivity = now;
+            SayPlain(*s, ctx.commandOutcome, now, channel);
+            hr.result = MessageResult::Accepted;
+            return hr;
+        }
+
         if (!s->rec.settings.aiEnabled || !_cfg.ollamaEnabled)
         {
             hr.result = MessageResult::AiDisabled;
@@ -931,6 +956,8 @@ namespace truecompanion
         jc.proposal = decision;
         jc.executedCommand = hr.command;
         jc.allowActions = in.allowActions;
+        if (ctx.commandHandled)
+            jc.fallback = ctx.commandOutcome;
         jc.messages = DialogueContextBuilder::Build(in);
 
         if (!Submit(*s, std::move(jc)))
@@ -1081,6 +1108,11 @@ namespace truecompanion
                     AddRecentEvent(*s, "you equipped " + ev.detail, now);
                 break;
             case GameEventType::CompanionNotice:
+                if (s->rec.settings.aiEnabled && !AiAvailable())
+                {
+                    SayPlain(*s, ev.detail, now);   // no AI: she says what happened in plain words
+                    return;
+                }
                 text = ev.detail;
                 priority = std::max(1, std::min(3, ev.value));
                 always = ev.value >= 2;
@@ -1177,23 +1209,30 @@ namespace truecompanion
     }
 
     void TrueCompanionService::RequestReaction(Session& s, TriggerKind trigger, std::string const& text, WorldContext const& ctx, TimePoint now,
-                                         std::string const& eventMemory, bool shortHint)
+                                         std::string const& eventMemory, bool shortHint, std::string const& fallback)
     {
-        if (!s.rec.settings.aiEnabled || !_cfg.ollamaEnabled)
+        if (!s.rec.settings.aiEnabled)
             return;
+        if (!AiAvailable())
+        {
+            if (!fallback.empty())
+                SayPlain(s, fallback, now);
+            return;
+        }
         PromptInput in = MakePrompt(s, trigger, text, ctx, now, true);
         in.shortReplyHint = shortHint;
         JobContext jc;
         jc.trigger = trigger;
         jc.channel = (s.rec.settings.partyChatMode || _cfg.partyOnlyChat) ? ChatChannel::Party : ChatChannel::Whisper;
         jc.eventMemory = eventMemory;
+        jc.fallback = fallback;
         jc.messages = DialogueContextBuilder::Build(in);
         if (!Submit(s, std::move(jc)))
         {
             // keep it for later if the companion is busy
             PendingReaction pr;
             pr.event.detail = text;
-            pr.event.type = GameEventType::CombatEnd;
+            pr.event.type = fallback.empty() ? GameEventType::CombatEnd : GameEventType::CompanionNotice;
             pr.notBefore = now + 2;
             pr.expires = now + 90;
             pr.priority = trigger == TriggerKind::Gift ? 4 : 1;
@@ -1350,11 +1389,18 @@ namespace truecompanion
         }
         if (r.llm.status == LlmResult::Status::Offline)
         {
+            _status.checked = true;   // known now: the next command is answered without waiting for the AI
             _status.online = false;
             _status.lastError = r.llm.error;
             _nextHealthCheck = std::min(_nextHealthCheck, now + 10);
         }
         PushTyping(s, false);
+        if (!r.ctx.fallback.empty())
+        {
+            // what she did still reaches the player, without the AI's words
+            SayPlain(s, r.ctx.fallback, now, r.ctx.channel);
+            return;
+        }
         if (r.ctx.trigger == TriggerKind::PlayerMessage && now - s.lastOfflineNotice >= kOfflineNoticeSec)
         {
             s.lastOfflineNotice = now;
@@ -1738,6 +1784,14 @@ namespace truecompanion
         SaveRecord(s, now, true);
     }
 
+    void TrueCompanionService::SayPlain(Session& s, std::string const& note, TimePoint now, ChatChannel channel)
+    {
+        std::string line = PlainCompanionLine(note);
+        if (line.empty())
+            return;
+        Deliver(s, line, channel, now);
+    }
+
     void TrueCompanionService::Deliver(Session& s, std::string const& reply, ChatChannel channel, TimePoint now)
     {
         ChatChannel out = channel == ChatChannel::Addon ? ChatChannel::Whisper : channel;
@@ -1823,7 +1877,9 @@ namespace truecompanion
         PendingReaction pr = *s.reaction;
         s.reaction.reset();
         TriggerKind trig = pr.priority >= 4 ? TriggerKind::Gift : TriggerKind::GameEvent;
-        RequestReaction(s, trig, pr.event.detail, ctx, now, "", pr.priority < 3);
+        // what a command did (turned in, picked up, ...): said in plain words if the AI can't
+        std::string fallback = pr.event.type == GameEventType::CompanionNotice ? pr.event.detail : std::string();
+        RequestReaction(s, trig, pr.event.detail, ctx, now, "", pr.priority < 3, fallback);
     }
 
     void TrueCompanionService::ScheduleNextProactive(Session& s, TimePoint now)

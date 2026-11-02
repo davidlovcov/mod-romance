@@ -8,7 +8,7 @@
 
 An AI companion and relationship module for **AzerothCore (WotLK 3.3.5a)** with **mod-playerbots** and a local **Ollama** model.
 
-Turn one of your own characters into a companion who remembers you. Your companion keeps the personality you configured, reacts to fights, level-ups and gifts, sometimes starts conversations, and the relationship between you grows over time. Male and female companions work the same way. Combat, movement and spellcasting stay with the normal Playerbots AI. Ollama only supplies the conversation, and **only for the companion you explicitly select**, never for your other bots.
+Turn one of your own characters into a companion who remembers you. Your companion keeps the personality you configured, reacts to fights, level-ups and gifts, sometimes starts conversations, and the relationship between you grows over time. Male and female companions work the same way. Combat, movement and spellcasting stay with the normal Playerbots AI. Ollama only supplies the conversation, and **only for the companion you explicitly select**, never for your other bots. Without Ollama the module still runs: commands, lead mode and quests work, only free conversation is missing.
 
 The in-game interface is the companion addon: **[azerothcore-true-companion-addon](https://github.com/davidlovcov/azerothcore-true-companion-addon)**.
 
