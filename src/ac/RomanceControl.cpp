@@ -1372,7 +1372,12 @@ namespace romance::ac
         for (Unit* u : units)
         {
             Creature* c = u->ToCreature();
-            if (!c || !c->IsAlive() || !anchor->IsValidAttackTarget(c) || c->IsCivilian())
+            if (!c || !c->IsAlive() || !anchor->IsValidAttackTarget(c))
+                continue;
+            // "Civilian" creatures (e.g. Springpaw Cubs, which drop the Lynx Collars) are left alone when clearing an
+            // area, but not when they are what the quest needs or the one enemy that was named.
+            bool wanted = (!h.only.IsEmpty() && c->GetGUID() == h.only) || h.entries.count(c->GetEntry());
+            if (c->IsCivilian() && !wanted)
                 continue;
             ++h.seen;
             if (c->hasLootRecipient() && !c->isTappedBy(owner))
