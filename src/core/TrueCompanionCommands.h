@@ -28,14 +28,14 @@ namespace truecompanion
     {
         None = 0,
         Cast,          // arg = spell name; onMe = cast on the player
-        GiveItem,      // arg = item name; amount = count (0 = all/one stack)
+        GiveItem,      // arg = item name; amount = count (amountGiven false = all/one stack)
         GiveGold,      // amount = copper
         AttackNamed,   // arg = creature name or creature type ("wolf", "beasts", "undead")
         AttackTarget,  // the player's current target (nearest enemy if nothing is targeted)
         AttackAll,     // clear the area: one enemy after another; arg = optional name/type filter
         StopAttack,    // stop clearing the area
         SellJunk,      // all gray items
-        SellItem,      // arg = item name
+        SellItem,      // arg = item name; amount = count (amountGiven false = all of them)
         ShareQuests,   // share every quest the player could take
         ShareQuest,    // arg = quest title
         AcceptQuests,  // take quests from quest givers (walks to one nearby if needed); arg = title or "class"
@@ -52,9 +52,12 @@ namespace truecompanion
         CompanionCommandKind kind = CompanionCommandKind::None;
         std::string arg;
         uint64_t amount = 0;
+        bool amountGiven = false;   // the player named a count ("sell 3 ..."), as opposed to none ("sell your ...")
+        bool badAmount = false;     // the player named an amount that is not a whole positive number ("-5", "1.5 gold",
+                                    // "0 linen cloth", "1,000 gold", too many digits): the command must not run
         bool onMe = false;
-        bool all = false;
-        bool direct = false;   // addressed to her alone (whisper, addon, or her name in party chat), not to everyone   // AcceptQuests: "all your quests" / "your quests" (every giver around), not just the nearest quest
+        bool all = false;      // AcceptQuests: "all your quests" / "your quests" (every giver around), not just the nearest quest
+        bool direct = false;   // addressed to her alone (whisper, addon, or her name in party chat), not to everyone
     };
 
     char const* CompanionCommandId(CompanionCommandKind k);
@@ -63,7 +66,8 @@ namespace truecompanion
     std::optional<CompanionCommand> ParseCompanionCommand(std::string const& text, std::string const& companionName,
                                                           std::string const& otherName = "");
 
-    // "10g", "5 gold 20 silver", "1g50s" -> copper; 0 if none.
+    // "10g", "5 gold 20 silver", "1g50s" -> copper; 0 if none, or if an amount is not a whole positive number
+    // ("1.5 gold", "-5 gold", "1,000 gold") or has too many digits.
     uint64_t ParseMoney(std::string const& lowerText);
 
     namespace knowledge

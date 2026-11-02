@@ -7,6 +7,7 @@
 - Upgrading keeps everything: a new SQL update renames the `romance_*` tables (only when the old ones exist, so it is safe to run again), `scripts/migrate-from-mod-romance.sh` converts your config, and memory exports made before the rename can still be imported. Steps: docs/INSTALLATION.md, "Upgrading from mod-romance".
 
 ### Added
+- "Let's sell trash", "we should sell our junk", "go sell your stuff at the merchant" are understood.
 - "Learn your spells" / "go to your trainer": she walks to the nearest trainer of her class, learns the new spells she can afford with her own gold and comes back (right away when the trainer is next to her).
 - With her AI conversation off, a companion still carries out commands and answers them in plain words (before: a plain Playerbot). Such companions don't count toward the companion limit; turning the AI on checks the limit.
 - Without the AI she still thanks you for a gift ("Thank you for the 5 Linen Cloth.").

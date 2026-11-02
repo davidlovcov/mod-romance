@@ -151,18 +151,89 @@ namespace truecompanion
             return false;
         }
 
-        uint64_t LeadingCount(std::string& s)
+        // A count at the start of `s` ("5 linen cloth", "3 x copper ore"), removed from `s`. nullopt: no count there.
+        // An explicit 0 or a count with too many digits is returned as 0 (the caller rejects it).
+        std::optional<uint64_t> LeadingCount(std::string& s)
         {
             size_t i = 0;
             while (i < s.size() && std::isdigit(static_cast<unsigned char>(s[i])))
                 ++i;
-            if (i == 0 || i > 6 || i >= s.size() || s[i] != ' ')
-                return 0;
-            uint64_t n = std::stoull(s.substr(0, i));
+            if (i == 0 || i >= s.size() || s[i] != ' ')
+                return std::nullopt;
+            uint64_t n = i > 6 ? 0 : std::stoull(s.substr(0, i));
             s = Trim(s.substr(i + 1));
             if (StartsWith(s, "x "))
                 s = Trim(s.substr(2));
             return n;
+        }
+
+        // A number the player typed that is not a whole positive count: "-5", "1.5", "1,000", "2'000".
+        // Works on the raw text (Normalize turns "1.5" into "1 5").
+        bool HasMalformedNumber(std::string const& raw)
+        {
+            for (size_t i = 0; i < raw.size(); ++i)
+            {
+                if (!std::isdigit(static_cast<unsigned char>(raw[i])))
+                    continue;
+                size_t j = i;
+                while (j < raw.size() && std::isdigit(static_cast<unsigned char>(raw[j])))
+                    ++j;
+                bool negative = i > 0 && raw[i - 1] == '-' && (i == 1 || !std::isalnum(static_cast<unsigned char>(raw[i - 2])));
+                bool separated = j + 1 < raw.size() && (raw[j] == '.' || raw[j] == ',' || raw[j] == '\'') &&
+                                 std::isdigit(static_cast<unsigned char>(raw[j + 1]));
+                if (negative || separated)
+                    return true;
+                i = j;
+            }
+            return false;
+        }
+
+        struct MoneyScan
+        {
+            uint64_t copper = 0;
+            bool unit = false;   // at least one "<number> <gold|silver|copper>"
+            bool bad = false;    // a number with a money unit that can't be used (too many digits, or 0 in total)
+        };
+
+        // "10g", "5 gold 20 silver", "1g50s" in normalized text.
+        MoneyScan ScanMoney(std::string const& s)
+        {
+            MoneyScan m;
+            size_t i = 0;
+            while (i < s.size())
+            {
+                if (!std::isdigit(static_cast<unsigned char>(s[i])))
+                {
+                    ++i;
+                    continue;
+                }
+                size_t j = i;
+                while (j < s.size() && std::isdigit(static_cast<unsigned char>(s[j])))
+                    ++j;
+                size_t k = j;
+                if (k < s.size() && s[k] == ' ')
+                    ++k;
+                size_t w = k;
+                while (w < s.size() && std::isalpha(static_cast<unsigned char>(s[w])))
+                    ++w;
+                std::string unit = s.substr(k, w - k);
+                uint64_t mult = (unit == "g" || unit == "gold" || unit == "gc" || unit == "gp") ? 10000
+                                : (unit == "s" || unit == "silver")                             ? 100
+                                : (unit == "c" || unit == "copper")                             ? 1
+                                                                                                : 0;
+                if (mult)
+                {
+                    m.unit = true;
+                    if (j - i > 7)
+                        m.bad = true;
+                    else
+                        m.copper += std::stoull(s.substr(i, j - i)) * mult;
+                }
+                i = w > j ? w : j;
+            }
+            if (m.unit && m.copper == 0)
+                m.bad = true;
+            return m;
         }
 
         bool IsJunk(std::string const& s)
@@ -205,44 +276,17 @@ namespace truecompanion
 
     uint64_t ParseMoney(std::string const& lowerText)
     {
-        std::string s = Normalize(lowerText);
-        uint64_t total = 0;
-        size_t i = 0;
-        while (i < s.size())
-        {
-            if (!std::isdigit(static_cast<unsigned char>(s[i])))
-            {
-                ++i;
-                continue;
-            }
-            size_t j = i;
-            while (j < s.size() && std::isdigit(static_cast<unsigned char>(s[j])))
-                ++j;
-            if (j - i > 7)
-                return 0;
-            uint64_t n = std::stoull(s.substr(i, j - i));
-            size_t k = j;
-            if (k < s.size() && s[k] == ' ')
-                ++k;
-            size_t w = k;
-            while (w < s.size() && std::isalpha(static_cast<unsigned char>(s[w])))
-                ++w;
-            std::string unit = s.substr(k, w - k);
-            if (unit == "g" || unit == "gold" || unit == "gc" || unit == "gp")
-                total += n * 10000;
-            else if (unit == "s" || unit == "silver")
-                total += n * 100;
-            else if (unit == "c" || unit == "copper")
-                total += n;
-            i = w > j ? w : j;
-        }
-        return total;
+        if (HasMalformedNumber(lowerText))
+            return 0;
+        MoneyScan m = ScanMoney(Normalize(lowerText));
+        return m.bad ? 0 : m.copper;
     }
 
     std::optional<CompanionCommand> ParseCompanionCommand(std::string const& text, std::string const& companionName,
                                                           std::string const& otherName)
     {
         std::string s = Normalize(text);
+        bool malformed = HasMalformedNumber(Lower(text));   // "-5", "1.5", "1,000": Normalize hides them
         StripGroupAddress(s);
         StripAddress(s, companionName);
         StripAddress(s, otherName);
@@ -390,18 +434,29 @@ namespace truecompanion
         }
 
         // ---- sell
-        if (StripPrefix(s, { "sell", "vendor", "get rid of", "verkauf", "verkaufe" }))
+        // ("let's sell trash", "we should sell our junk", "go sell your stuff": only in front of "sell", since
+        // "let's do ..." and "let's go" mean something else)
+        if (StripPrefix(s, { "let's go sell", "lets go sell", "let's sell", "lets sell", "let us sell", "we should sell", "we need to sell",
+                             "we have to sell", "you should sell", "time to sell", "go and sell", "go sell", "lass uns verkaufen",
+                             "sell", "vendor", "get rid of", "verkauf", "verkaufe" }))
         {
             // "vendor, sell trash" / "vendor sell your junk"
             StripPrefix(s, { "sell", "verkauf", "verkaufe" });
             StripDeterminers(s);
-            StripSuffix(s, { "at the vendor", "to the vendor", "to a vendor", "at a vendor" });
+            StripPrefix(s, { "our", "my" });
+            StripSuffix(s, { "now", "here", "at the vendor", "to the vendor", "to a vendor", "at a vendor", "at the merchant",
+                             "to the merchant", "at a merchant", "to a merchant", "beim händler" });
             if (s.empty() || IsJunk(s))
                 c.kind = CompanionCommandKind::SellJunk;
             else
             {
                 c.kind = CompanionCommandKind::SellItem;
-                c.amount = LeadingCount(s);
+                if (auto n = LeadingCount(s))
+                {
+                    c.amountGiven = true;
+                    c.amount = *n;
+                }
+                c.badAmount = malformed || (c.amountGiven && c.amount == 0);
                 StripPrefix(s, { "of your", "of my", "of the", "of" });
                 StripDeterminers(s);
                 c.arg = s;
@@ -462,21 +517,30 @@ namespace truecompanion
                     return c;
                 }
             }
-            uint64_t copper = ParseMoney(s);
-            if (copper > 0)
+            // money: "10 gold", "2g 50s"; a broken amount ("1.5 gold", "-5 gold", "1,000 gold") is refused, never read
+            // as a different amount or as an item called "000 gold"
+            MoneyScan money = ScanMoney(s);
+            if (money.unit)
             {
                 c.kind = CompanionCommandKind::GiveGold;
-                c.amount = copper;
+                c.badAmount = malformed || money.bad;
+                c.amount = c.badAmount ? 0 : money.copper;
+                c.amountGiven = true;
                 return c;
             }
             if (moneyOnly || s == "gold" || s == "money" || s == "some gold" || s == "some money" || s == "coins" || s == "geld")
                 return std::nullopt; // no amount (or not about money): let her talk about it
             StripDeterminers(s);
-            c.amount = LeadingCount(s);
+            if (auto n = LeadingCount(s))
+            {
+                c.amountGiven = true;
+                c.amount = *n;
+            }
             StripDeterminers(s);
             if (s.empty() || IsAbstractGift(s))
                 return std::nullopt;
             c.kind = CompanionCommandKind::GiveItem;
+            c.badAmount = malformed || (c.amountGiven && c.amount == 0);
             c.arg = s;
             return c;
         }

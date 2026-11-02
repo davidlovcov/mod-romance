@@ -184,7 +184,59 @@ TEST(Commands, SellAmountAndOf)
     auto d = ParseCompanionCommand("sell 5 linen cloth", "Elara");
     CHECK(d && d->amount == 5 && d->arg == "linen cloth");
     auto e = ParseCompanionCommand("sell your linen cloth", "Elara");
-    CHECK(e && e->amount == 0 && e->arg == "linen cloth");
+    CHECK(e && e->amount == 0 && !e->amountGiven && e->arg == "linen cloth");
+    CHECK(c->amountGiven && !c->badAmount);
+}
+
+TEST(Commands, AmountsThatAreNotWholePositiveNumbersAreRefused)
+{
+    // decimals, negatives and separators were read as a different amount ("1.5 gold" -> 5 gold)
+    auto c = ParseCompanionCommand("give me 1.5 gold", "Elara");
+    CHECK(c && c->kind == CompanionCommandKind::GiveGold && c->badAmount && c->amount == 0);
+    c = ParseCompanionCommand("give me -5 gold", "Elara");
+    CHECK(c && c->kind == CompanionCommandKind::GiveGold && c->badAmount);
+    // "1,000 gold" is money with a bad amount, not an item called "000 gold"
+    c = ParseCompanionCommand("give me 1,000 gold", "Elara");
+    CHECK(c && c->kind == CompanionCommandKind::GiveGold && c->badAmount);
+    c = ParseCompanionCommand("give me 0 gold", "Elara");
+    CHECK(c && c->kind == CompanionCommandKind::GiveGold && c->badAmount);
+    c = ParseCompanionCommand("give me 99999999 gold", "Elara");
+    CHECK(c && c->kind == CompanionCommandKind::GiveGold && c->badAmount);
+    // an explicit 0 used to mean "all of them" when selling
+    c = ParseCompanionCommand("sell 0 linen cloth", "Elara");
+    CHECK(c && c->kind == CompanionCommandKind::SellItem && c->badAmount && c->amountGiven);
+    c = ParseCompanionCommand("sell -3 linen cloth", "Elara");
+    CHECK(c && c->kind == CompanionCommandKind::SellItem && c->badAmount);
+    c = ParseCompanionCommand("give me 1234567 linen cloth", "Elara");
+    CHECK(c && c->kind == CompanionCommandKind::GiveItem && c->badAmount);
+    c = ParseCompanionCommand("give me 0 linen cloth", "Elara");
+    CHECK(c && c->kind == CompanionCommandKind::GiveItem && c->badAmount);
+    // valid amounts still work
+    c = ParseCompanionCommand("give me 1g 50s", "Elara");
+    CHECK(c && c->kind == CompanionCommandKind::GiveGold && !c->badAmount && c->amount == 15000);
+    c = ParseCompanionCommand("give me 2 linen cloth", "Elara");
+    CHECK(c && c->kind == CompanionCommandKind::GiveItem && !c->badAmount && c->amountGiven && c->amount == 2);
+    c = ParseCompanionCommand("give me your linen cloth", "Elara");
+    CHECK(c && !c->badAmount && !c->amountGiven);
+    CHECK_EQ(ParseMoney("1.5 gold"), uint64_t(0));
+    CHECK_EQ(ParseMoney("-5 gold"), uint64_t(0));
+    CHECK_EQ(ParseMoney("2g 50s"), uint64_t(25000));
+}
+
+TEST(Commands, LetsSellTrash)
+{
+    // "let's sell trash" was not understood in a playtest
+    CHECK(Kind("let's sell trash") == CompanionCommandKind::SellJunk);
+    CHECK(Kind("lets sell") == CompanionCommandKind::SellJunk);
+    CHECK(Kind("we should sell our junk") == CompanionCommandKind::SellJunk);
+    CHECK(Kind("go sell your trash at the merchant") == CompanionCommandKind::SellJunk);
+    CHECK(Kind("Elara, let us sell the grey items") == CompanionCommandKind::SellJunk);
+    auto c = ParseCompanionCommand("let's sell 3 linen cloth", "Elara");
+    CHECK(c && c->kind == CompanionCommandKind::SellItem && c->amount == 3 && c->arg == "linen cloth");
+    // the other "let's ..." and "go ..." sentences keep their meaning
+    CHECK(Kind("let's do Kobold Camp Cleanup") == CompanionCommandKind::Lead);
+    CHECK(Kind("let's go") == CompanionCommandKind::ResumeLead);
+    CHECK(Kind("go after the wolf") == CompanionCommandKind::AttackNamed);
 }
 
 TEST(Commands, KnowledgeTopics)
