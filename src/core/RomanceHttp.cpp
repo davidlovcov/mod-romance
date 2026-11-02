@@ -114,6 +114,20 @@ namespace romance
             return s;
         }
 
+        // Value of header `name` (lower-case) in a lower-cased header block, without surrounding blanks; "" if absent.
+        std::string HeaderValue(std::string const& headers, std::string const& name)
+        {
+            size_t at = headers.find("\r\n" + name + ":");
+            if (at == std::string::npos)
+                return "";
+            size_t start = at + 2 + name.size() + 1;
+            size_t end = headers.find("\r\n", start);
+            std::string v = headers.substr(start, end == std::string::npos ? std::string::npos : end - start);
+            size_t a = v.find_first_not_of(" \t");
+            size_t b = v.find_last_not_of(" \t");
+            return a == std::string::npos ? "" : v.substr(a, b - a + 1);
+        }
+
         bool DecodeChunked(std::string const& in, std::string& out)
         {
             size_t p = 0;
@@ -341,10 +355,10 @@ namespace romance
                 if (headerEnd != std::string::npos)
                 {
                     std::string headers = Lower(raw.substr(0, headerEnd));
-                    size_t cl = headers.find("\r\ncontent-length:");
-                    if (cl != std::string::npos)
-                        contentLength = std::atoll(headers.c_str() + cl + 17);
-                    chunked = headers.find("\r\ntransfer-encoding: chunked") != std::string::npos;
+                    std::string cl = HeaderValue(headers, "content-length");
+                    if (!cl.empty() && cl.find_first_not_of("0123456789") == std::string::npos && cl.size() <= 12)
+                        contentLength = std::atoll(cl.c_str());   // digits only: a bad value means "read until close"
+                    chunked = HeaderValue(headers, "transfer-encoding").find("chunked") != std::string::npos;
                 }
                 else if (raw.size() > 64 * 1024)
                 {

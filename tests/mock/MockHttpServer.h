@@ -35,6 +35,7 @@ namespace romance::test
         int status = 200;
         std::string body;
         bool chunked = false;
+        std::string chunkedHeader = "Transfer-Encoding: chunked";   // exact header line, to test odd spacing/case
         int delayMs = 0;
     };
 
@@ -140,7 +141,7 @@ namespace romance::test
             std::string out = "HTTP/1.1 " + std::to_string(resp.status) + " OK\r\nContent-Type: application/json\r\nConnection: close\r\n";
             if (resp.chunked)
             {
-                out += "Transfer-Encoding: chunked\r\n\r\n";
+                out += resp.chunkedHeader + "\r\n\r\n";
                 size_t half = resp.body.size() / 2;
                 std::string a = resp.body.substr(0, half), b = resp.body.substr(half);
                 char hex[16];

@@ -107,6 +107,26 @@ TEST(Http, ChunkedResponseIsDecoded)
     CHECK_EQ(r.content, std::string("chunked works"));
 }
 
+TEST(Http, ChunkedHeaderSpacingAndCaseDoNotMatter)
+{
+    for (char const* header : { "transfer-encoding:chunked", "TRANSFER-ENCODING:   Chunked  " })
+    {
+        std::string line = header;
+        MockHttpServer server([line](MockHttpRequest const&)
+        {
+            MockHttpResponse resp;
+            resp.body = ChatOk("odd header");
+            resp.chunked = true;
+            resp.chunkedHeader = line;
+            return resp;
+        });
+        OllamaBackend backend(server.Url());
+        LlmResult r = backend.Chat(BasicRequest(), MakeCancelToken());
+        CHECK(r.Ok());
+        CHECK_EQ(r.content, std::string("odd header"));
+    }
+}
+
 TEST(Http, OfflineServerFailsFastWithoutThrowing)
 {
     uint16_t port = FreePort();   // server destroyed -> nothing listens
