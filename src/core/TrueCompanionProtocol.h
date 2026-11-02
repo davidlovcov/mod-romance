@@ -29,7 +29,7 @@ namespace truecompanion
 {
     constexpr char const* kAddonPrefix = "TCMP";
     constexpr int kProtocolVersion = 1;
-    constexpr char const* kModuleVersion = "2.0.0-dev";   // bump together with the addon's AR.version at every release
+    constexpr char const* kModuleVersion = "2.0.0";   // bump together with the addon's AR.version at every release
     constexpr size_t kMaxChunkData = 200;          // keeps prefix + header + data well below 255 bytes
     constexpr size_t kMaxInboundMessageBytes = 16 * 1024;
     constexpr size_t kMaxInboundChunks = 96;

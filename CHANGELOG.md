@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased (2.0.0)
+## 2.0.0 — 2026-11-03
 
 ### Renamed: mod-romance is now mod-true-companion
 - The module, its files, config keys (`TrueCompanion.*`, file `mod_true_companion.conf`), tables (`true_companion_*`), log prefix and GM command (`.companion`) are renamed. Romantic relationships stay a per-companion option. Version 2.0.0, since the config and the addon (now **TrueCompanion**) change with it.
