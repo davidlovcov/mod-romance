@@ -122,6 +122,9 @@ namespace truecompanion
         // Active companions of `owner` with the AI conversation on (the ones that count toward the limits; with the
         // AI off a companion only carries out commands).
         size_t AiActiveForOwner(Guid owner) const;
+        // Why `key` can't have her AI conversation on now ("" = she can): the per-player and server-wide limits (other
+        // companions with the AI on) and estrangement. The one check for calling her and for switching her AI on.
+        std::string AiAdmission(CompanionKey const& key, RelationshipState const& rel, TimePoint now) const;
         std::optional<CompanionKey> ActiveByCompanion(Guid companion) const;
         size_t ActiveCount() const { return _sessions.size(); }
 
@@ -152,6 +155,8 @@ namespace truecompanion
         std::optional<CompanionSettings> ActiveSettings(CompanionKey const& key) const;
         SaveResult SaveSettings(CompanionKey const& key, uint32_t ownerAccount, std::string const& companionName,
                                 CompanionSettings settings, TimePoint now);
+        // Normalizes `settings` to the server's limits and returns why they can't be saved ("" = they can).
+        std::string CheckSettings(CompanionKey const& key, CompanionSettings& settings, TimePoint now) const;
         PlayerProfile GetPlayerProfile(uint32_t account, Guid owner, bool* isAccountDefault = nullptr);
         SaveResult SavePlayerProfile(uint32_t account, Guid owner, PlayerProfile profile, bool accountDefault);
 
@@ -333,6 +338,8 @@ namespace truecompanion
                              std::string const& fallback = std::string());
 
         void ProcessResult(JobResult& r, TimePoint now);
+        // Her AI conversation was switched off: replies and summaries on their way are dropped.
+        void DropAiWork(Session& s);
         void HandleReply(Session& s, JobResult& r, TimePoint now);
         void HandleSummary(Session& s, JobResult& r, TimePoint now);
         void HandleFailure(Session& s, JobResult& r, TimePoint now);

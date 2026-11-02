@@ -1628,3 +1628,78 @@ TEST(Service, QuestWithoutTitleIsNotRememberedAsEmptyQuotes)
     for (auto const& m : h.repo.LoadMemories(h.Key()))
         CHECK_NOT_CONTAINS(m.text, "\"\"");
 }
+
+TEST(Service, SwitchingTheAiOnRespectsTheServerLimit)
+{
+    Harness h;
+    h.cfg.maxAiCompanionsServer = 1;
+    h.Restart();
+    h.Activate(h.Key());   // Arthas's Elara takes the one AI slot of the server
+    // another player's companion, with her AI off: she may come along for commands
+    CompanionSettings st;
+    st.aiEnabled = false;
+    CHECK(h.svc->SaveSettings(h.Key(kOtherPlayer, kLyra), 200, "Lyra", st, h.now).ok);
+    CHECK(h.svc->Activate(h.Key(kOtherPlayer, kLyra), 200, "Lyra", "Jaina", h.now).ok);
+    // switching her AI on would make two: refused, and nothing changes
+    st.aiEnabled = true;
+    CHECK_EQ(h.svc->SaveSettings(h.Key(kOtherPlayer, kLyra), 200, "Lyra", st, h.now).error, std::string("server_limit_reached"));
+    CHECK(!h.svc->ActiveSettings(h.Key(kOtherPlayer, kLyra))->aiEnabled);
+    // commands still work for her
+    WorldContext ctx = h.ctx;
+    ctx.commandOutcome = "You took the lead; they follow you. Tell them.";
+    ctx.commandHandled = true;
+    CHECK(h.svc->OnPlayerMessage(h.Key(kOtherPlayer, kLyra), "lead the way", ChatChannel::Whisper, ctx, h.now).result ==
+          TrueCompanionService::MessageResult::Accepted);
+    // Elara's AI off frees the slot
+    CompanionSettings off;
+    off.aiEnabled = false;
+    CHECK(h.svc->SaveSettings(h.Key(), kAccount, "Elara", off, h.now).ok);
+    CHECK(h.svc->SaveSettings(h.Key(kOtherPlayer, kLyra), 200, "Lyra", st, h.now).ok);
+}
+
+TEST(Service, SwitchingTheAiOffDropsRepliesOnTheirWay)
+{
+    Harness h;
+    h.Activate(h.Key());
+    h.llm->SetDelayMs(300);
+    h.llm->SetResponder([](LlmRequest const&)
+    {
+        LlmResult res;
+        res.status = LlmResult::Status::Ok;
+        res.content = ReplyJson("A reply from the model.");
+        return res;
+    });
+    h.svc->OnPlayerMessage(h.Key(), "Tell me a story", ChatChannel::Whisper, h.ctx, h.now);
+    // and a command whose outcome she would put in her own words
+    WorldContext ctx = h.ctx;
+    ctx.commandOutcome = "You took the lead; they follow you. Tell them.";
+    ctx.commandHandled = true;
+    h.svc->OnPlayerMessage(h.Key(), "lead the way", ChatChannel::Whisper, ctx, h.now);
+    CompanionSettings off;
+    off.aiEnabled = false;
+    CHECK(h.svc->SaveSettings(h.Key(), kAccount, "Elara", off, h.now).ok);
+    h.PumpUntil([](auto const&) { return false; }, 800);
+    for (auto const& line : h.Spoken(h.Key()))
+        CHECK(line.find("from the model") == std::string::npos);
+    // the command's outcome still reaches the player, in plain words
+    auto spoken = h.Spoken(h.Key());
+    CHECK(std::find(spoken.begin(), spoken.end(), std::string("I took the lead; you follow me.")) != spoken.end());
+    // the typing indicator is off at the end
+    bool typing = true;
+    for (auto const& a : h.out)
+        if (a.type == OutgoingAction::Type::UiPush && a.payload["op"].AsString() == "typing")
+            typing = a.payload["on"].AsBool();
+    CHECK(!typing);
+    // switched on again: she answers normally
+    h.llm->SetDelayMs(0);
+    CompanionSettings on;
+    CHECK(h.svc->SaveSettings(h.Key(), kAccount, "Elara", on, h.now).ok);
+    h.svc->OnPlayerMessage(h.Key(), "Tell me another one", ChatChannel::Whisper, h.ctx, h.now + 5);
+    CHECK(h.PumpUntil([&](auto const&)
+    {
+        for (auto const& line : h.Spoken(h.Key()))
+            if (line.find("from the model") != std::string::npos)
+                return true;
+        return false;
+    }));
+}

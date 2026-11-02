@@ -238,25 +238,11 @@ namespace truecompanion
         auto s = std::make_unique<Session>(_cfg);
         s->rec = LoadOrDefault(key, ownerAccount, companionName, now);
         // The limits and estrangement are about the AI; with it off she only carries out commands.
-        bool ai = s->rec.settings.aiEnabled;
-        if (ai && AiActiveForOwner(key.owner) >= _cfg.maxActiveCompanionsPerPlayer)
+        if (s->rec.settings.aiEnabled)
         {
-            r.error = "limit_reached";
-            return r;
-        }
-        size_t aiSessions = 0;
-        for (auto const& [k, other] : _sessions)
-            if (other->rec.settings.aiEnabled)
-                ++aiSessions;
-        if (ai && aiSessions >= _cfg.maxAiCompanionsServer)
-        {
-            r.error = "server_limit_reached";
-            return r;
-        }
-        if (ai && RelationshipEngine::Away(s->rec.relationship, now))
-        {
-            r.error = "estranged";
-            return r;
+            r.error = AiAdmission(key, s->rec.relationship, now);
+            if (!r.error.empty())
+                return r;
         }
         s->generation = ++_nextGeneration;
         s->ownerName = ownerName;
@@ -323,6 +309,26 @@ namespace truecompanion
         for (auto const& [k, s] : _sessions)
             out.push_back(k);
         return out;
+    }
+
+    std::string TrueCompanionService::AiAdmission(CompanionKey const& key, RelationshipState const& rel, TimePoint now) const
+    {
+        // the companion herself never counts against her own slot (she may already be active with the AI off)
+        size_t mine = 0, server = 0;
+        for (auto const& [k, other] : _sessions)
+            if (other->rec.settings.aiEnabled && !(k == key))
+            {
+                ++server;
+                if (k.owner == key.owner)
+                    ++mine;
+            }
+        if (mine >= _cfg.maxActiveCompanionsPerPlayer)
+            return "limit_reached";
+        if (server >= _cfg.maxAiCompanionsServer)
+            return "server_limit_reached";
+        if (RelationshipEngine::Away(rel, now))
+            return "estranged";
+        return "";
     }
 
     size_t TrueCompanionService::AiActiveForOwner(Guid owner) const
@@ -610,18 +616,13 @@ namespace truecompanion
         return s->rec.settings;
     }
 
-    TrueCompanionService::SaveResult TrueCompanionService::SaveSettings(CompanionKey const& key, uint32_t ownerAccount, std::string const& companionName,
-                                                            CompanionSettings st, TimePoint now)
+    std::string TrueCompanionService::CheckSettings(CompanionKey const& key, CompanionSettings& st, TimePoint now) const
     {
-        SaveResult r;
         if (!_cfg.allowPlayerModelChoice)
             st.model.clear();
         else if (!st.model.empty() && !_cfg.allowedModels.empty() &&
                  std::find(_cfg.allowedModels.begin(), _cfg.allowedModels.end(), st.model) == _cfg.allowedModels.end())
-        {
-            r.error = "model_not_allowed";
-            return r;
-        }
+            return "model_not_allowed";
         if (st.temperature >= 0)
             st.temperature = std::max(_cfg.minTemperature, std::min(_cfg.maxTemperature, st.temperature));
         if (st.maxReplyChars > 0)
@@ -632,17 +633,27 @@ namespace truecompanion
             st.naturalCommands = false;
         if (_cfg.partyOnlyChat)
             st.partyChatMode = true;
+        // she is with them with the AI off (commands only): turning it on is checked like calling her with it on
+        if (Session const* s = Find(key); s && st.aiEnabled && !s->rec.settings.aiEnabled)
+            return AiAdmission(key, s->rec.relationship, now);
+        return "";
+    }
+
+    TrueCompanionService::SaveResult TrueCompanionService::SaveSettings(CompanionKey const& key, uint32_t ownerAccount, std::string const& companionName,
+                                                            CompanionSettings st, TimePoint now)
+    {
+        SaveResult r;
+        r.error = CheckSettings(key, st, now);
+        if (!r.error.empty())
+            return r;   // nothing changed: commands keep working as before
 
         if (Session* s = Find(key))
         {
-            // she is with them with the AI off (commands only): turning it on counts toward the limit now
-            if (st.aiEnabled && !s->rec.settings.aiEnabled && AiActiveForOwner(key.owner) >= _cfg.maxActiveCompanionsPerPlayer)
-            {
-                r.error = "limit_reached";
-                return r;
-            }
+            bool aiOff = s->rec.settings.aiEnabled && !st.aiEnabled;
             s->rec.settings = st;
             s->dirty = true;
+            if (aiOff)
+                DropAiWork(*s);
             SaveRecord(*s, now, true);
             ScheduleNextProactive(*s, now);
         }
@@ -655,6 +666,16 @@ namespace truecompanion
         }
         r.ok = true;
         return r;
+    }
+
+    void TrueCompanionService::DropAiWork(Session& s)
+    {
+        // Replies and summaries already on their way are cancelled: their results only free their slot (ProcessResult),
+        // so no late line, memory or relationship change appears. Commands, leads and fights are not touched.
+        for (auto& t : s.tokens)
+            t->store(true);
+        s.reaction.reset();
+        PushTyping(s, false);
     }
 
     PlayerProfile TrueCompanionService::GetPlayerProfile(uint32_t account, Guid owner, bool* isAccountDefault)
@@ -1428,9 +1449,18 @@ namespace truecompanion
             s->summarizing = false;
         else if (s->pending > 0)
             --s->pending;
-        // A cancelled request only frees its slot: no history, memory or relationship changes.
-        if (r.ctx.token && r.ctx.token->load())
+        // A cancelled request only frees its slot: no history, memory or relationship changes. The same for one that was
+        // sent before her AI conversation was switched off; what she did (a command) is still said in plain words.
+        if ((r.ctx.token && r.ctx.token->load()) || !s->rec.settings.aiEnabled)
+        {
+            if (!r.ctx.summary)
+            {
+                PushTyping(*s, false);
+                if (!s->rec.settings.aiEnabled && !r.ctx.fallback.empty())
+                    SayPlain(*s, r.ctx.fallback, now, r.ctx.channel);
+            }
             return;
+        }
 
         s->debug.lastLatencyMs = r.llm.latencyMs;
         s->debug.lastStatus = LlmStatusId(r.llm.status);
