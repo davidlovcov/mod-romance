@@ -28,6 +28,7 @@
 #include <limits>
 #include <cstdio>
 #include <set>
+#include <unordered_map>
 
 namespace romance::ac
 {
@@ -391,6 +392,38 @@ namespace romance::ac
                    p->CanTakeQuest(q, false) && p->CanAddQuest(q, false);
         }
 
+        // Spawned creatures that give or take quests, grouped by map. The creature table has hundreds of thousands of
+        // rows and does not change while the server runs, so it is walked once (and again only if its size changes,
+        // e.g. a GM adds a spawn) instead of on every request. Without this the Character tab lagged.
+        struct QuestSpawn
+        {
+            uint32 id;
+            float posX, posY, posZ;
+        };
+
+        std::vector<QuestSpawn> const& QuestSpawns(uint32 mapId)
+        {
+            static std::unordered_map<uint32, std::vector<QuestSpawn>> byMap;
+            static size_t builtFor = std::numeric_limits<size_t>::max();
+            auto const& all = sObjectMgr->GetAllCreatureData();
+            if (builtFor != all.size())
+            {
+                byMap.clear();
+                for (auto const& [spawnId, data] : all)
+                {
+                    QuestRelationBounds starts = sObjectMgr->GetCreatureQuestRelationBounds(data.id);
+                    QuestRelationBounds ends = sObjectMgr->GetCreatureQuestInvolvedRelationBounds(data.id);
+                    if (starts.first == starts.second && ends.first == ends.second)
+                        continue;
+                    byMap[data.mapid].push_back({ data.id, data.posX, data.posY, data.posZ });
+                }
+                builtFor = all.size();
+            }
+            static std::vector<QuestSpawn> const none;
+            auto it = byMap.find(mapId);
+            return it == byMap.end() ? none : it->second;
+        }
+
         struct GiverInfo
         {
             uint32 entry = 0;
@@ -406,10 +439,8 @@ namespace romance::ac
             bool classOnly = filter == "class";
             std::map<uint32, GiverInfo> byEntry;
             FactionTemplateEntry const* mine = p->GetFactionTemplateEntry();
-            for (auto const& [spawnId, data] : sObjectMgr->GetAllCreatureData())
+            for (QuestSpawn const& data : QuestSpawns(p->GetMapId()))
             {
-                if (data.mapid != p->GetMapId())
-                    continue;
                 float d = p->GetDistance2d(data.posX, data.posY);
                 if (d > radius)
                     continue;
@@ -465,10 +496,8 @@ namespace romance::ac
         {
             std::map<uint32, GiverInfo> byEntry;
             FactionTemplateEntry const* mine = p->GetFactionTemplateEntry();
-            for (auto const& [spawnId, data] : sObjectMgr->GetAllCreatureData())
+            for (QuestSpawn const& data : QuestSpawns(p->GetMapId()))
             {
-                if (data.mapid != p->GetMapId())
-                    continue;
                 float d = p->GetDistance2d(data.posX, data.posY);
                 if (d > radius)
                     continue;
