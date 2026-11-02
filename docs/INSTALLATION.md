@@ -166,10 +166,11 @@ Chat-command alternatives: `.romance summon Elara`, `.romance dismiss`, `.romanc
 
 ## Recommended Playerbots settings
 
-Set these in `playerbots.conf`:
+Set these in `playerbots.conf`. The same lines, with comments, are in [`conf/playerbots-recommended.conf`](../conf/playerbots-recommended.conf) to copy:
 
 ```
 Playerbots.EnableAutoTradeOnItemMention = 0
+Playerbots.SyncQuestWithPlayer = 0
 Playerbots.RandomBotTalk = 0
 Playerbots.AnnounceConsumableUse = 0
 Playerbots.TellWhenMissingBuffReagents = 0
@@ -180,6 +181,7 @@ Playerbots.EnableBroadcasts = 0
 | Setting | Why |
 |---|---|
 | `EnableAutoTradeOnItemMention = 0` | **Strongly recommended.** Playerbots reads every party chat line as a possible bot command. When a line contains any word it associates with items (slot names, item qualities, trade goods, money...), it opens a trade window. With AI companions you talk to them in party chat all the time, so ordinary sentences like "how many more to kill?" can suddenly open a trade. mod-romance logs a warning at startup while the setting is on. Item trades you ask for ("give me your linen cloth") still work, because mod-romance opens those itself. |
+| `SyncQuestWithPlayer = 0` | **Recommended.** With 1 (the default) a bot does not loot a quest item that you need too, and its quest is completed the moment you turn yours in. Companions then never collect their own Lynx Collars and "questing together until everyone is done" can't finish. mod-romance already gives companions the quests you accept (`Romance.Control.QuestSync`), so nothing is lost. mod-romance logs a warning at startup while it is on. |
 | `RandomBotTalk = 0` | No random small talk from bots between your companion's lines. |
 | `AnnounceConsumableUse = 0` | No "Using potion..." lines. |
 | `TellWhenMissingBuffReagents = 0` | No reagent complaints. |

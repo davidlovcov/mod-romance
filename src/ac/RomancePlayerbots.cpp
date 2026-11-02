@@ -35,11 +35,17 @@ namespace romance::ac
 
     std::string PlayerbotsBridge::ConfigWarnings()
     {
+        std::string out;
         if (sPlayerbotAIConfig.EnableAutoTradeOnItemMention && sPlayerbotAIConfig.CommandPrefix.empty())
-            return "Playerbots.EnableAutoTradeOnItemMention = 1: Playerbots opens a trade when a party chat line merely mentions "
+            out += "Playerbots.EnableAutoTradeOnItemMention = 1: Playerbots opens a trade when a party chat line merely mentions "
                    "an item word, so ordinary roleplay lines (\"how many more to kill?\") can open trade windows. "
                    "Set Playerbots.EnableAutoTradeOnItemMention = 0 in playerbots.conf.";
-        return "";
+        if (sPlayerbotAIConfig.SyncQuestWithPlayer)
+            out += std::string(out.empty() ? "" : "\n[mod-romance] ") +
+                   "Playerbots.SyncQuestWithPlayer = 1: companions don't loot quest items you need too, and their quests are "
+                   "completed the moment you turn yours in, so questing together never finishes properly. "
+                   "Set Playerbots.SyncQuestWithPlayer = 0 (mod-romance gives companions your quests itself).";
+        return out;
     }
 
     bool PlayerbotsBridge::IsBot(Player* player)

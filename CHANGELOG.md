@@ -3,6 +3,7 @@
 ## Unreleased
 
 ### Added
+- `conf/playerbots-recommended.conf`: the recommended Playerbots settings (only the changed ones) to copy into playerbots.conf, now including `Playerbots.SyncQuestWithPlayer = 0`; mod-romance warns at startup while it is 1.
 - "Lead the way" without a quest: she leads you and the other companions to the quest givers around, everyone picks up what they can, and then she leads you to one of the new quests (kill and item-drop quests first). With nothing to pick up she turns in finished quests or grinds the creatures nearby.
 - "Give me all your money" (gold, copper, coins): she hands over everything she has, up to `Romance.Control.MaxGoldPerRequest`.
 - Companions know which quests they could pick up around you (quest givers within ~250 yards, with direction, distance and class-quest marker); ask them or see "Available nearby" on the Character tab.
