@@ -24,6 +24,7 @@
 #include "Define.h"
 #include "ObjectGuid.h"
 
+#include <atomic>
 #include <map>
 #include <memory>
 #include <mutex>
@@ -49,7 +50,7 @@ namespace truecompanion::ac
         void OnStartup();
         void OnShutdown();
         void Update(uint32 diff);
-        bool Enabled() const { return _enabled; }
+        bool Enabled() const { return _enabled.load(); }
 
         // chat & addon (world thread). Return false to swallow the original message.
         bool OnWhisper(Player* sender, Player* receiver, uint32 lang, std::string& msg);
@@ -176,7 +177,8 @@ namespace truecompanion::ac
         GiftItem DescribeItem(Item* item, Player* receiver) const;
 
         TrueCompanionConfig _cfg;
-        bool _enabled = false;
+        // Written by OnConfigLoad on the world thread, read by the script hooks on map threads.
+        std::atomic<bool> _enabled{ false };
         bool _schemaOk = false;
         std::unique_ptr<TrueCompanionSqlRepository> _repo;
         std::unique_ptr<TrueCompanionService> _service;
