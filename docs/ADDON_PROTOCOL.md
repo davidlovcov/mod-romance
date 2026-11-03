@@ -23,9 +23,9 @@ WoW 3.3.5a addons can't open sockets, so communication uses addon messages.
 | chunk body | ≤ 250 bytes |
 | reassembled message | ≤ 16 KiB, ≤ 96 chunks, JSON depth ≤ 12 |
 | concurrent partial messages per player | 4 (expire after 15 s) |
-| rate | token bucket 15 chunks/s, burst 60; each complete op costs 2 more tokens |
+| rate | token bucket 20 chunks/s, burst 80; each complete op costs 2 more tokens |
 
-The addon sends at most 20 chunks/s and pauses 1.2 s after every 40 chunks, which keeps it below AzerothCore's `ChatFlood.AddonMessageCount` (default 100).
+The addon sends at most 10 chunks/s with a burst of 30, which keeps it below AzerothCore's `ChatFlood.AddonMessageCount` (default 100).
 
 ### Identity and security
 The server **never** takes identity from the payload. The owner is always the session's logged-in character. Every op that names a companion `guid` first checks that the character belongs to the player's account, or to a linked account when `TrueCompanion.AllowLinkedAccounts = 1` and Playerbots' `IsAccountLinked` agrees. Otherwise it replies with `error/not_owner` and reveals nothing. Replaying a request can only repeat an action the player is already allowed to take on their own data.
