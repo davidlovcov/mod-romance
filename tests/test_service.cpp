@@ -1831,3 +1831,23 @@ TEST(Service, ImportEndAfterTheTimeoutIsNotApplied)
     CHECK(!imp.Finish(err, h.now + kImportTimeoutSec + 2).has_value());
     CHECK_EQ(err, std::string("import_not_started"));
 }
+
+TEST(Service, MovementOrdersWorkWithTheAiOff)
+{
+    Harness h;
+    h.Activate(h.Key());
+    CompanionSettings off;
+    off.aiEnabled = false;
+    h.svc->SaveSettings(h.Key(), kAccount, "Elara", off, h.now);
+    h.svc->TakeOutgoing();
+    // "wait" must still stop her: with the AI off the line is consumed here, so Playerbots never sees it
+    auto wait = h.svc->OnPlayerMessage(h.Key(), "wait", ChatChannel::Addon, h.ctx, h.now);
+    CHECK(wait.result == TrueCompanionService::MessageResult::Accepted);
+    CHECK(wait.command == ActionType::Stay);
+    auto follow = h.svc->OnPlayerMessage(h.Key(), "follow me", ChatChannel::Addon, h.ctx, h.now);
+    CHECK(follow.result == TrueCompanionService::MessageResult::Accepted);
+    CHECK(follow.command == ActionType::Follow);
+    // a chat line is still refused, as it must be with no AI
+    CHECK(h.svc->OnPlayerMessage(h.Key(), "how was your day?", ChatChannel::Addon, h.ctx, h.now).result ==
+          TrueCompanionService::MessageResult::AiDisabled);
+}

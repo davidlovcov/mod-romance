@@ -977,6 +977,14 @@ namespace truecompanion
 
         if (!s->rec.settings.aiEnabled || !_cfg.ollamaEnabled)
         {
+            // A movement order is not AI work: "follow me", "wait" and "attack" must still reach Playerbots
+            // with her conversation switched off, otherwise the line is consumed and nothing happens.
+            if (!ctx.commandHandled && cm.action && IsMovementCommand(*cm.action))
+            {
+                hr.command = cm.action;
+                hr.result = MessageResult::Accepted;
+                return hr;
+            }
             hr.result = MessageResult::AiDisabled;
             noReply();
             return hr;
