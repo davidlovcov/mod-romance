@@ -582,9 +582,10 @@ namespace truecompanion::ac
             time_t now = Now();
             for (auto const& s : snap.items)
             {
-                // Verify the item really is in the companion's possession now.
+                // Verify the item really is in the companion's possession now. Bags only: a trade never puts
+                // anything into her bank, so counting bank stacks could pass for an item she never received.
                 bool verified = bot->GetItemByGuid(ObjectGuid::Create<HighGuid::Item>(uint32(s.item.itemGuid))) != nullptr ||
-                                bot->GetItemCount(s.item.entry, true) >= s.companionCountBefore + s.item.count;
+                                bot->GetItemCount(s.item.entry, false) >= s.companionCountBefore + s.item.count;
                 if (!verified)
                 {
                     LOG_DEBUG("module", "[mod-true-companion] trade item {} not found on {} after trade; no reward", s.item.entry, bot->GetName());
@@ -1878,8 +1879,23 @@ namespace truecompanion::ac
         CompanionKey key{ player->GetGUID().GetCounter(), target->GetGUID().GetCounter() };
         CompanionRecord rec = _service->GetOrCreateRecord(key, player->GetSession()->GetAccountId(), target->GetName(), Now());
         rec.settings.aiEnabled = on;
-        _service->SaveSettings(key, player->GetSession()->GetAccountId(), target->GetName(), rec.settings, Now());
-        ActivateCompanion(player, target, true);   // off: she stays, for commands only
+        TrueCompanionService::SaveResult saved = _service->SaveSettings(key, player->GetSession()->GetAccountId(), target->GetName(),
+                                                                       rec.settings, Now());
+        if (!saved.ok)
+        {
+            // the setting was refused (limit reached, estranged, model not allowed): say so instead of claiming it
+            Execute(_service->TakeOutgoing());
+            return "She keeps her settings: " + (saved.error == "limit_reached"
+                                                     ? "you already have the maximum number of AI companions."
+                                                     : saved.error);
+        }
+        if (on && !ActivateCompanion(player, target, true))
+        {
+            rec.settings.aiEnabled = false;   // she could not be called: do not leave her saved as an AI companion
+            _service->SaveSettings(key, player->GetSession()->GetAccountId(), target->GetName(), rec.settings, Now());
+            Execute(_service->TakeOutgoing());
+            return target->GetName() + " could not be called right now, so her AI stays off.";
+        }
         Execute(_service->TakeOutgoing());
         return target->GetName() + (on ? " is now your AI companion." : " no longer talks through the AI; she still carries out commands.");
     }
