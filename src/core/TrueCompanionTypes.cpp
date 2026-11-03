@@ -272,7 +272,18 @@ namespace truecompanion
         auto clean = [&](std::string& s, size_t lim)
         {
             std::string before = s;
-            s = LimitUtf8(Trim(s), lim);
+            std::string t = Trim(s);
+            // Bytes the JSON parser copied verbatim are not necessarily valid UTF-8. Repair like every other
+            // untrusted text sink: keep the ASCII, never store a broken sequence the client can't render.
+            if (!IsValidUtf8(t))
+            {
+                std::string ascii;
+                for (char ch : t)
+                    if (static_cast<unsigned char>(ch) < 0x80)
+                        ascii.push_back(ch);
+                t = ascii;
+            }
+            s = LimitUtf8(t, lim);
             // '|' starts WoW UI escape sequences; never allow it in stored text.
             s.erase(std::remove(s.begin(), s.end(), '|'), s.end());
             if (s.size() < Trim(before).size())
@@ -357,7 +368,16 @@ namespace truecompanion
     {
         auto clean = [&](std::string& s, size_t lim)
         {
-            s = LimitUtf8(Trim(s), lim);
+            std::string t = Trim(s);
+            if (!IsValidUtf8(t))
+            {
+                std::string ascii;
+                for (char ch : t)
+                    if (static_cast<unsigned char>(ch) < 0x80)
+                        ascii.push_back(ch);
+                t = ascii;
+            }
+            s = LimitUtf8(t, lim);
             s.erase(std::remove(s.begin(), s.end(), '|'), s.end());
         };
         clean(preferredName, 64);
