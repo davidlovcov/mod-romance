@@ -167,6 +167,24 @@ namespace truecompanion
             return n;
         }
 
+        // "one linen cloth", "two stacks of silk": a spelled-out count is a count, not a determiner.
+        // Consumes the word (and a following "of"), so the item name is what is left.
+        std::optional<uint64_t> LeadingNumberWord(std::string& s)
+        {
+            static char const* const words[] = { "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten" };
+            for (size_t i = 0; i < sizeof(words) / sizeof(words[0]); ++i)
+            {
+                std::string w = words[i];
+                if (s != w && !StartsWith(s, w + " "))
+                    continue;
+                s = Trim(s.substr(w.size()));
+                if (StartsWith(s, "of "))
+                    s = Trim(s.substr(3));
+                return uint64_t(i + 1);
+            }
+            return std::nullopt;
+        }
+
         // A number the player typed that is not a whole positive count: "-5", "1.5", "1,000", "2'000".
         // Works on the raw text (Normalize turns "1.5" into "1 5").
         bool HasMalformedNumber(std::string const& raw)
@@ -347,6 +365,7 @@ namespace truecompanion
         }
 
         static char const* const lead[] = { "lead the way", "you lead", "take the lead", "you go first", "lead us", "lead me",
+                                            "take me", "bring me", "walk me",
                                             "show me the way", "show us the way", "go ahead", "führ uns", "geh vor", "du führst" };
         for (char const* p : lead)
         {
@@ -547,6 +566,12 @@ namespace truecompanion
             }
             if (moneyOnly || s == "gold" || s == "money" || s == "some gold" || s == "some money" || s == "coins" || s == "geld")
                 return std::nullopt; // no amount (or not about money): let her talk about it
+            // "give me one linen cloth" is one, not the whole stack: a spelled-out count is a count, not a determiner
+            if (auto w = LeadingNumberWord(s))
+            {
+                c.amountGiven = true;
+                c.amount = *w;
+            }
             StripDeterminers(s);
             if (auto n = LeadingCount(s))
             {

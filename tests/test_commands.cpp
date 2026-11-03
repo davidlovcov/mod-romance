@@ -51,6 +51,11 @@ TEST(Commands, GiveGoldAndItems)
     c = ParseCompanionCommand("give me 1 gold ore", "Elara");
     CHECK(c && c->kind == CompanionCommandKind::GiveItem && c->amount == 1 && c->arg == "gold ore");
     CHECK(Kind("give me 5 gold") == CompanionCommandKind::GiveGold);
+    // a spelled-out count is a count, not a determiner: "one" must not mean "all of them"
+    c = ParseCompanionCommand("give me one linen cloth", "Elara");
+    CHECK(c && c->kind == CompanionCommandKind::GiveItem && c->amount == 1 && c->arg == "linen cloth");
+    c = ParseCompanionCommand("give me two of your linen cloth", "Elara");
+    CHECK(c && c->kind == CompanionCommandKind::GiveItem && c->amount == 2 && c->arg == "linen cloth");
     CHECK(Kind("give me a hug") == CompanionCommandKind::None);
     CHECK(Kind("give me a moment") == CompanionCommandKind::None);
     CHECK(Kind("gib mir 3 gold") == CompanionCommandKind::GiveGold);
@@ -104,6 +109,10 @@ TEST(Commands, QuestionsAndChatAreNotCommands)
 TEST(Commands, GroupOrdersQuestsAndClearing)
 {
     CHECK(Kind("attack all here") == CompanionCommandKind::AttackAll);
+    // "take me to ..." is a lead, not "take the quest" with a nonsense name
+    CHECK(Kind("take me to the quest") == CompanionCommandKind::Lead);
+    CHECK(Kind("bring me to the wolf quest") == CompanionCommandKind::Lead);
+    CHECK_EQ(Arg("take me to the wolf quest"), std::string("wolf"));
     CHECK(Kind("everyone, kill everything nearby") == CompanionCommandKind::AttackAll);
     CHECK(Kind("guys clear the area") == CompanionCommandKind::AttackAll);
     CHECK(Kind("kill them all") == CompanionCommandKind::AttackAll);
