@@ -789,6 +789,24 @@ TEST(Text, RoleplayAndNaturalCommands)
     CHECK(c.Classify("give me a hug?", "Elara", true).route == MessageRoute::Roleplay);
 }
 
+TEST(Text, PauseRequestsAreOrdersToStay)
+{
+    MessageClassifier c;
+    // these are not Playerbots commands, so the movement order has to come from the classifier; without it a
+    // player saying "wait" while she follows did nothing at all
+    for (char const* t : { "wait", "wait please", "ok wait", "now wait", "please wait", "hold on", "hold up", "halt",
+                           "stop here", "warte", "Elara, wait", "Elara, wait a moment please" })
+        CHECK(c.Classify(t, "Elara", true).action == ActionType::Stay);
+    // remarks that mention waiting are not orders
+    CHECK(!c.Classify("wait, what did you say?", "Elara", true).action.has_value());
+    CHECK(!c.Classify("I can't wait to see you", "Elara", true).action.has_value());
+    CHECK(!c.Classify("wait for the tank to pull, then go", "Elara", true).action.has_value());
+    CHECK(!c.Classify("hold on a second, what is that?", "Elara", true).action.has_value());
+    CHECK(!c.Classify("hold on to your hat", "Elara", true).action.has_value());
+    CHECK(!c.Classify("halt! who goes there?", "Elara", true).action.has_value());
+    CHECK(!c.Classify("stay with me forever", "Elara", true).action.has_value());
+}
+
 TEST(Text, TalkingAboutAFightIsNotAnOrderToFight)
 {
     MessageClassifier c;

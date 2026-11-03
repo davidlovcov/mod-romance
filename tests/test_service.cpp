@@ -248,6 +248,33 @@ TEST(Service, PlayerbotCommandsPassThroughAndNaturalCommandsExecute)
     CHECK_CONTAINS(h.llm->Calls()[0].req.messages[0].content, "They asked you to follow");
 }
 
+TEST(Service, PauseRequestsBecomeAStay)
+{
+    Harness h;
+    h.Activate(h.Key());
+    // "wait" is not a Playerbots command: it used to be swallowed as a companion pause and do nothing at all
+    auto wait = h.svc->OnPlayerMessage(h.Key(), "wait", ChatChannel::Whisper, h.ctx, h.now);
+    CHECK(wait.result == TrueCompanionService::MessageResult::Accepted);
+    CHECK(wait.command == ActionType::Stay);
+    CHECK(h.WaitSpeak(h.Key()));
+    h.now += 10;
+    auto please = h.svc->OnPlayerMessage(h.Key(), "please hold on", ChatChannel::Whisper, h.ctx, h.now);
+    CHECK(please.command == ActionType::Stay);
+    CHECK(h.WaitSpeak(h.Key(), 2));
+    h.now += 10;
+    // "stay" is a Playerbots command word; the companion now handles the pause, but the stay itself must still run
+    auto stay = h.svc->OnPlayerMessage(h.Key(), "stay", ChatChannel::Whisper, h.ctx, h.now);
+    CHECK(stay.result == TrueCompanionService::MessageResult::Accepted);
+    CHECK(stay.command == ActionType::Stay);
+    CHECK(h.WaitSpeak(h.Key(), 3));
+    h.now += 10;
+    // a remark about waiting is not an order
+    h.llm->QueueReply(ReplyJson("I said nothing, I was just thinking.", "relaxed", "neutral", {}));
+    auto remark = h.svc->OnPlayerMessage(h.Key(), "wait, what did you say?", ChatChannel::Whisper, h.ctx, h.now);
+    CHECK(remark.result == TrueCompanionService::MessageResult::Accepted);
+    CHECK(!remark.command.has_value());
+}
+
 TEST(Service, ModelCannotInventActionsOrExceedAllowlist)
 {
     Harness h;

@@ -397,7 +397,10 @@ namespace truecompanion
             return cm;
         cm.route = MessageRoute::Roleplay;
         cm.text = trimmed;
-        cm.action.reset();      // mod-true-companion runs the command; no extra Playerbots order
+        // mod-true-companion runs the command; no extra Playerbots order. A pause is the exception: "stay" is a
+        // Playerbots command word, and when she is not leading the game layer does not pause a lead for it, so the
+        // real Playerbots stay still has to run ("wait" while she follows the player must make her stop).
+        cm.action = cmd->kind == CompanionCommandKind::PauseLead ? std::optional<ActionType>(ActionType::Stay) : std::nullopt;
         return cm;
     }
 

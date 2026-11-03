@@ -165,6 +165,42 @@ namespace truecompanion
             }
             return lower;
         }
+
+        // "wait", "hold on", "halt", "stop here", "warte": a whole short sentence that asks her to stop where
+        // she is. These are not Playerbots commands, so nothing else would turn them into a movement order.
+        bool IsPauseRequest(std::string t)
+        {
+            while (!t.empty() && (t.back() == '.' || t.back() == '!' || t.back() == '?'))
+                t.pop_back();
+            t = Trim(t);
+            static char const* const lead[] = { "ok", "okay", "hey", "oh", "please", "pls", "plz", "now", "so", "just", "bitte" };
+            static char const* const tail[] = { "please", "pls", "plz", "bitte", "now" };
+            static char const* const pause[] = { "wait", "hold on", "hold up", "halt", "stop here", "wait a moment",
+                                                 "wait a second", "wait a sec", "warte", "warte kurz", "warte mal" };
+            for (int pass = 0; pass < 3; ++pass)
+                for (char const* l : lead)
+                {
+                    std::string p = l;
+                    if (t.compare(0, p.size() + 1, p + " ") == 0)
+                    {
+                        t = Trim(t.substr(p.size() + 1));
+                        break;
+                    }
+                }
+            for (char const* x : tail)
+            {
+                std::string suf = std::string(" ") + x;
+                if (t.size() > suf.size() && t.compare(t.size() - suf.size(), suf.size(), suf) == 0)
+                {
+                    t = Trim(t.substr(0, t.size() - suf.size()));
+                    break;
+                }
+            }
+            for (char const* p : pause)
+                if (t == p)
+                    return true;
+            return false;
+        }
     }
 
     MessageClassifier::MessageClassifier()
@@ -212,6 +248,11 @@ namespace truecompanion
 
     std::optional<ActionType> MessageClassifier::DetectAction(std::string const& l)
     {
+        // A short "wait" / "hold on" / "halt" is an order to stay, not conversation. The phrase patterns below
+        // need a leading imperative context; a bare pause word has none, and Playerbots never sees it (it is not
+        // one of its commands), so without this "wait" while she follows the player did nothing at all.
+        if (IsPauseRequest(Trim(l)))
+            return ActionType::Stay;
         struct Pattern { char const* phrase; ActionType action; };
         static Pattern const patterns[] = {
             { "follow me", ActionType::Follow }, { "come with me", ActionType::Follow }, { "come here", ActionType::Follow },
