@@ -62,9 +62,19 @@ namespace truecompanion
         while (pos < data.size())
         {
             size_t len = std::min(kMaxChunkData, data.size() - pos);
-            // never split a UTF-8 sequence: the client validates chat text
-            while (len > 1 && pos + len < data.size() && (static_cast<unsigned char>(data[pos + len]) & 0xC0) == 0x80)
-                --len;
+            // Never split a UTF-8 sequence: the client validates chat text. Count the continuation bytes at
+            // the cut; a run of four or more is not UTF-8 at all and must not shrink the chunk one byte at a
+            // time (a run of N could otherwise turn one message into N single-byte packets).
+            size_t run = 0;
+            while (run < 4 && pos + len + run < data.size() &&
+                   (static_cast<unsigned char>(data[pos + len + run]) & 0xC0) == 0x80)
+                ++run;
+            if (run > 0 && run < 4)
+                while (len > 1 && run > 0)
+                {
+                    --len;
+                    --run;
+                }
             pieces.push_back(data.substr(pos, len));
             pos += len;
         }

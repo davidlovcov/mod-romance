@@ -197,7 +197,14 @@ namespace truecompanion::ac
     void TrueCompanionManager::Update(uint32 diff)
     {
         if (!_enabled || !_service)
+        {
+            // The hooks queue login/logout events on every thread whatever the module state; nothing would
+            // ever drain them while disabled, so drop them here instead of growing for the whole uptime.
+            std::lock_guard<std::mutex> g(_inboxMutex);
+            _inbox.clear();
+            _groupRemovals.clear();
             return;
+        }
         _pollTimer += diff;
         _tickTimer += diff;
         _controlTimer += diff;
@@ -235,7 +242,10 @@ namespace truecompanion::ac
                 SendAddon(owner, p);
             }
             else
+            {
                 _service->Deactivate(it->first, Now());
+                _control->Forget(PlayerGuid(uint32(it->first.companion)));
+            }
             it = _pendingLeaves.erase(it);
         }
         if (_controlTimer >= kControlIntervalMs)
@@ -326,11 +336,15 @@ namespace truecompanion::ac
                     {
                         _service->Deactivate(k, now);
                         _trackers.erase(k);
+                        // Without this the lead is dropped silently a moment later: the companions walking
+                        // behind her would keep Playerbots' follow switched off and stand still forever.
+                        _control->Forget(PlayerGuid(uint32(k.companion)));
                     }
                     if (auto k = _service->ActiveByCompanion(e.guid))
                     {
                         _service->Deactivate(*k, now);
                         _trackers.erase(*k);
+                        _control->Forget(PlayerGuid(e.guid));
                         if (Player* owner = ObjectAccessor::FindConnectedPlayer(PlayerGuid(uint32(k->owner))))
                         {
                             Json p = Json::MakeObject();
@@ -1329,7 +1343,7 @@ namespace truecompanion::ac
             p.Set("op", "hello");
             p.Set("protocol", kProtocolVersion);
             p.Set("module", std::string(kModuleVersion));
-            p.Set("enabled", _enabled);
+            p.Set("enabled", _enabled.load());
             Json f = Json::MakeObject();
             f.Set("ollama", _cfg.ollamaEnabled);
             f.Set("proactive", _cfg.proactiveEnabled);

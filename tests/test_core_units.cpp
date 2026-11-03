@@ -129,6 +129,15 @@ TEST(Protocol, OutOfOrderAndDuplicateChunks)
     CHECK(r.status == AddonReassembler::Status::Complete);
 }
 
+TEST(Protocol, GarbageUtf8DoesNotExplodeIntoSingleByteChunks)
+{
+    Json msg = Json::MakeObject();
+    msg.Set("op", "chat");
+    msg.Set("text", std::string(300, '\x80'));
+    auto chunks = EncodeAddonMessage(msg, 5);
+    CHECK(chunks.size() <= 4);   // a run of continuation bytes must not shrink every chunk to one byte
+}
+
 TEST(Protocol, RejectsHostileInput)
 {
     AddonReassembler re;
@@ -197,6 +206,31 @@ TEST(Relationship, SpamDoesNotMaxOutAffection)
     double total = (st.v.affection - 5) + (st.v.friendship - 10) + (st.v.attraction - 5) + (st.v.trust - 20);
     CHECK(total <= cfg.dailyGainCap + 0.01 + 3.0);   // daily cap (+ satisfaction/comfort/familiarity share the cap)
     CHECK(st.stage <= Stage::Acquaintances);
+}
+
+TEST(Relationship, WalkingOutDoesNotAlsoRaiseHerStage)
+{
+    TrueCompanionConfig cfg;
+    RelationshipEngine eng(cfg, 1);
+    PersonalityProfile p = Elara();
+    RelationshipState base = RelationshipEngine::InitialFor(Stage::Strangers, true, kNow);
+    base.messageCount = 10;
+    base.v.familiarity = 7.9;
+    base.v.friendship = 14.9;
+
+    // one more kind word would make her an acquaintance...
+    RelationshipState control = base;
+    RelationshipDelta good = eng.ApplyConversation(control, Sentiment::Positive, { Signal::Compliment, Signal::Kindness }, p, 40, kNow);
+    CHECK(good.stageChangedTo == Stage::Acquaintances);
+
+    // ...but not on the same message that makes her leave: no milestone for a stage the estrangement undoes
+    RelationshipState leaving = base;
+    leaving.resentment = cfg.estrangeResentment - 5;
+    RelationshipDelta d = eng.ApplyConversation(leaving, Sentiment::Positive,
+                                                { Signal::Compliment, Signal::Kindness, Signal::Insult }, p, 40, kNow);
+    CHECK(d.leaving);
+    CHECK(!d.stageChangedTo.has_value());
+    CHECK(leaving.stage == Stage::Strangers);
 }
 
 TEST(Relationship, EstrangementIsHardToFix)
@@ -753,6 +787,19 @@ TEST(Text, RoleplayAndNaturalCommands)
     CHECK(!off.action.has_value());
     // questions that start with a command word stay roleplay
     CHECK(c.Classify("give me a hug?", "Elara", true).route == MessageRoute::Roleplay);
+}
+
+TEST(Text, TalkingAboutAFightIsNotAnOrderToFight)
+{
+    MessageClassifier c;
+    // the verb only commands when it opens the sentence
+    CHECK(!c.Classify("nice attack!", "Elara", true).action.has_value());
+    CHECK(!c.Classify("why did you attack the wolf?", "Elara", true).action.has_value());
+    CHECK(!c.Classify("that was a great attack", "Elara", true).action.has_value());
+    // addressed to her, it still is one
+    CHECK(c.Classify("Elara, attack the wolf", "Elara", true).action == ActionType::Attack);
+    CHECK(c.Classify("Seren, attack the wolf", "Elara", true).action == ActionType::Attack);
+    CHECK(c.Classify("Elara, please heal me", "Elara", true).action == ActionType::Heal);
 }
 
 TEST(Text, ProposalDetection)

@@ -370,9 +370,14 @@ namespace truecompanion
                      st.v.familiarity - before.familiarity, st.v.comfort - before.comfort,
                      st.v.satisfaction - before.satisfaction };
 
-        RelationshipDelta prog = CheckAutoProgression(st, p, now);
-        d.stageChangedFrom = prog.stageChangedFrom;
-        d.stageChangedTo = prog.stageChangedTo;
+        // Someone walking out must not also "grow closer" on the way: no stage change in the message that
+        // decides to leave, so no milestone is recorded for a stage the estrangement undoes anyway.
+        if (!d.leaving)
+        {
+            RelationshipDelta prog = CheckAutoProgression(st, p, now);
+            d.stageChangedFrom = prog.stageChangedFrom;
+            d.stageChangedTo = prog.stageChangedTo;
+        }
         return d;
     }
 

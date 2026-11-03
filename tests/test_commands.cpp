@@ -45,6 +45,12 @@ TEST(Commands, GiveGoldAndItems)
     CHECK_EQ(Arg("hey Elara could you hand me your hearthstone"), std::string("hearthstone"));
     CHECK_EQ(Arg("can I have the Runecloth Bag?"), std::string("runecloth bag"));
     CHECK_EQ(Arg("trade your copper ore to me"), std::string("copper ore"));
+    // "copper ore" is an item, not coins
+    c = ParseCompanionCommand("give me 5 copper ore", "Elara");
+    CHECK(c && c->kind == CompanionCommandKind::GiveItem && c->amount == 5 && c->arg == "copper ore");
+    c = ParseCompanionCommand("give me 1 gold ore", "Elara");
+    CHECK(c && c->kind == CompanionCommandKind::GiveItem && c->amount == 1 && c->arg == "gold ore");
+    CHECK(Kind("give me 5 gold") == CompanionCommandKind::GiveGold);
     CHECK(Kind("give me a hug") == CompanionCommandKind::None);
     CHECK(Kind("give me a moment") == CompanionCommandKind::None);
     CHECK(Kind("gib mir 3 gold") == CompanionCommandKind::GiveGold);

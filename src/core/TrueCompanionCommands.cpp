@@ -221,13 +221,30 @@ namespace truecompanion
                                 : (unit == "s" || unit == "silver")                             ? 100
                                 : (unit == "c" || unit == "copper")                             ? 1
                                                                                                 : 0;
+                // "5 copper ore" / "1 gold bar" name an item: a money unit is only money when the next word
+                // is a connector or ends the phrase, never another noun.
                 if (mult)
                 {
-                    m.unit = true;
-                    if (j - i > 7)
-                        m.bad = true;
-                    else
-                        m.copper += std::stoull(s.substr(i, j - i)) * mult;
+                    size_t nx = w;
+                    if (nx < s.size() && s[nx] == ' ')
+                        ++nx;
+                    size_t ne = nx;
+                    while (ne < s.size() && std::isalpha(static_cast<unsigned char>(s[ne])))
+                        ++ne;
+                    std::string next = s.substr(nx, ne - nx);
+                    static char const* const connectors[] = { "and", "plus", "then", "also", "too", "more", "please",
+                                                              "bitte", "for", "to", "now", "ok", "okay", "in", "total",
+                                                              "altogether", "worth" };
+                    bool namesItem = !next.empty() &&
+                        std::find(std::begin(connectors), std::end(connectors), next) == std::end(connectors);
+                    if (!namesItem)
+                    {
+                        m.unit = true;
+                        if (j - i > 7)
+                            m.bad = true;
+                        else
+                            m.copper += std::stoull(s.substr(i, j - i)) * mult;
+                    }
                 }
                 i = w > j ? w : j;
             }

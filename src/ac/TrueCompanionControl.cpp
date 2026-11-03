@@ -3763,6 +3763,8 @@ namespace truecompanion::ac
         _lastAutoSell.erase(bot);
         _lastBagsFull.erase(bot);
         _lastAssist.erase(bot);
+        _waitLoot.erase(bot);
+        _lastSellTrip.erase(bot);
         if (_lootPaused.erase(bot))
             if (Player* p = ObjectAccessor::FindConnectedPlayer(bot))
                 PlayerbotsBridge::SetLooting(p, true);   // a plain Playerbot loots again

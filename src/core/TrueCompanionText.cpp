@@ -94,6 +94,63 @@ namespace truecompanion
             return n;
         }
 
+        // Offset of `phrase` at a word boundary, or npos.
+        size_t FindPhraseAt(std::string const& hay, std::string const& phrase, size_t from)
+        {
+            size_t pos = from;
+            while ((pos = hay.find(phrase, pos)) != std::string::npos)
+            {
+                bool leftOk = pos == 0 || !std::isalnum(static_cast<unsigned char>(hay[pos - 1]));
+                size_t end = pos + phrase.size();
+                bool rightOk = end >= hay.size() || !std::isalnum(static_cast<unsigned char>(hay[end]));
+                if (leftOk && rightOk)
+                    return pos;
+                ++pos;
+            }
+            return std::string::npos;
+        }
+
+        bool NegatedLead(std::string const& before)
+        {
+            std::string b = before.size() > 24 ? before.substr(before.size() - 24) : before;
+            for (char const* n : { "don't", "dont", "do not", "never", "nicht", "nie", "stop" })
+                if (b.find(n) != std::string::npos)
+                    return true;
+            return false;
+        }
+
+        // An action phrase only commands when it opens the sentence: after nothing, a politeness word, an
+        // address ("Elara,") or a short verb of asking. "nice attack!" and "why did you attack?" stay
+        // conversation instead of pulling her into combat.
+        bool IsImperativeLead(std::string const& beforeIn)
+        {
+            std::string t = Trim(beforeIn);
+            if (t.empty())
+                return true;
+            size_t comma = t.find(',');
+            if (comma != std::string::npos)
+            {
+                std::string vocative = Trim(t.substr(0, comma));
+                if (vocative.empty() || vocative.find(' ') != std::string::npos)
+                    return false;
+                t = Trim(t.substr(comma + 1));   // "Elara, please attack" -> "please attack"
+            }
+            while (!t.empty() && (t.back() == '!' || t.back() == ':' || t.back() == '?'))
+                t.pop_back();
+            t = Trim(t);
+            if (t.empty())
+                return true;
+            static char const* const leads[] = { "please", "hey", "hi", "ok", "okay", "now", "so", "then", "just",
+                                                 "quick", "quickly", "go", "come on", "come", "help me", "help us", "help",
+                                                 "can you", "could you", "would you", "will you", "i need you to",
+                                                 "i want you to", "you should", "you need to", "try to", "let's", "lets",
+                                                 "bitte", "schnell", "los" };
+            for (char const* lead : leads)
+                if (t == lead)
+                    return true;
+            return false;
+        }
+
         std::string StripLeadingName(std::string const& lower, std::string const& lowerName)
         {
             if (lowerName.empty())
@@ -172,8 +229,16 @@ namespace truecompanion
             { "heil mich", ActionType::Heal }, { "heile mich", ActionType::Heal },
         };
         for (auto const& p : patterns)
-            if (ContainsPhrase(l, p.phrase) && !NegatedBefore(l, p.phrase))
-                return p.action;
+        {
+            size_t at = 0;
+            while ((at = FindPhraseAt(l, p.phrase, at)) != std::string::npos)
+            {
+                std::string before = l.substr(0, at);
+                if (!NegatedLead(before) && IsImperativeLead(before))
+                    return p.action;
+                at += std::string(p.phrase).size();
+            }
+        }
         return std::nullopt;
     }
 
