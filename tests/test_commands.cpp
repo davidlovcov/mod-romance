@@ -73,6 +73,10 @@ TEST(Commands, CastAttackSell)
     CHECK_EQ(Arg("Elara kill those murlocs"), std::string("murlocs"));
     CHECK(Kind("attack my target") == CompanionCommandKind::AttackTarget);
     CHECK(Kind("kill it!") == CompanionCommandKind::AttackTarget);
+    // a phrase about fighting is not an enemy with that name
+    CHECK(Kind("attack what you see") == CompanionCommandKind::AttackTarget);
+    CHECK(Kind("kill whatever attacks us") == CompanionCommandKind::AttackTarget);
+    CHECK(Kind("attack the wolf") == CompanionCommandKind::AttackNamed);
     CHECK(Kind("don't attack the wolf") == CompanionCommandKind::None);
     CHECK(Kind("never kill critters") == CompanionCommandKind::None);
 

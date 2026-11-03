@@ -668,6 +668,15 @@ namespace truecompanion
                 c.kind = CompanionCommandKind::AttackTarget;
                 return c;
             }
+            // "attack what you see" / "kill whatever attacks us" names no creature: fight what is in front of us
+            static char const* const vague[] = { "what", "whatever", "whichever", "whoever", "whomever", "anything",
+                                                 "something", "someone", "somebody", "anyone", "anybody" };
+            for (char const* w : vague)
+                if (s == w || StartsWith(s, std::string(w) + " "))
+                {
+                    c.kind = CompanionCommandKind::AttackTarget;
+                    return c;
+                }
             c.kind = CompanionCommandKind::AttackNamed;
             c.arg = s;
             return c;
