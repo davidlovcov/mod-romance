@@ -104,6 +104,58 @@ TEST(Commands, QuestionsAndChatAreNotCommands)
     CHECK(Kind("how are you today") == CompanionCommandKind::None);
     CHECK(Kind("I love you") == CompanionCommandKind::None);
     CHECK(Kind("Elara") == CompanionCommandKind::None);
+    // the questions players actually ask while questing: none of them may run an action
+    for (char const* q : { "how many wolves do I still have to kill?", "how many wolves do you have to kill",
+                           "how much wolf meat do you need?", "how many more?", "how many more do we need",
+                           "do you need anything?", "what do you need for the quest?", "how much gold do you have?",
+                           "what's in your bags?", "how much silver do you need", "do you still need to kill wolves?",
+                           "is there anything you still need?", "how much more wolf meat", "did you sell your junk?",
+                           "have you killed the wolf yet?", "why did you attack that?", "when do you sell your junk?" })
+        CHECK(Kind(q) == CompanionCommandKind::None);
+}
+
+TEST(Commands, MultiWordSuffixesAreStrippedAsAWhole)
+{
+    // "right now" left a stray " right" in the item/creature/quest name ("sell your junk right now" -> "junk right")
+    auto c = ParseCompanionCommand("sell your junk right now", "Elara");
+    CHECK(c && c->kind == CompanionCommandKind::SellJunk);
+    c = ParseCompanionCommand("can you sell your junk right now?", "Elara");
+    CHECK(c && c->kind == CompanionCommandKind::SellJunk);
+    c = ParseCompanionCommand("give me 5 linen cloth right now", "Elara");
+    CHECK(c && c->kind == CompanionCommandKind::GiveItem && c->arg == "linen cloth" && c->amount == 5);
+    c = ParseCompanionCommand("attack the wolf right now", "Elara");
+    CHECK(c && c->kind == CompanionCommandKind::AttackNamed && c->arg == "wolf");
+    c = ParseCompanionCommand("turn in your quests right now", "Elara");
+    CHECK(c && c->kind == CompanionCommandKind::TurnInQuests && c->arg.empty());
+    c = ParseCompanionCommand("share your quests right now", "Elara");
+    CHECK(c && c->kind == CompanionCommandKind::ShareQuests);
+    c = ParseCompanionCommand("sell your junk at the vendor right now", "Elara");
+    CHECK(c && c->kind == CompanionCommandKind::SellJunk);
+}
+
+TEST(Commands, WhatFollowsTheOrderCanBeAQuestion)
+{
+    // "vendor, ..." is an address like a name: the rest of a question must not be taken as an item to sell
+    CHECK(Kind("vendor, how much is this worth?") == CompanionCommandKind::None);
+    CHECK(Kind("vendor, what do you buy?") == CompanionCommandKind::None);
+    CHECK(Kind("vendor, do you buy linen cloth?") == CompanionCommandKind::None);
+    CHECK(Kind("give me what you can spare") == CompanionCommandKind::None);
+    CHECK(Kind("give me whatever you have") == CompanionCommandKind::None);
+    CHECK(Kind("sell what you don't need") == CompanionCommandKind::None);
+    // the real orders next to them still work
+    CHECK(Kind("vendor, sell trash") == CompanionCommandKind::SellJunk);
+    CHECK(Kind("give me 5 copper ore") == CompanionCommandKind::GiveItem);
+    CHECK(Kind("sell your linen cloth") == CompanionCommandKind::SellItem);
+}
+
+TEST(Commands, SpelledOutCountsWhenSelling)
+{
+    // "give me three linen cloth" was understood, "sell three linen cloth" was not (it asked for an item
+    // called "three linen cloth")
+    auto c = ParseCompanionCommand("sell three linen cloth", "Elara");
+    CHECK(c && c->kind == CompanionCommandKind::SellItem && c->amountGiven && c->amount == 3 && c->arg == "linen cloth");
+    c = ParseCompanionCommand("sell two of your linen cloth", "Elara");
+    CHECK(c && c->kind == CompanionCommandKind::SellItem && c->amount == 2 && c->arg == "linen cloth");
 }
 
 TEST(Commands, GroupOrdersQuestsAndClearing)

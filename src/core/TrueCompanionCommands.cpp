@@ -57,9 +57,14 @@ namespace truecompanion
 
         bool StripSuffix(std::string& s, std::initializer_list<char const*> suffixes)
         {
+            // Longest first: "sell your junk right now" must lose " right now", not only " now"
+            // (that left "junk right" and turned the item/enemy name into nonsense).
+            std::vector<std::string> list;
             for (char const* p : suffixes)
+                list.push_back(std::string(" ") + p);
+            std::sort(list.begin(), list.end(), [](std::string const& a, std::string const& b) { return a.size() > b.size(); });
+            for (std::string const& suf : list)
             {
-                std::string suf = std::string(" ") + p;
                 if (EndsWith(s, suf))
                 {
                     s = Trim(s.substr(0, s.size() - suf.size()));
@@ -281,6 +286,25 @@ namespace truecompanion
                     return true;
             return false;
         }
+
+        // What follows the order is a question, not an item name ("vendor, how much is this worth?",
+        // "give me what you can spare"): those must stay conversation, never a sell/give attempt.
+        bool IsQuestionRest(std::string const& s)
+        {
+            static char const* const words[] = { "what", "whatever", "whichever", "which", "who", "whom", "whose", "when",
+                                                 "where", "why", "how" };
+            for (char const* w : words)
+                if (s == w || StartsWith(s, std::string(w) + " "))
+                    return true;
+            // yes/no questions ("vendor, do you buy linen cloth?") and "is it ..." after the order
+            static char const* const phrases[] = { "do you", "do i", "does", "did you", "did i", "is it", "are you",
+                                                   "can you", "could you", "would you", "will you", "should i",
+                                                   "should we", "have you", "has she", "has he", "was it", "were you" };
+            for (char const* p : phrases)
+                if (s == p || StartsWith(s, std::string(p) + " "))
+                    return true;
+            return false;
+        }
     }
 
     char const* CompanionCommandId(CompanionCommandKind k)
@@ -484,9 +508,17 @@ namespace truecompanion
                              "to the merchant", "at a merchant", "to a merchant", "beim händler" });
             if (s.empty() || IsJunk(s))
                 c.kind = CompanionCommandKind::SellJunk;
+            else if (IsQuestionRest(s))
+                return std::nullopt;   // "vendor, how much is this worth?" is a question, not an order
             else
             {
                 c.kind = CompanionCommandKind::SellItem;
+                // "sell three linen cloth": a spelled-out count is a count, exactly like for "give me ..."
+                if (auto w = LeadingNumberWord(s))
+                {
+                    c.amountGiven = true;
+                    c.amount = *w;
+                }
                 if (auto n = LeadingCount(s))
                 {
                     c.amountGiven = true;
@@ -580,6 +612,9 @@ namespace truecompanion
             }
             StripDeterminers(s);
             if (s.empty() || IsAbstractGift(s))
+                return std::nullopt;
+            // "give me what you can spare" asks about her things, it does not name an item: let her answer.
+            if (IsQuestionRest(s))
                 return std::nullopt;
             c.kind = CompanionCommandKind::GiveItem;
             c.badAmount = malformed || (c.amountGiven && c.amount == 0);
